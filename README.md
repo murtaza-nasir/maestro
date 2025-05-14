@@ -58,24 +58,40 @@ MAESTRO is an AI-powered research application designed to streamline complex res
     cp ai_researcher/.env.example ai_researcher/.env
     ```
 
-    Then, edit `ai_researcher/.env` to add your API keys and customize settings. **Crucially, ensure this `.env` file is listed in your main `.gitignore` file to prevent committing sensitive information.**
+    Then, edit `ai_researcher/.env` to add your API keys and customize settings. 
 
-    Key configuration options (see `ai_researcher/.env.example` for all settings):
+5.  Run the Application
+
+    ```bash
+    python -m streamlit run ai_researcher/ui/app.py
+    ```
+
+    This will start the Streamlit web interface, accessible at http://localhost:8501
 
 #### Docker Installation
 
 1.  Clone the repository:
     ```bash
-    git clone <repository-url>
-    cd researcher2 # Or your project directory name
+    git clone https://github.com/murtaza-nasir/maestro.git
+    cd maestro # Or your project directory name
     ```
 
-2.  Build the Docker image:
+2.  Configure Environment Variables
+
+    Create a `.env` file within the `ai_researcher` directory. You can copy the provided template:
+
+    ```bash
+    cp ai_researcher/.env.example ai_researcher/.env
+    ```
+
+    Then, edit `ai_researcher/.env` to add your API keys and customize settings.
+      
+3.  Build the Docker image:
     ```bash
     docker compose build -t maestro .
     ```
 
-3.  Run the Docker container:
+4.  Run the Docker container:
     ```bash
     docker compose up
     ```
