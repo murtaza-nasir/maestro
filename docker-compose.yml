@@ -1,0 +1,50 @@
+services:
+  maestro:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: maestro
+    container_name: maestro
+    volumes:
+      - ./ai_researcher/.env:/app/ai_researcher/.env
+      - maestro-data:/app/ai_researcher/data
+      - maestro-models:/root/.cache/huggingface  # Cache HuggingFace models
+      - ./cli_research_output:/app/cli_research_output
+      - ./ui_research_output:/app/ui_research_output
+      - ./pdfs:/app/ai_researcher/data/raw_pdfs
+    ports:
+      - "8510:8501"
+    command: ui
+    # GPU support - uncomment the following lines if you have a GPU and nvidia-container-toolkit installed
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      - CUDA_VISIBLE_DEVICES=0  # Set to the GPU index you want to use (default is 0)
+
+  # Optional: Add a service for local LLM if needed
+  # local-llm:
+  #   image: ghcr.io/ollama/ollama:latest
+  #   container_name: local-llm
+  #   volumes:
+  #     - ollama-data:/root/.ollama
+  #   ports:
+  #     - "5000:11434"
+  #   restart: unless-stopped
+  #   # GPU support for local LLM - uncomment if needed
+  #   # deploy:
+  #   #   resources:
+  #   #     reservations:
+  #   #       devices:
+  #   #         - driver: nvidia
+  #   #           count: 1
+  #   #           capabilities: [gpu]
+
+volumes:
+  maestro-data:
+  maestro-models:  # New volume for models
+  # ollama-data:
