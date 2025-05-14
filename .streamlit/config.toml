@@ -1,0 +1,12 @@
+[theme]
+# Base theme
+base="dark"
+
+# Muted pastel color scheme for a clean, academic dark mode look
+primaryColor="#A69CAC"           # Muted lavender accent
+backgroundColor="#1E1E2E"         # Dark grayish-blue background
+secondaryBackgroundColor="#2D2D44" # Slightly lighter dark shade for sidebar/elements
+textColor="#CDD6F4"               # Light, cool gray/lavender text
+
+# Font choice
+font="sans serif"
