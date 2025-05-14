@@ -245,20 +245,3 @@ services:
           cpus: '4'
           memory: 8G
 ```
-
-## Building a Custom Image
-
-If you want to build and push a custom image:
-
-```bash
-docker build -t yourusername/maestro:latest .
-docker push yourusername/maestro:latest
-```
-
-Then modify `docker compose.yml` to use your image instead of building locally:
-
-```yaml
-services:
-  maestro:
-    image: yourusername/maestro:latest
-    # ... rest of configuration ...
