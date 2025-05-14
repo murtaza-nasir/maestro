@@ -4,7 +4,7 @@
 
 This project is dual-licensed. See the [License](#license) section for details.
 
-MAESTRO is an AI-powered research application designed to streamline complex research tasks. It features a modular framework built around document ingestion, Retrieval-Augmented Generation (RAG), and multi-step agentic execution. Whether you prefer a rich web interface or a powerful command-line tool, MAESTRO offers robust capabilities to plan, execute, and report on your research missions with transparency and control.
+MAESTRO is a self-hosted AI-powered research application designed to streamline complex research tasks. It features a modular framework built around document ingestion, Retrieval-Augmented Generation (RAG), and multi-step agentic execution. Whether you prefer a rich web interface or a powerful command-line tool, MAESTRO offers robust capabilities to plan, execute, and report on your research missions with transparency and control.
 
 [![MAESTRO Intro](https://img.youtube.com/vi/nIU29KRjkzU/0.jpg)](https://youtu.be/nIU29KRjkzU)
 
@@ -31,8 +31,8 @@ MAESTRO is an AI-powered research application designed to streamline complex res
 
 1.  Clone the Repository
     ```bash
-    git clone <repository-url>
-    cd researcher2 # Or your project directory name
+    git clone https://github.com/murtaza-nasir/maestro.git
+    cd maestro # Or your project directory name
     ```
 
 2.  Set Up a Virtual Environment (Recommended)
