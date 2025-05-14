@@ -13,7 +13,7 @@ services:
       - ./ui_research_output:/app/ui_research_output
       - ./pdfs:/app/ai_researcher/data/raw_pdfs
     ports:
-      - "8510:8501"
+      - "8501:8501"
     command: ui
     # GPU support - uncomment the following lines if you have a GPU and nvidia-container-toolkit installed
     deploy:
