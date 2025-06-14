@@ -424,7 +424,7 @@ This project is **dual-licensed**:
 
     For users or organizations who cannot or do not wish to comply with the terms of the AGPLv3 (for example, if you want to integrate MAESTRO into a proprietary commercial product or service without being obligated to share your modifications under AGPLv3), a separate commercial license is available.
 
-    Please contact **[Your Name/Company Name and Email Address or Website Link for Licensing Inquiries]** for details on obtaining a commercial license.
+    Please contact **Maestro Maintainers** for details on obtaining a commercial license.
 
 **You must choose one of these licenses** under which to use, modify, or distribute this software. If you are using or distributing the software without a commercial license agreement, you must adhere to the terms of the AGPLv3.
 
