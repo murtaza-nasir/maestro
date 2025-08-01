@@ -9,8 +9,7 @@
 MAESTRO is an AI-powered research platform you can host on your own hardware. It's designed to manage complex research tasks from start to finish in a collaborative, multi-user environment. Plan your research, let AI agents carry it out, and watch as they generate detailed reports based on your documents and sources from the web.
 
 <p align="center">
-  <!-- Placeholder for the main product GIF -->
-  <img src="images/placeholder.gif" alt="MAESTRO In Action"/>
+  <img src="images/10-research-draft.png" alt="Final Draft" width="700"/>
 </p>
 
 ## A New Way to Conduct Research
@@ -104,9 +103,6 @@ MAESTRO streamlines the research process with a unified, chat-driven workflow. D
   <summary><strong>Get a Full Report with References</strong></summary>
   <br>
   <p>Based on the research plan and generated notes, a final draft will be generated, including references from your documents and internet sources.</p>
-  <p align="center">
-    <img src="images/10-research-draft.png" alt="Final Draft" width="700"/>
-  </p>
 </details>
 
 <details>
