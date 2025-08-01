@@ -124,36 +124,37 @@ This methodology ensures a structured, transparent, and rigorous process from th
 
 ```mermaid
 graph TD
-    subgraph "User Interaction"
-        A[User Defines Mission]
+    subgraph User Interaction
+        A["User Defines Mission"]
     end
 
     subgraph "Phase 1: Planning"
-        B[1. Planning Agent Creates Research Plan & Outline]
+        B["Planning Agent<br>Creates Research Plan & Outline"]
     end
 
-    subgraph "Phase 2: Research & Reflection (Iterative Loop)"
-        C["2. Research Agent Gathers Information<br>(via RAG/Web Search)"]
-        D["3. Reflection Agent Critiques Findings<br>& Identifies Gaps"]
+    subgraph "Phase 2: Research & Reflection"
+        C["Research Agent<br>Gathers Information (RAG/Web)"]
+        D["Reflection Agent<br>Critiques Findings & Identifies Gaps"]
         C --> D
         D -- "Revisions Needed? ↪" --> B
         D -- "Evidence Complete? ✔" --> E
     end
 
-    subgraph "Phase 3: Writing & Reflection (Iterative Loop)"
-        E["4. Writing Agent Drafts Report<br>Sections from Notes"]
-        F["5. Reflection Agent Reviews Draft<br>for Clarity & Coherence"]
+    subgraph "Phase 3: Writing & Reflection"
+        E["Writing Agent<br>Drafts Report Sections"]
+        F["Reflection Agent<br>Reviews Draft for Clarity"]
         E --> F
         F -- "Revisions Needed? ↪" --> E
         F -- "Draft Approved? ✔" --> G
     end
 
     subgraph "Phase 4: Finalization"
-        G[6. Agent Controller Composes Final Report]
+        G["Agent Controller<br>Composes Final Report"]
     end
 
     A --> B
-    G --> H[User Receives Report]
+    B --> C
+    G --> H["User Receives Report"]
 
     style A fill:#e6e6fa,stroke:#333,stroke-width:1px
     style H fill:#e6e6fa,stroke:#333,stroke-width:1px
@@ -240,6 +241,10 @@ MAESTRO is built on a modern, decoupled architecture:
 *   **Real-time Communication**: **WebSockets** stream live updates, logs, and status changes from the backend to the frontend.
 *   **Database**: **SQLAlchemy** and **SQLite** are used for database management.
 *   **Containerization**: **Docker Compose** orchestrates the multi-service application for reliable deployment.
+
+### Fully Self-Hosted Operation
+
+MAESTRO can be configured for a completely self-hosted environment. It supports local, OpenAI-compatible API models, allowing you to run your own LLMs. For web searches, it integrates with **SearXNG**, a private and hackable metasearch engine, ensuring that your entire research workflow can remain on your own hardware.
 
 For advanced users and administrators, a powerful **Command Line Interface (CLI)** is available for bulk document ingestion, user management, and other administrative tasks. For more details, see [DOCKER.md](./DOCKER.md).
 
