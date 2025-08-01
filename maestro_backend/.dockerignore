@@ -1,0 +1,21 @@
+# Ignore Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore virtual environments
+.venv
+venv/
+env/
+
+# Ignore data directories handled by volumes
+ai_researcher/data/
+
+# Ignore test outputs
+.pytest_cache/
+htmlcov/
+
+# Ignore IDE and editor files
+.vscode/
+.idea/
