@@ -1,0 +1,44 @@
+# Backend Server
+fastapi
+uvicorn[standard]
+sqlalchemy
+passlib[bcrypt]
+python-jose[cryptography]
+python-multipart
+
+# LLM Interaction
+openai
+python-dotenv
+requests
+httpx
+
+# Agentic Layer & Schemas
+pydantic
+
+# PDF Processing & Metadata
+pymupdf
+pymupdf4llm
+marker-pdf
+weasyprint
+python-docx
+
+# Embeddings & Vector Store
+FlagEmbedding
+chromadb
+torch
+torchvision
+torchaudio
+numpy
+
+# Utilities
+tqdm
+markdown
+aiofiles
+tavily-python
+newspaper3k
+lxml[html_clean]
+lxml_html_clean
+linkup-sdk
+psutil
+pytz
+pypandoc

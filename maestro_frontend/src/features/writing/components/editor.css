@@ -1,0 +1,316 @@
+.editor-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden; /* Prevent container from growing */
+  position: relative; /* For absolute positioning of children */
+}
+
+.editor-container .EasyMDEContainer {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden; /* Prevent container from growing */
+  position: relative; /* For absolute positioning of children */
+  width: 100%; /* Ensure it takes full width */
+}
+
+/* Fix for editor toolbar positioning */
+.editor-container .editor-toolbar {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  z-index: 2; /* Ensure toolbar is above the editor */
+  opacity: 1 !important; /* Ensure toolbar is always visible */
+  flex-shrink: 0; /* Prevent toolbar from shrinking */
+  height: 40px !important; /* Increased height for better spacing */
+  border-bottom: 1px solid #e5e7eb !important; /* Light mode border */
+  background-color: hsl(var(--card)) !important; /* Use CSS variable for background */
+  display: flex !important; /* Use flexbox for alignment */
+  align-items: center !important; /* Center items vertically */
+  padding: 0 4px !important; /* Add some horizontal padding */
+  border: none !important; /* Remove any default borders */
+  box-shadow: none !important; /* Remove any shadows */
+}
+
+/* Make toolbar buttons more compact and centered */
+.editor-container .editor-toolbar button {
+  height: 32px !important; /* Taller buttons */
+  width: 32px !important; /* Wider buttons */
+  padding: 4px !important;
+  margin: 0 1px !important; /* Adjusted margin */
+  border-radius: 4px !important; /* Slightly more rounded */
+  font-size: 14px !important; /* Larger font for icons */
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.editor-container .editor-toolbar .separator {
+  height: 20px !important;
+  margin: 0 4px !important;
+}
+
+.editor-container .CodeMirror {
+  position: absolute !important; /* Take it out of the flow */
+  top: 40px !important; /* Adjust top position to match new toolbar height */
+  bottom: 22px !important; /* Leave space for more compact status bar */
+  left: 0 !important;
+  right: 0 !important;
+  height: auto !important; /* Override any inline height */
+  width: 100% !important; /* Ensure it takes full width */
+  z-index: 1; /* Ensure it's above other elements */
+  border-radius: 0 !important; /* Remove rounded corners */
+  border: none !important; /* Remove border */
+  box-shadow: none !important; /* Remove shadow */
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+}
+
+.editor-container .CodeMirror-scroll {
+  max-height: 100% !important;
+  height: 100% !important;
+  overflow-y: auto !important; /* Force vertical scrolling */
+  overflow-x: auto !important; /* Allow horizontal scrolling if needed */
+}
+
+/* Additional fixes for CodeMirror internals */
+.editor-container .CodeMirror-sizer {
+  margin-bottom: 0 !important;
+  min-height: 0 !important;
+}
+
+.editor-container .CodeMirror-lines {
+  padding: 4px 0 !important;
+  font-size: 13px !important; /* Smaller font size for editor */
+  line-height: 1.4 !important; /* Compact line height */
+}
+
+/* Make the editor text smaller and more compact */
+.editor-container .CodeMirror {
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+}
+
+.editor-container .CodeMirror-code {
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+}
+
+.editor-container .CodeMirror pre {
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+}
+
+/* Ensure the editor container takes full height */
+.EasyMDEContainer {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+}
+
+/* Restore status bar - more compact */
+.editor-container .CodeMirror-statusbar {
+  position: absolute !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  height: 22px !important; /* Even more compact height */
+  background-color: hsl(var(--card)) !important;
+  border-top: 1px solid hsl(var(--border)) !important;
+  z-index: 2 !important;
+  padding: 2px 6px !important; /* Further reduced padding */
+  font-size: 10px !important; /* Even smaller font */
+  color: hsl(var(--muted-foreground)) !important;
+  display: flex !important;
+  align-items: center !important;
+  border-radius: 0 !important; /* Remove rounded corners */
+  border: none !important; /* Remove any default borders */
+  box-shadow: none !important; /* Remove any shadows */
+}
+
+/* Remove rounded corners from the entire editor container */
+.editor-container .EasyMDEContainer,
+.editor-container .EasyMDEContainer .CodeMirror,
+.editor-container .EasyMDEContainer .editor-toolbar,
+.editor-container .EasyMDEContainer .CodeMirror-statusbar {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Ensure no rounded corners or shadows on any child elements */
+.editor-container * {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Specifically target EasyMDE container to remove shadows */
+.editor-container .EasyMDEContainer {
+  box-shadow: none !important;
+  border: none !important;
+}
+
+/* Remove any potential shadows from the wrapper */
+.editor-container .EasyMDEContainer .CodeMirror-wrap {
+  box-shadow: none !important;
+  border: none !important;
+}
+
+/* Dark Theme Styles */
+.dark .editor-toolbar {
+  background-color: hsl(var(--card)) !important;
+  border-bottom: 1px solid hsl(var(--border)) !important;
+  box-shadow: none !important; /* Remove any shadows */
+}
+
+.dark .editor-toolbar button {
+  color: hsl(var(--muted-foreground)) !important;
+  background-color: transparent !important;
+  border: none !important;
+}
+
+.dark .editor-toolbar button:hover {
+  background-color: hsl(var(--muted)) !important;
+  color: hsl(var(--foreground)) !important;
+}
+
+.dark .editor-toolbar button.active {
+  background-color: hsl(var(--accent)) !important;
+  color: hsl(var(--accent-foreground)) !important;
+}
+
+.dark .CodeMirror {
+  background-color: hsl(var(--background)) !important;
+  color: hsl(var(--foreground)) !important;
+  border: none !important;
+}
+
+.dark .CodeMirror-cursor {
+  border-left-color: hsl(var(--primary)) !important;
+}
+
+.dark .CodeMirror-statusbar {
+  background-color: hsl(var(--card)) !important;
+  border-top: 1px solid hsl(var(--border)) !important;
+  color: hsl(var(--muted-foreground)) !important;
+  height: 22px !important;
+  padding: 2px 6px !important;
+  font-size: 10px !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Editor content styling - Make headers appropriately sized and distinguishable */
+.cm-header-1 { 
+  font-size: 1.4em !important; 
+  font-weight: 700 !important; 
+  line-height: 1.3 !important;
+  margin: 0.5em 0 0.3em 0 !important;
+}
+.cm-header-2 { 
+  font-size: 1.25em !important; 
+  font-weight: 600 !important; 
+  line-height: 1.3 !important;
+  margin: 0.4em 0 0.25em 0 !important;
+}
+.cm-header-3 { 
+  font-size: 1.15em !important; 
+  font-weight: 600 !important; 
+  line-height: 1.3 !important;
+  margin: 0.3em 0 0.2em 0 !important;
+}
+.cm-header-4 { 
+  font-size: 1.1em !important; 
+  font-weight: 500 !important; 
+  line-height: 1.3 !important;
+  margin: 0.25em 0 0.15em 0 !important;
+}
+.cm-header-5, .cm-header-6 { 
+  font-size: 1.05em !important; 
+  font-weight: 500 !important; 
+  line-height: 1.3 !important;
+  margin: 0.2em 0 0.1em 0 !important;
+}
+
+/* General header styling */
+.cm-header { 
+  color: hsl(var(--primary)); 
+  font-weight: 600 !important;
+  line-height: 1.3 !important;
+}
+
+/* Dark theme header styling */
+.dark .cm-header { color: hsl(var(--primary)); }
+.dark .cm-header-1 { 
+  font-size: 1.4em !important; 
+  font-weight: 700 !important; 
+  line-height: 1.3 !important;
+}
+.dark .cm-header-2 { 
+  font-size: 1.25em !important; 
+  font-weight: 600 !important; 
+  line-height: 1.3 !important;
+}
+.dark .cm-header-3 { 
+  font-size: 1.15em !important; 
+  font-weight: 600 !important; 
+  line-height: 1.3 !important;
+}
+.dark .cm-header-4 { 
+  font-size: 1.1em !important; 
+  font-weight: 500 !important; 
+  line-height: 1.3 !important;
+}
+.dark .cm-header-5, .dark .cm-header-6 { 
+  font-size: 1.05em !important; 
+  font-weight: 500 !important; 
+  line-height: 1.3 !important;
+}
+.dark .cm-strong { font-weight: bold; }
+.dark .cm-em { font-style: italic; }
+.dark .cm-link { color: hsl(var(--primary)); text-decoration: underline; }
+.dark .cm-quote { color: hsl(var(--accent-foreground)); font-style: italic; }
+.dark .cm-comment { color: hsl(var(--muted-foreground)); }
+.dark .cm-string { color: #9ece6a; }
+.dark .cm-property { color: #e0af68; }
+.dark .cm-number { color: #ff9e64; }
+.dark .cm-keyword { color: #bb9af7; }
+.dark .cm-atom { color: #f7768e; }
+.dark .cm-variable { color: #7aa2f7; }
+.dark .cm-def { color: #c0caf5; }
+.dark .cm-operator { color: #89ddff; }
+.dark .cm-meta { color: #ff9e64; }
+.dark .cm-tag { color: #f7768e; }
+.dark .cm-attribute { color: #e0af68; }
+.dark .cm-qualifier { color: #bb9af7; }
+.dark .cm-builtin { color: #ff9e64; }
+.dark .cm-error { background-color: rgba(247, 118, 142, 0.2); }
+
+/* Tab selector styling */
+.tabs-container {
+  display: flex;
+  border-bottom: 1px solid hsl(var(--border));
+  background-color: hsl(var(--background-alt));
+}
+
+.tab-button {
+  padding: 8px 16px;
+  cursor: pointer;
+  border: none;
+  background-color: transparent;
+  color: hsl(var(--text-secondary));
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s ease-in-out;
+}
+
+.tab-button.active {
+  color: hsl(var(--text-primary));
+  border-bottom: 2px solid hsl(var(--primary));
+}
+
+.tab-button:hover {
+  background-color: hsl(var(--accent));
+  color: hsl(var(--text-primary));
+}

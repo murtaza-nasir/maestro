@@ -1,9 +1,0 @@
-[server]
-# Attempt to prevent Streamlit's file watcher from inspecting the torch library
-# by blacklisting both the specific torch directory and its parent site-packages directory.
-# Adjust paths if your environment location differs.
-folderWatchBlacklist = [
-    '/home/murtaza/miniconda3/envs/paper-embeddings/lib/python3.10/site-packages/torch',
-    '/home/murtaza/miniconda3/envs/paper-embeddings/lib/python3.10/site-packages'
-]
-# fileWatcherType = 'none' # Reverted this change as it didn't work

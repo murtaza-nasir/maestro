@@ -1,30 +1,134 @@
 services:
-  maestro:
+  backend:
     build:
-      context: .
+      context: ./maestro_backend
       dockerfile: Dockerfile
-    image: maestro
-    container_name: maestro
+    image: maestro-backend
+    container_name: maestro-backend
     volumes:
-      - ./ai_researcher/.env:/app/ai_researcher/.env
+      # - ./maestro_backend/ai_researcher/.env:/app/ai_researcher/.env
       - maestro-data:/app/ai_researcher/data
-      - maestro-models:/root/.cache/huggingface  # Cache HuggingFace models
-      - ./cli_research_output:/app/cli_research_output
-      - ./ui_research_output:/app/ui_research_output
-      - ./pdfs:/app/ai_researcher/data/raw_pdfs
+      - ./maestro_model_cache:/root/.cache/huggingface
+      - ./maestro_datalab_cache:/root/.cache/datalab
+      - ./reports:/app/reports
+      - ./maestro_backend/data:/app/data
     ports:
-      - "8501:8501"
-    command: ui
+      - "${BACKEND_HOST}:${BACKEND_PORT}:${BACKEND_INTERNAL_PORT}"
+    working_dir: /app
+    environment:
+      - MAX_WORKER_THREADS=${MAX_WORKER_THREADS}
+      - TZ=${TZ}
+      - LOG_LEVEL=${LOG_LEVEL}
+      # Network configuration from .env
+      - FRONTEND_HOST=${FRONTEND_HOST}
+      - FRONTEND_PORT=${FRONTEND_PORT}
+      - BACKEND_HOST=${BACKEND_HOST}
+      - BACKEND_PORT=${BACKEND_PORT}
+    networks:
+      - maestro-network
     # GPU support - uncomment the following lines if you have a GPU and nvidia-container-toolkit installed
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: 1
+              device_ids: ['${BACKEND_GPU_DEVICE}']  
               capabilities: [gpu]
+
+  frontend:
+    build:
+      context: ./maestro_frontend
+      dockerfile: Dockerfile
+      args:
+        # API URLs dynamically constructed from host/port values
+        - VITE_API_HTTP_URL=${API_PROTOCOL}://${BACKEND_HOST}:${BACKEND_PORT}
+        - VITE_API_WS_URL=${WS_PROTOCOL}://${BACKEND_HOST}:${BACKEND_PORT}
+    image: maestro-frontend
+    container_name: maestro-frontend
+    ports:
+      - "${FRONTEND_HOST}:${FRONTEND_PORT}:${FRONTEND_INTERNAL_PORT}"
+    depends_on:
+      - backend
+    networks:
+      - maestro-network
     environment:
-      - CUDA_VISIBLE_DEVICES=0  # Set to the GPU index you want to use (default is 0)
+      # API URLs dynamically constructed from host/port values
+      - VITE_API_BASE_URL=${API_PROTOCOL}://${BACKEND_HOST}:${BACKEND_PORT}
+      - VITE_API_HTTP_URL=${API_PROTOCOL}://${BACKEND_HOST}:${BACKEND_PORT}
+      - VITE_API_WS_URL=${WS_PROTOCOL}://${BACKEND_HOST}:${BACKEND_PORT}
+      - VITE_SERVER_TIMEZONE=${VITE_SERVER_TIMEZONE}
+      - TZ=${TZ}
+      - LOG_LEVEL=${LOG_LEVEL}
+      # Frontend configuration from .env
+      - FRONTEND_HOST=${FRONTEND_HOST}
+      - FRONTEND_PORT=${FRONTEND_PORT}
+
+  doc-processor:
+    image: maestro-backend  # Use the same image as the backend
+    container_name: maestro-doc-processor
+    command: ["python", "-u", "services/background_document_processor.py"]
+    working_dir: /app
+    volumes:
+      # - ./maestro_backend/ai_researcher/.env:/app/ai_researcher/.env
+      - maestro-data:/app/ai_researcher/data
+      - ./maestro_model_cache:/root/.cache/huggingface
+      - ./maestro_datalab_cache:/root/.cache/datalab
+      - ./reports:/app/reports
+      - ./maestro_backend/data:/app/data
+    depends_on:
+      - backend
+    networks:
+      - maestro-network
+    environment:
+      - TZ=${TZ}
+      - LOG_LEVEL=${LOG_LEVEL}
+      # Backend configuration from .env
+      - BACKEND_HOST=${BACKEND_HOST}
+      - BACKEND_PORT=${BACKEND_PORT}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['${DOC_PROCESSOR_GPU_DEVICE}']  
+              capabilities: [gpu]
+
+  # CLI service for document ingestion and management
+  cli:
+    image: maestro-backend  # Use the same image as the backend
+    container_name: maestro-cli
+    working_dir: /app
+    volumes:
+      # - ./maestro_backend/ai_researcher/.env:/app/ai_researcher/.env
+      - maestro-data:/app/ai_researcher/data
+      - ./maestro_model_cache:/root/.cache/huggingface
+      - ./maestro_datalab_cache:/root/.cache/datalab
+      - ./reports:/app/reports
+      - ./maestro_backend/data:/app/data
+      # Mount a directory for bulk PDF ingestion
+      - ./pdfs:/app/pdfs  # Read-write mount for PDF files (allows deletion after processing)
+    depends_on:
+      - backend
+    networks:
+      - maestro-network
+    environment:
+      - TZ=${TZ}
+      - LOG_LEVEL=${LOG_LEVEL}
+      # Performance settings from .env
+      - TRANSFORMERS_VERBOSITY=${TRANSFORMERS_VERBOSITY}
+      - TOKENIZERS_PARALLELISM=${TOKENIZERS_PARALLELISM}
+      - TF_CPP_MIN_LOG_LEVEL=${TF_CPP_MIN_LOG_LEVEL}
+      - PYTHONWARNINGS=${PYTHONWARNINGS}
+    profiles:
+      - cli  # This service only runs when explicitly requested
+    # GPU support for CLI operations (embedding, etc.)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['${CLI_GPU_DEVICE}']  
+              capabilities: [gpu]
 
   # Optional: Add a service for local LLM if needed
   # local-llm:
@@ -33,7 +137,7 @@ services:
   #   volumes:
   #     - ollama-data:/root/.ollama
   #   ports:
-  #     - "5000:11434"
+  #     - "${LOCAL_LLM_HOST}:${LOCAL_LLM_PORT}:${LOCAL_LLM_INTERNAL_PORT}"
   #   restart: unless-stopped
   #   # GPU support for local LLM - uncomment if needed
   #   # deploy:
@@ -48,3 +152,7 @@ volumes:
   maestro-data:
   maestro-models:  # New volume for models
   # ollama-data:
+
+networks:
+  maestro-network:
+    driver: bridge
