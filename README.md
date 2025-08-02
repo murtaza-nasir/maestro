@@ -206,6 +206,7 @@ MAESTRO is designed to be run as a containerized application using Docker.
 
 ### Installation
 
+#### Linux/macOS
 1.  **Clone the Repository**
     ```bash
     git clone https://github.com/murtaza-nasir/maestro.git
@@ -225,8 +226,34 @@ MAESTRO is designed to be run as a containerized application using Docker.
     docker compose up --build -d
     ```
 
-4.  **Access MAESTRO**
-    Once the containers are running, access the web interface at the address you configured (e.g., `http://localhost:3030`). The first-time login credentials are `admin` / `adminpass123`. It is highly recommended that you change this password immediately.
+#### Windows
+1.  **Clone the Repository**
+    ```powershell
+    git clone https://github.com/murtaza-nasir/maestro.git
+    cd maestro
+    ```
+
+2.  **Configure Your Environment**
+    Run the interactive setup script for a guided configuration:
+    ```powershell
+    # Using PowerShell (recommended)
+    .\setup-env.ps1
+    
+    # Or using Command Prompt
+    setup-env.bat
+    ```
+    This will help you set up network settings, API keys, and other essential parameters by creating a `.env` file for you.
+
+3.  **Build and Run**
+    Use Docker Compose to build the images and start the services in the background.
+    ```powershell
+    docker compose up --build -d
+    ```
+
+#### Access MAESTRO
+Once the containers are running, access the web interface at the address you configured (e.g., `http://localhost:3030`). The first-time login credentials are `admin` / `adminpass123`. It is highly recommended that you change this password immediately.
+
+> **Windows Users**: For detailed Windows setup instructions, troubleshooting, and CLI usage, see [WINDOWS_SETUP.md](./WINDOWS_SETUP.md).
 
 ## Technical Overview
 
@@ -242,7 +269,31 @@ MAESTRO is built on a modern, decoupled architecture:
 
 MAESTRO can be configured for a completely self-hosted environment. It supports local, OpenAI-compatible API models, allowing you to run your own LLMs. For web searches, it integrates with **SearXNG**, a private and hackable metasearch engine, ensuring that your entire research workflow can remain on your own hardware.
 
-For advanced users and administrators, a powerful **Command Line Interface (CLI)** is available for bulk document ingestion, user management, and other administrative tasks. For more details, see [DOCKER.md](./DOCKER.md).
+For advanced users and administrators, a powerful **Command Line Interface (CLI)** is available for bulk document ingestion, user management, and other administrative tasks.
+
+#### CLI Usage
+
+**Linux/macOS:**
+```bash
+./maestro-cli.sh help
+./maestro-cli.sh create-user researcher mypass123
+./maestro-cli.sh ingest researcher ./pdfs
+```
+
+**Windows:**
+```powershell
+# Using PowerShell (recommended)
+.\maestro-cli.ps1 help
+.\maestro-cli.ps1 create-user researcher mypass123
+.\maestro-cli.ps1 ingest researcher ./pdfs
+
+# Or using Command Prompt
+maestro-cli.bat help
+maestro-cli.bat create-user researcher mypass123
+maestro-cli.bat ingest researcher ./pdfs
+```
+
+For more details, see [DOCKER.md](./DOCKER.md) and [WINDOWS_SETUP.md](./WINDOWS_SETUP.md).
 
 ## License
 
