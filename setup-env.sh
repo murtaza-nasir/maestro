@@ -36,14 +36,14 @@ echo "You can modify these values later in the .env file"
 echo ""
 
 # Backend host
-read -p "Backend host (default: localhost): " backend_host
-backend_host=${backend_host:-localhost}
-sed -i "s/BACKEND_HOST=localhost/BACKEND_HOST=$backend_host/" .env
+read -p "Backend host (default: 127.0.0.1): " backend_host
+backend_host=${backend_host:-127.0.0.1}
+sed -i "s/BACKEND_HOST=127.0.0.1/BACKEND_HOST=$backend_host/" .env
 
 # Frontend host
-read -p "Frontend host (default: localhost): " frontend_host
-frontend_host=${frontend_host:-localhost}
-sed -i "s/FRONTEND_HOST=localhost/FRONTEND_HOST=$frontend_host/" .env
+read -p "Frontend host (default: 127.0.0.1): " frontend_host
+frontend_host=${frontend_host:-127.0.0.1}
+sed -i "s/FRONTEND_HOST=127.0.0.1/FRONTEND_HOST=$frontend_host/" .env
 
 # Protocol selection
 echo ""
