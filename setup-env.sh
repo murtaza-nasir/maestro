@@ -38,12 +38,21 @@ echo ""
 # Backend host
 read -p "Backend host (default: 127.0.0.1): " backend_host
 backend_host=${backend_host:-127.0.0.1}
-sed -i "s/BACKEND_HOST=127.0.0.1/BACKEND_HOST=$backend_host/" .env
+# Detect OS for sed compatibility
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS requires backup extension for in-place editing
+    SED_INPLACE=(-i '')
+else
+    # Linux doesn't require backup extension
+    SED_INPLACE=(-i)
+fi
+
+sed "${SED_INPLACE[@]}" "s/BACKEND_HOST=127.0.0.1/BACKEND_HOST=$backend_host/" .env
 
 # Frontend host
 read -p "Frontend host (default: 127.0.0.1): " frontend_host
 frontend_host=${frontend_host:-127.0.0.1}
-sed -i "s/FRONTEND_HOST=127.0.0.1/FRONTEND_HOST=$frontend_host/" .env
+sed "${SED_INPLACE[@]}" "s/FRONTEND_HOST=127.0.0.1/FRONTEND_HOST=$frontend_host/" .env
 
 # Protocol selection
 echo ""
@@ -54,8 +63,8 @@ read -p "Choice (1-2, default: 1): " protocol_choice
 protocol_choice=${protocol_choice:-1}
 
 if [ "$protocol_choice" = "2" ]; then
-    sed -i "s/API_PROTOCOL=http/API_PROTOCOL=https/" .env
-    sed -i "s/WS_PROTOCOL=ws/WS_PROTOCOL=wss/" .env
+    sed "${SED_INPLACE[@]}" "s/API_PROTOCOL=http/API_PROTOCOL=https/" .env
+    sed "${SED_INPLACE[@]}" "s/WS_PROTOCOL=ws/WS_PROTOCOL=wss/" .env
     echo "✅ Set to HTTPS/WSS for production"
 else
     echo "✅ Set to HTTP/WS for development"
@@ -64,8 +73,8 @@ fi
 # Timezone
 read -p "Timezone (default: America/Chicago): " timezone
 timezone=${timezone:-America/Chicago}
-sed -i "s|TZ=America/Chicago|TZ=$timezone|" .env
-sed -i "s|VITE_SERVER_TIMEZONE=America/Chicago|VITE_SERVER_TIMEZONE=$timezone|" .env
+sed "${SED_INPLACE[@]}" "s|TZ=America/Chicago|TZ=$timezone|" .env
+sed "${SED_INPLACE[@]}" "s|VITE_SERVER_TIMEZONE=America/Chicago|VITE_SERVER_TIMEZONE=$timezone|" .env
 
 echo ""
 echo "🎉 Setup complete!"
