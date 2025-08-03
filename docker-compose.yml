@@ -64,7 +64,10 @@ services:
       - FRONTEND_PORT=${FRONTEND_PORT}
 
   doc-processor:
-    image: maestro-backend  # Use the same image as the backend
+    build:
+      context: ./maestro_backend
+      dockerfile: Dockerfile
+    image: maestro-doc-processor  # Unique image name
     container_name: maestro-doc-processor
     command: ["python", "-u", "services/background_document_processor.py"]
     working_dir: /app
@@ -95,7 +98,10 @@ services:
 
   # CLI service for document ingestion and management
   cli:
-    image: maestro-backend  # Use the same image as the backend
+    build:
+      context: ./maestro_backend
+      dockerfile: Dockerfile
+    image: maestro-cli  # Unique image name
     container_name: maestro-cli
     working_dir: /app
     volumes:

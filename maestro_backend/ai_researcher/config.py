@@ -69,6 +69,10 @@ except ImportError:
                 "api_key": os.getenv("LOCAL_LLM_API_KEY", "none"),
                 "base_url": os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:5000/v1/")
             }
+        elif provider_name == "custom":
+            # Custom provider configuration comes from user settings
+            # This will be handled by the dynamic config system
+            return {"api_key": None, "base_url": None}
         else:
             return {"api_key": None, "base_url": None}
 
@@ -402,6 +406,20 @@ PROVIDER_CONFIG = {
         "light_model": LOCAL_LLM_FAST_MODEL,
         "heavy_model": LOCAL_LLM_MID_MODEL,
         "beast_model": LOCAL_LLM_INTELLIGENT_MODEL
+    },
+    "custom": {
+        # Custom provider configuration comes from user settings
+        # Base config will be overridden by user-specific settings
+        "base_url": None,
+        "api_key": None,
+        "fast_model": "custom-fast-model",
+        "mid_model": "custom-mid-model", 
+        "intelligent_model": "custom-intelligent-model",
+        "verifier_model": "custom-verifier-model",
+        # Add aliases for backward compatibility
+        "light_model": "custom-fast-model",
+        "heavy_model": "custom-mid-model",
+        "beast_model": "custom-intelligent-model"
     }
 }
 

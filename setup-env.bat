@@ -60,8 +60,49 @@ if "!protocol_choice!"=="2" (
 )
 
 REM Timezone
-set /p "timezone=Timezone (default: America/Chicago): "
-if "!timezone!"=="" set "timezone=America/Chicago"
+echo.
+echo Select your timezone:
+echo 1) America/New_York (Eastern Time)
+echo 2) America/Chicago (Central Time)
+echo 3) America/Denver (Mountain Time)
+echo 4) America/Los_Angeles (Pacific Time)
+echo 5) Asia/Kolkata (India Standard Time)
+echo 6) Europe/London (GMT/BST)
+echo 7) Europe/Paris (CET/CEST)
+echo 8) Asia/Tokyo (JST)
+echo 9) Australia/Sydney (AEST/AEDT)
+echo 10) Other (enter custom timezone)
+echo 0) Use system default
+set /p "timezone_choice=Choice (0-10, default: 2): "
+if "!timezone_choice!"=="" set "timezone_choice=2"
+
+if "!timezone_choice!"=="1" set "timezone=America/New_York"
+if "!timezone_choice!"=="2" set "timezone=America/Chicago"
+if "!timezone_choice!"=="3" set "timezone=America/Denver"
+if "!timezone_choice!"=="4" set "timezone=America/Los_Angeles"
+if "!timezone_choice!"=="5" set "timezone=Asia/Kolkata"
+if "!timezone_choice!"=="6" set "timezone=Europe/London"
+if "!timezone_choice!"=="7" set "timezone=Europe/Paris"
+if "!timezone_choice!"=="8" set "timezone=Asia/Tokyo"
+if "!timezone_choice!"=="9" set "timezone=Australia/Sydney"
+if "!timezone_choice!"=="10" (
+    echo.
+    echo Common timezone formats:
+    echo   - America/New_York
+    echo   - Asia/Kolkata
+    echo   - Europe/London
+    echo   - Asia/Tokyo
+    echo   - UTC
+    echo   - GMT
+    set /p "timezone=Enter your timezone: "
+    if "!timezone!"=="" set "timezone=America/Chicago"
+)
+if "!timezone_choice!"=="0" (
+    for /f "tokens=*" %%i in ('powershell -Command "[System.TimeZoneInfo]::Local.Id" 2^>nul') do set "timezone=%%i"
+    if "!timezone!"=="" set "timezone=America/Chicago"
+    echo ✅ Using system timezone: !timezone!
+)
+
 powershell -Command "(Get-Content .env) -replace 'TZ=America/Chicago', 'TZ=!timezone!' | Set-Content .env"
 powershell -Command "(Get-Content .env) -replace 'VITE_SERVER_TIMEZONE=America/Chicago', 'VITE_SERVER_TIMEZONE=!timezone!' | Set-Content .env"
 

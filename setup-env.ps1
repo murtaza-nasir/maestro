@@ -59,8 +59,58 @@ if ($protocolChoice -eq "2") {
 }
 
 # Timezone
-$timezone = Read-Host "Timezone (default: America/Chicago)"
-if (-not $timezone) { $timezone = "America/Chicago" }
+Write-Host ""
+Write-Host "Select your timezone:"
+Write-Host "1) America/New_York (Eastern Time)"
+Write-Host "2) America/Chicago (Central Time)"
+Write-Host "3) America/Denver (Mountain Time)"
+Write-Host "4) America/Los_Angeles (Pacific Time)"
+Write-Host "5) Asia/Kolkata (India Standard Time)"
+Write-Host "6) Europe/London (GMT/BST)"
+Write-Host "7) Europe/Paris (CET/CEST)"
+Write-Host "8) Asia/Tokyo (JST)"
+Write-Host "9) Australia/Sydney (AEST/AEDT)"
+Write-Host "10) Other (enter custom timezone)"
+Write-Host "0) Use system default"
+
+$timezoneChoice = Read-Host "Choice (0-10, default: 2)"
+
+switch ($timezoneChoice) {
+    "1" { $timezone = "America/New_York" }
+    "2" { $timezone = "America/Chicago" }
+    "3" { $timezone = "America/Denver" }
+    "4" { $timezone = "America/Los_Angeles" }
+    "5" { $timezone = "Asia/Kolkata" }
+    "6" { $timezone = "Europe/London" }
+    "7" { $timezone = "Europe/Paris" }
+    "8" { $timezone = "Asia/Tokyo" }
+    "9" { $timezone = "Australia/Sydney" }
+    "10" { 
+        Write-Host ""
+        Write-Host "Common timezone formats:"
+        Write-Host "  - America/New_York"
+        Write-Host "  - Asia/Kolkata"
+        Write-Host "  - Europe/London"
+        Write-Host "  - Asia/Tokyo"
+        Write-Host "  - UTC"
+        Write-Host "  - GMT"
+        $timezone = Read-Host "Enter your timezone"
+        if (-not $timezone) { $timezone = "America/Chicago" }
+    }
+    "0" { 
+        # Try to get system timezone
+        try {
+            $systemTz = [System.TimeZoneInfo]::Local.Id
+            $timezone = $systemTz
+            Write-Host "✅ Using system timezone: $timezone"
+        } catch {
+            $timezone = "America/Chicago"
+            Write-Host "⚠️  Could not detect system timezone, using default: $timezone"
+        }
+    }
+    default { $timezone = "America/Chicago" }
+}
+
 (Get-Content .env) -replace 'TZ=America/Chicago', "TZ=$timezone" | Set-Content .env
 (Get-Content .env) -replace 'VITE_SERVER_TIMEZONE=America/Chicago', "VITE_SERVER_TIMEZONE=$timezone" | Set-Content .env
 

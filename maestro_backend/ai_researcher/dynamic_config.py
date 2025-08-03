@@ -165,6 +165,10 @@ def get_ai_provider_config(provider_name: str, mission_id: Optional[str] = None)
             "api_key": os.getenv("LOCAL_LLM_API_KEY", "none"),
             "base_url": os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:5000/v1/")
         }
+    elif provider_name == "custom":
+        # Custom provider configuration comes from user settings
+        # This will be handled by the user settings above
+        return {"api_key": None, "base_url": None}
     else:
         return {"api_key": None, "base_url": None}
 
