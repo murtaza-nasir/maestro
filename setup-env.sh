@@ -35,15 +35,54 @@ echo "📝 Basic Configuration Setup"
 echo "You can modify these values later in the .env file"
 echo ""
 
-# Backend host
-read -p "Backend host (default: 127.0.0.1): " backend_host
-backend_host=${backend_host:-127.0.0.1}
-sed -i "s/BACKEND_HOST=127.0.0.1/BACKEND_HOST=$backend_host/" .env
+# Auto-detect machine IP address
+detect_machine_ip() {
+    # Try to get the primary network interface IP
+    local ip=$(ip route get 8.8.8.8 2>/dev/null | grep -oP 'src \K\S+')
+    if [ -z "$ip" ]; then
+        # Fallback: try hostname -I
+        ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    fi
+    if [ -z "$ip" ]; then
+        # Fallback: try ip addr show
+        ip=$(ip addr show | grep 'inet ' | grep -v 127.0.0.1 | head -n1 | awk '{print $2}' | cut -d/ -f1)
+    fi
+    echo "$ip"
+}
 
-# Frontend host
-read -p "Frontend host (default: 127.0.0.1): " frontend_host
-frontend_host=${frontend_host:-127.0.0.1}
-sed -i "s/FRONTEND_HOST=127.0.0.1/FRONTEND_HOST=$frontend_host/" .env
+DETECTED_IP=$(detect_machine_ip)
+
+echo "🔍 Auto-detected machine IP: $DETECTED_IP"
+echo ""
+echo "Choose IP configuration:"
+echo "1) Use detected IP ($DETECTED_IP) - for network access"
+echo "2) Use localhost (127.0.0.1) - for local development only"
+echo "3) Enter custom IP"
+read -p "Choice (1-3, default: 1): " ip_choice
+ip_choice=${ip_choice:-1}
+
+case $ip_choice in
+    2)
+        backend_host="127.0.0.1"
+        frontend_host="127.0.0.1"
+        echo "✅ Using localhost for local development"
+        ;;
+    3)
+        read -p "Backend host: " backend_host
+        read -p "Frontend host: " frontend_host
+        ;;
+    *)
+        backend_host="$DETECTED_IP"
+        frontend_host="$DETECTED_IP"
+        echo "✅ Using detected IP: $DETECTED_IP"
+        ;;
+esac
+
+# Update .env file - need to handle both possible starting values
+sed -i "s/BACKEND_HOST=127\.0\.0\.1/BACKEND_HOST=$backend_host/" .env
+sed -i "s/BACKEND_HOST=192\.168\.68\.85/BACKEND_HOST=$backend_host/" .env
+sed -i "s/FRONTEND_HOST=127\.0\.0\.1/FRONTEND_HOST=$frontend_host/" .env
+sed -i "s/FRONTEND_HOST=192\.168\.68\.85/FRONTEND_HOST=$frontend_host/" .env
 
 # Protocol selection
 echo ""
