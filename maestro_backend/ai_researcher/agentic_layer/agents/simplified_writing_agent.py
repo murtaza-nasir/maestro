@@ -648,7 +648,7 @@ class SimplifiedWritingAgent:
         )
         
         # Append user's custom instructions if provided
-        if custom_system_prompt_addition.strip():
+        if custom_system_prompt_addition and custom_system_prompt_addition.strip():
             system_prompt += f"\n\nADDITIONAL USER INSTRUCTIONS:\n{custom_system_prompt_addition.strip()}"
         
         if external_context:
