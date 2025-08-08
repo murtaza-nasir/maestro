@@ -285,6 +285,7 @@
   .prose strong {
     color: inherit;
     font-size: inherit;
+    font-weight: bold;
   }
 
   .prose a {

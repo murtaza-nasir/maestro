@@ -417,7 +417,14 @@ export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
       if (line.match(/^[\*\-] /)) {
         flushParagraph()
         const listItem = line.substring(2)
-        result.push(`<div class="mb-1 ml-4 text-sm">• ${listItem}</div>`)
+        const processedListItem = listItem
+          ?.replace(/&/g, '&')
+          ?.replace(/</g, '<')
+          ?.replace(/>/g, '>')
+          ?.replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold">$1</strong>')
+          ?.replace(/\*(.*?)\*/g, '<em class="italic">$1</em>')
+          ?.replace(/`([^`]+)`/g, '<code class="bg-secondary px-1 py-0.5 rounded text-sm font-mono">$1</code>')
+        result.push(`<div class="mb-1 ml-4 text-sm">• ${processedListItem}</div>`)
         continue
       }
 
