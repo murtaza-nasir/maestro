@@ -164,7 +164,7 @@ class WritingAgent(BaseAgent):
 - Ensure the revised section still adheres to all guidelines (context awareness, style aligned with goals, structure, citations).
 - Output the *complete, revised* text for the section.
 
-**Scratchpad:** Use the 'Agent Scratchpad' for context about previous actions or thoughts. Keep your own contributions to the scratchpad concise.
+**Important:** The 'Agent Scratchpad' provided is for your contextual awareness only - it shows previous agent thoughts and actions. DO NOT include any scratchpad content in your output. Output ONLY the section text.
 """
 
     def _format_notes_for_writing(self, notes: List[Note]) -> str:
@@ -484,7 +484,9 @@ class WritingAgent(BaseAgent):
 """
 
         task_instruction = f"""
-**Task:** {'Revise the "Current Draft Content" based *specifically* on the "Revision Suggestions".' if is_revision_pass else 'Write the initial draft content.'} Ensure the final output is the *complete* text for the '{section_to_write.title}' section/subsection, adhering to all system prompt guidelines (style, citations, NO HEADERS, transitions, avoiding repetition). Output *only* the section text.
+**Task:** {'Revise the "Current Draft Content" based *specifically* on the "Revision Suggestions".' if is_revision_pass else 'Write the initial draft content.'} Ensure the final output is the *complete* text for the '{section_to_write.title}' section/subsection, adhering to all system prompt guidelines (style, citations, NO HEADERS, transitions, avoiding repetition). 
+
+**CRITICAL:** Output *only* the section text. Do NOT include any meta-commentary, agent thoughts, or scratchpad content. Do NOT prefix your response with "Agent Scratchpad:" or any similar text.
 """
 
         prompt = prompt_header + section_details + input_section + revision_section + task_instruction
@@ -633,7 +635,7 @@ class WritingAgent(BaseAgent):
     - Provides a smooth transition into the first subsection.
 4.  **CRITICAL:** Base the introduction *strictly* on the provided subsection content. Do not introduce new information, concepts, or citations not present in the subsections.
 5.  Adhere to the `target_tone` and `target_audience` specified in the Active Mission Goals.
-6.  Output *only* the generated introductory paragraph text. Do not include headings, titles, or any other text.
+6.  **CRITICAL:** Output *only* the generated introductory paragraph text. Do NOT include headings, titles, meta-commentary, agent thoughts, or scratchpad content. Do NOT prefix your response with "Agent Scratchpad:" or any similar text.
 """
 
         try:
