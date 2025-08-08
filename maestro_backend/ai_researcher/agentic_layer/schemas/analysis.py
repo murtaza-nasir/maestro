@@ -1,5 +1,5 @@
 # ai_researcher/agentic_layer/schemas/analysis.py
-from typing import Optional # Removed Literal
+# Removed Literal and Optional imports
 from pydantic import BaseModel, Field
 
 # Removed Literal definitions for RequestType, TargetTone, TargetAudience
@@ -11,7 +11,7 @@ class RequestAnalysisOutput(BaseModel):
     target_audience: str = Field(..., description="The likely intended audience for the research output (e.g., 'Researchers/Experts', 'General Public', or a custom description). Prioritizes user goals.")
     requested_length: str = Field(..., description="The requested or appropriate length for the output (e.g., 'Short Summary', 'Comprehensive Report', 'Brief Paragraph', or a custom description). Prioritizes user goals.")
     requested_format: str = Field(..., description="The requested or appropriate format for the output (e.g., 'Full Paper', 'Bullet Points', 'Summary Paragraph', 'Q&A Format', or a custom description). Prioritizes user goals.")
-    preferred_source_types: Optional[str] = Field(None, description="The preferred types of sources to use for research (e.g., 'Academic Literature', 'Legal Sources', 'State Law', 'News Articles'). Prioritizes user goals.")
+    preferred_source_types: str = Field(..., description="The preferred types of sources to use for research (e.g., 'Academic Literature', 'Legal Sources', 'State Law', 'News Articles'). Prioritizes user goals. Use empty string if no preference specified.")
     analysis_reasoning: str = Field(..., description="Brief reasoning for the classifications.")
 
     class Config:
