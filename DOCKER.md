@@ -16,8 +16,8 @@ This guide explains how to run MAESTRO using Docker, which provides an easy way 
 
 1. Clone the repository:
    ```bash
-   git clone <repository-url>
-   cd researcher2
+   git clone https://github.com/murtaza-nasir/maestro.git
+   cd maestro
    ```
 
 2. Configure your environment variables:
@@ -33,12 +33,7 @@ This guide explains how to run MAESTRO using Docker, which provides an easy way 
    nano .env  # Edit with your API keys and network settings
    ```
 
-   **Legacy Configuration (if needed):**
-   ```bash
-   cp maestro_backend/ai_researcher/.env.example maestro_backend/ai_researcher/.env
-   ```
-   
-   The new `.env` file in the root directory handles all network configuration automatically. API URLs are constructed dynamically from your host/port settings.
+   The `.env` file in the root directory handles all network configuration automatically. API URLs are constructed dynamically from your host/port settings.
 
 3. Create a directory for your PDFs (for CLI ingestion):
    ```bash
@@ -155,7 +150,7 @@ If you don't have a GPU or don't want to use it, comment out the GPU-related sec
 
 The Docker setup creates several mounted volumes to persist data:
 
-- `./maestro_backend/ai_researcher/.env`: Your configuration file
+- `./.env`: Your configuration file
 - `./pdfs`: Place your PDF files here for CLI ingestion
 - `./reports`: Output directory for research reports
 - `maestro-data`: Docker volume for vector store and processed data

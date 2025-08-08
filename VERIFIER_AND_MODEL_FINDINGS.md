@@ -41,6 +41,8 @@ Based on the above criteria, the following three models were selected to be our 
 
 ## LLM Performance Evaluation Methodology for Research and Writing Tasks
 
+**Note on Model Versions:** All models evaluated in this study used their instruct-tuned versions optimized for following instructions and conversational interactions. For example, the Qwen models tested were the instruct variants (e.g., `qwen/qwen3-30b-a3b` refers to the instruct version), as were all other models in the evaluation.
+
 To evaluate the factual accuracy of the outputs of various LLMs potentially performing the MAESTRO research and writing tasks, we utilized our chosen panel of three verifier models. The evaluation, orchestrated by the `evaluation/llm_accuracy_test.py` script, included access to web search and a RAG database of ~1000 relevant articles. Using a panel of 10 questions of varying complexity, the evaluation consisted of a 2-stage process for each LLM tested:
 
 1.  **Stage 1: Note Generation and Verification (Emulating the Research Agent)**
