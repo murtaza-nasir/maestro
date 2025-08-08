@@ -7,6 +7,8 @@
 # =============================================================================
 .env
 .env.*
+.env.local
+.env.*.local
 !.env.example
 *.log
 docker-logs.txt
@@ -19,7 +21,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
-
 # Distribution / packaging
 .Python
 build/
@@ -158,12 +159,40 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# nyc test coverage
+.nyc_output
+
+# Grunt intermediate storage (https://gruntjs.com/creating-plugins#storing-task-files)
+.grunt
+
+# Bower dependency directory (https://bower.io/)
+bower_components
+
+# node-waf configuration
+.lock-wscript
+
+# Compiled binary addons (https://nodejs.org/api/addons.html)
+build/Release
+
 # Dependency directories
 node_modules/
 jspm_packages/
 
 # Snowpack dependency directory
 web_modules/
+
+# TypeScript v1 declaration files
+typings/
 
 # TypeScript cache
 *.tsbuildinfo
@@ -195,10 +224,11 @@ web_modules/
 # dotenv environment variable files
 .env.development.local
 .env.test.local
+.env.test
 .env.production.local
 .env.local
 
-# parcel-bundler cache
+# parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache
 
@@ -222,8 +252,9 @@ dist-ssr/
 # Rollup.js default build output
 dist/
 
-# Uncomment if using Storybook
-# storybook-static/
+# Storybook build outputs
+.out
+.storybook-out
 
 # Temporary folders
 tmp/
@@ -357,6 +388,9 @@ tramp
 *.old
 *~
 
+# Temporary scripts
+add-*-config.ps1 
+
 # =============================================================================
 # SECURITY & SECRETS
 # =============================================================================
@@ -376,6 +410,24 @@ cookies.txt
 htmlcov/
 .pytest_cache/
 .tox/
+
+# =============================================================================
+# STREAMLIT & EVALUATION
+# =============================================================================
+# Streamlit
+.streamlit/
+
+# Evaluation and testing artifacts
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+!images/*.png
+!images/*.jpg
+!images/*.jpeg
+!images/*.gif
+!images/*.svg
 
 # =============================================================================
 # CLAUDE CODE

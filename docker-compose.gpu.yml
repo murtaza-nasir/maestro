@@ -1,0 +1,40 @@
+# GPU-enabled override configuration
+# This file extends docker-compose.yml with GPU support for NVIDIA GPUs
+
+services:
+  backend:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['${BACKEND_GPU_DEVICE:-0}']  
+              capabilities: [gpu]
+
+  doc-processor:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['${DOC_PROCESSOR_GPU_DEVICE:-0}']  
+              capabilities: [gpu]
+
+  cli:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['${CLI_GPU_DEVICE:-0}']  
+              capabilities: [gpu]
+
+  # Optional: Uncomment to add GPU support for local LLM
+  # local-llm:
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]

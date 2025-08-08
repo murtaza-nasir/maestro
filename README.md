@@ -201,11 +201,19 @@ MAESTRO is designed to be run as a containerized application using Docker.
 ### Prerequisites
 *   **Docker** and **Docker Compose**
 *   **Git** for cloning the repository
-*   **NVIDIA GPU** (recommended for optimal performance)
 *   **Disk Space**: ~5GB for AI models (downloaded automatically on first run)
+
+#### Hardware Requirements
+*   **Recommended**: NVIDIA GPU with CUDA support for optimal performance
+*   **Minimum**: CPU-only operation is supported on all platforms
+*   **Platform Support**: 
+    - **Linux**: Full GPU support with nvidia-container-toolkit
+    - **macOS**: CPU mode (optimized for Apple Silicon and Intel)
+    - **Windows**: GPU support via WSL2
 
 ### Installation
 
+#### Linux/macOS
 1.  **Clone the Repository**
     ```bash
     git clone https://github.com/murtaza-nasir/maestro.git
@@ -220,13 +228,109 @@ MAESTRO is designed to be run as a containerized application using Docker.
     This will help you set up network settings, API keys, and other essential parameters by creating a `.env` file for you.
 
 3.  **Build and Run**
-    Use Docker Compose to build the images and start the services in the background.
+    Use the automatic start script for optimal platform detection:
     ```bash
+    # Recommended: Automatic GPU detection and optimal configuration
+    ./start.sh
+    
+    # Alternative: Manual Docker Compose
     docker compose up --build -d
     ```
 
-4.  **Access MAESTRO**
-    Once the containers are running, access the web interface at the address you configured (e.g., `http://localhost:3030`). The first-time login credentials are `admin` / `adminpass123`. It is highly recommended that you change this password immediately.
+#### Windows
+1.  **Clone the Repository**
+    ```powershell
+    git clone https://github.com/murtaza-nasir/maestro.git
+    cd maestro
+    ```
+
+2.  **Configure Your Environment**
+    Run the interactive setup script for a guided configuration:
+    ```powershell
+    # Using PowerShell (recommended)
+    .\setup-env.ps1
+    
+    # Or using Command Prompt
+    setup-env.bat
+    ```
+    This will help you set up network settings, API keys, and other essential parameters by creating a `.env` file for you.
+
+3.  **Build and Run**
+    Use the automatic start script for optimal platform detection:
+    ```powershell
+    # Recommended: Automatic GPU detection and optimal configuration
+    .\start.sh
+    
+    # Alternative: Manual Docker Compose
+    docker compose up --build -d
+    ```
+
+#### Access MAESTRO
+Once the containers are running, access the web interface at the address you configured (e.g., `http://localhost:3030`). The first-time login credentials are `admin` / `adminpass123`. It is highly recommended that you change this password immediately.
+
+### GPU Support and Performance Optimization
+
+MAESTRO includes automatic GPU detection and configuration for optimal performance across different platforms.
+
+#### Quick Start with GPU Detection
+```bash
+# Linux/macOS: Automatic platform detection
+./start.sh
+
+# Windows: PowerShell
+.\start.sh
+
+# Stop services
+./stop.sh  # or .\stop.sh on Windows
+```
+
+#### Platform-Specific GPU Support
+
+**Linux with NVIDIA GPU:**
+- ✅ Full GPU acceleration with automatic detection
+- ✅ Multi-GPU support with load distribution
+- **Requirements**: `nvidia-container-toolkit` installed
+- **Setup**: GPU support is automatically enabled when detected
+
+**macOS (Apple Silicon & Intel):**
+- ✅ CPU-optimized performance (no GPU runtime needed)
+- ✅ Optimized for both Apple Silicon and Intel Macs
+- ✅ Full compatibility through Docker Desktop
+
+**Windows with WSL2:**
+- ✅ GPU support through WSL2 and nvidia-container-toolkit
+- ✅ Compatible with NVIDIA GPUs
+- **Requirements**: WSL2 with GPU support enabled
+
+#### Manual GPU Configuration
+
+For advanced users, you can manually configure GPU settings in `.env`:
+```env
+# GPU device assignment (0, 1, 2, etc.)
+BACKEND_GPU_DEVICE=0
+DOC_PROCESSOR_GPU_DEVICE=0
+CLI_GPU_DEVICE=0
+GPU_AVAILABLE=true
+```
+
+#### Performance Tips
+- **Multi-GPU**: Assign different services to different GPUs
+- **CPU Mode**: Still performant for development and smaller workloads  
+- **Memory**: Monitor GPU memory with `nvidia-smi`
+
+#### Troubleshooting GPU Issues
+```bash
+# Check GPU detection
+./detect_gpu.sh
+
+# Test GPU in Docker
+docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi
+
+# View service logs
+docker-compose logs backend
+```
+
+> **Windows Users**: For detailed Windows setup instructions, troubleshooting, and CLI usage, see [WINDOWS_SETUP.md](./WINDOWS_SETUP.md).
 
 ## Technical Overview
 
@@ -242,7 +346,31 @@ MAESTRO is built on a modern, decoupled architecture:
 
 MAESTRO can be configured for a completely self-hosted environment. It supports local, OpenAI-compatible API models, allowing you to run your own LLMs. For web searches, it integrates with **SearXNG**, a private and hackable metasearch engine, ensuring that your entire research workflow can remain on your own hardware.
 
-For advanced users and administrators, a powerful **Command Line Interface (CLI)** is available for bulk document ingestion, user management, and other administrative tasks. For more details, see [DOCKER.md](./DOCKER.md).
+For advanced users and administrators, a powerful **Command Line Interface (CLI)** is available for bulk document ingestion, user management, and other administrative tasks.
+
+#### CLI Usage
+
+**Linux/macOS:**
+```bash
+./maestro-cli.sh help
+./maestro-cli.sh create-user researcher mypass123
+./maestro-cli.sh ingest researcher ./pdfs
+```
+
+**Windows:**
+```powershell
+# Using PowerShell (recommended)
+.\maestro-cli.ps1 help
+.\maestro-cli.ps1 create-user researcher mypass123
+.\maestro-cli.ps1 ingest researcher ./pdfs
+
+# Or using Command Prompt
+maestro-cli.bat help
+maestro-cli.bat create-user researcher mypass123
+maestro-cli.bat ingest researcher ./pdfs
+```
+
+For more details, see [DOCKER.md](./DOCKER.md) and [WINDOWS_SETUP.md](./WINDOWS_SETUP.md).
 
 ## License
 

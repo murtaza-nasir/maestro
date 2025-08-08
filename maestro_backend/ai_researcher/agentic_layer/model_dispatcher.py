@@ -67,7 +67,7 @@ class ModelDispatcher:
 
             try:
                 client = AsyncOpenAI(
-                    # base_url=base_url,
+                    base_url=base_url,
                     api_key=api_key,
                     timeout=config.LLM_REQUEST_TIMEOUT
                 )
