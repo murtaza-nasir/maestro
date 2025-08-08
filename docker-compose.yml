@@ -6,7 +6,6 @@ services:
     image: maestro-backend
     container_name: maestro-backend
     volumes:
-      # - ./maestro_backend/ai_researcher/.env:/app/ai_researcher/.env
       - maestro-data:/app/ai_researcher/data
       - ./maestro_model_cache:/root/.cache/huggingface
       - ./maestro_datalab_cache:/root/.cache/datalab
@@ -72,7 +71,6 @@ services:
     command: ["python", "-u", "services/background_document_processor.py"]
     working_dir: /app
     volumes:
-      # - ./maestro_backend/ai_researcher/.env:/app/ai_researcher/.env
       - maestro-data:/app/ai_researcher/data
       - ./maestro_model_cache:/root/.cache/huggingface
       - ./maestro_datalab_cache:/root/.cache/datalab
@@ -105,7 +103,6 @@ services:
     container_name: maestro-cli
     working_dir: /app
     volumes:
-      # - ./maestro_backend/ai_researcher/.env:/app/ai_researcher/.env
       - maestro-data:/app/ai_researcher/data
       - ./maestro_model_cache:/root/.cache/huggingface
       - ./maestro_datalab_cache:/root/.cache/datalab
