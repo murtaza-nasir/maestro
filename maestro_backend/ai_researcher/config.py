@@ -177,9 +177,9 @@ LOCAL_LLM_BASE_URL = os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:5000/v1/"
 LOCAL_LLM_API_KEY = os.getenv("LOCAL_LLM_API_KEY", "none") # Often 'none' or not required for local
 # Define local model names (adjust if your local models have different identifiers)
 # These might be the actual file names or identifiers used by your local server.
-LOCAL_LLM_FAST_MODEL = os.getenv("LOCAL_LLM_FAST_MODEL", "local-fast-model-id") # Replace with your actual local fast model ID
-LOCAL_LLM_MID_MODEL = os.getenv("LOCAL_LLM_MID_MODEL", "local-mid-model-id") # Replace with your actual local mid model ID
-LOCAL_LLM_INTELLIGENT_MODEL = os.getenv("LOCAL_LLM_INTELLIGENT_MODEL", "local-intelligent-model-id") # Replace with your actual local intelligent model ID
+LOCAL_LLM_FAST_MODEL = os.getenv("LOCAL_LLM_FAST_MODEL")
+LOCAL_LLM_MID_MODEL = os.getenv("LOCAL_LLM_MID_MODEL")
+LOCAL_LLM_INTELLIGENT_MODEL = os.getenv("LOCAL_LLM_INTELLIGENT_MODEL")
 
 # --- LLM Provider Configuration (Intelligent) ---
 # Set the desired LLM provider for the intelligent model: "openrouter" or "local"
@@ -209,14 +209,14 @@ AGENT_ROLE_MODEL_TYPE = {
 OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1/")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 # Define OpenRouter model names (can be overridden by environment variables)
-OPENROUTER_FAST_MODEL = os.getenv("OPENROUTER_FAST_MODEL", "openai/gpt-4o-mini")
-OPENROUTER_MID_MODEL = os.getenv("OPENROUTER_MID_MODEL", "google/gemma-3-27b-it")
-OPENROUTER_INTELLIGENT_MODEL = os.getenv("OPENROUTER_INTELLIGENT_MODEL", "google/gemma-3-27b-it") # Default intelligent model if not set in .env
+OPENROUTER_FAST_MODEL = os.getenv("OPENROUTER_FAST_MODEL")
+OPENROUTER_MID_MODEL = os.getenv("OPENROUTER_MID_MODEL")
+OPENROUTER_INTELLIGENT_MODEL = os.getenv("OPENROUTER_INTELLIGENT_MODEL")
 # --- Verifier Model Configuration ---
 # Define the specific model used for verification tasks (e.g., in evaluation scripts)
 # Note: VERIFIER_LLM_PROVIDER determines if OPENROUTER_ or LOCAL_ is used.
-OPENROUTER_VERIFIER_MODEL = os.getenv("OPENROUTER_VERIFIER_MODEL", "anthropic/claude-3.7-sonnet") # Default OpenRouter verifier
-LOCAL_LLM_VERIFIER_MODEL = os.getenv("LOCAL_LLM_VERIFIER_MODEL", "local-verifier-model-id") # Default local verifier
+OPENROUTER_VERIFIER_MODEL = os.getenv("OPENROUTER_VERIFIER_MODEL")
+LOCAL_LLM_VERIFIER_MODEL = os.getenv("LOCAL_LLM_VERIFIER_MODEL")
 
 ## models
 # openai/gpt-4o-mini
@@ -285,21 +285,23 @@ def get_model_name(model_type: str) -> str:
         # Fallback to static config
         if model_type == "fast" or model_type == "light":  # Support both new and old names
             provider = FAST_LLM_PROVIDER
-            return LOCAL_LLM_FAST_MODEL if provider == "local" else OPENROUTER_FAST_MODEL
+            model_name = LOCAL_LLM_FAST_MODEL if provider == "local" else OPENROUTER_FAST_MODEL
         elif model_type == "mid" or model_type == "heavy":  # Support both new and old names
             provider = MID_LLM_PROVIDER
-            return LOCAL_LLM_MID_MODEL if provider == "local" else OPENROUTER_MID_MODEL
+            model_name = LOCAL_LLM_MID_MODEL if provider == "local" else OPENROUTER_MID_MODEL
         elif model_type == "intelligent" or model_type == "beast":  # Support both new and old names
             provider = INTELLIGENT_LLM_PROVIDER
-            return LOCAL_LLM_INTELLIGENT_MODEL if provider == "local" else OPENROUTER_INTELLIGENT_MODEL
+            model_name = LOCAL_LLM_INTELLIGENT_MODEL if provider == "local" else OPENROUTER_INTELLIGENT_MODEL
         elif model_type == "verifier": # Added verifier case
             provider = VERIFIER_LLM_PROVIDER
-            return LOCAL_LLM_VERIFIER_MODEL if provider == "local" else OPENROUTER_VERIFIER_MODEL
+            model_name = LOCAL_LLM_VERIFIER_MODEL if provider == "local" else OPENROUTER_VERIFIER_MODEL
         else:
-            # Fallback or error? For now, let's default to mid model via its provider
-            print(f"Warning: Unknown model type '{model_type}' requested. Falling back to mid model.")
-            provider = MID_LLM_PROVIDER
-            return LOCAL_LLM_MID_MODEL if provider == "local" else OPENROUTER_MID_MODEL
+            raise ValueError(f"Unknown model type '{model_type}' requested. Please configure user AI settings.")
+        
+        if not model_name:
+            raise ValueError(f"No {model_type} model configured for provider '{provider}'. Please set user AI settings or environment variables.")
+        
+        return model_name
 
 
 # Model names are now loaded dynamically per user - no startup assignment

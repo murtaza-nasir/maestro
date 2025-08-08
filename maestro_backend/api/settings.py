@@ -59,33 +59,32 @@ def get_user_settings(current_user: User = Depends(get_current_user_from_cookie)
         # Remove old models field
         ai_endpoints_data.pop("models", None)
     
-    # Ensure advanced_models exists
+    # Ensure advanced_models exists with empty structure - user must configure
     if "advanced_models" not in ai_endpoints_data:
-        # Create default advanced_models
         ai_endpoints_data["advanced_models"] = {
             "fast": {
-                "provider": "openrouter",
+                "provider": None,
                 "api_key": None,
-                "base_url": "https://openrouter.ai/api/v1/",
-                "model_name": "openai/gpt-4o-mini"
+                "base_url": None,
+                "model_name": None
             },
             "mid": {
-                "provider": "openrouter", 
+                "provider": None, 
                 "api_key": None,
-                "base_url": "https://openrouter.ai/api/v1/",
-                "model_name": "google/gemma-3-27b-it"
+                "base_url": None,
+                "model_name": None
             },
             "intelligent": {
-                "provider": "openrouter",
+                "provider": None,
                 "api_key": None,
-                "base_url": "https://openrouter.ai/api/v1/",
-                "model_name": "google/gemma-3-27b-it"
+                "base_url": None,
+                "model_name": None
             },
             "verifier": {
-                "provider": "openrouter",
+                "provider": None,
                 "api_key": None,
-                "base_url": "https://openrouter.ai/api/v1/",
-                "model_name": "anthropic/claude-3.7-sonnet"
+                "base_url": None,
+                "model_name": None
             }
         }
     
@@ -101,32 +100,32 @@ def get_user_settings(current_user: User = Depends(get_current_user_from_cookie)
             "custom": {"enabled": False, "api_key": None, "base_url": None}
         }
     
-    # Ensure advanced_models is never None
+    # Ensure advanced_models is never None - provide empty structure requiring user configuration
     if "advanced_models" not in ai_endpoints_data or ai_endpoints_data["advanced_models"] is None:
         ai_endpoints_data["advanced_models"] = {
             "fast": {
-                "provider": "openrouter",
+                "provider": None,
                 "api_key": None,
-                "base_url": "https://openrouter.ai/api/v1/",
-                "model_name": "openai/gpt-4o-mini"
+                "base_url": None,
+                "model_name": None
             },
             "mid": {
-                "provider": "openrouter", 
+                "provider": None, 
                 "api_key": None,
-                "base_url": "https://openrouter.ai/api/v1/",
-                "model_name": "google/gemma-3-27b-it"
+                "base_url": None,
+                "model_name": None
             },
             "intelligent": {
-                "provider": "openrouter",
+                "provider": None,
                 "api_key": None,
-                "base_url": "https://openrouter.ai/api/v1/",
-                "model_name": "google/gemma-3-27b-it"
+                "base_url": None,
+                "model_name": None
             },
             "verifier": {
-                "provider": "openrouter",
+                "provider": None,
                 "api_key": None,
-                "base_url": "https://openrouter.ai/api/v1/",
-                "model_name": "anthropic/claude-3.7-sonnet"
+                "base_url": None,
+                "model_name": None
             }
         }
     

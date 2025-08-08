@@ -4,7 +4,8 @@ from typing import List, Dict, Any, Optional, Tuple
 # Use absolute imports
 from ai_researcher.agentic_layer.model_dispatcher import ModelDispatcher
 from ai_researcher.core_rag.query_preparer import QueryRewritingTechnique # Import the type
-from ai_researcher import config # To get model names/providers
+from ai_researcher import config # To get model types
+from ai_researcher.dynamic_config import get_model_name # To get actual model names
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ class QueryStrategist:
         self.strategy_model_type = config.AGENT_ROLE_MODEL_TYPE.get("query_strategy", "fast") # Default to fast
         
         # Get the model name dynamically using the new system
-        self.strategy_model = config.get_model_name(self.strategy_model_type)
+        self.strategy_model = get_model_name(self.strategy_model_type)
         
         logger.info(f"QueryStrategist initialized using strategy model: {self.strategy_model}")
 

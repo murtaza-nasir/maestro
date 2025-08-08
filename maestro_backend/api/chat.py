@@ -368,7 +368,11 @@ async def approve_research_questions(
             # This is the missing piece - we need to trigger run_mission()
             async def run_research_background():
                 try:
-                    logger.info(f"Starting background research execution for mission {request.mission_id}")
+                    # Set user context for background task to ensure proper model selection
+                    from ai_researcher.user_context import set_current_user
+                    set_current_user(current_user)
+                    
+                    logger.info(f"Starting background research execution for mission {request.mission_id} with user context: {current_user.id if current_user else 'None'}")
                     await agent_controller.run_mission(
                         mission_id=request.mission_id,
                         log_queue=None,  # Could add WebSocket support later
@@ -384,8 +388,15 @@ async def approve_research_questions(
                         f"Research execution failed: {str(research_error)}"
                     )
             
-            # Start the research execution as a background task
-            asyncio.create_task(run_research_background())
+            # Start the research execution as a background task with preserved context
+            import contextvars
+            ctx = contextvars.copy_context()
+            
+            # Wrapper to run the background task with preserved context
+            def run_with_context():
+                return ctx.run(lambda: asyncio.create_task(run_research_background(), name=f"research_mission_{request.mission_id}"))
+            
+            run_with_context()
             
             logger.info(f"Research approved and background execution started for mission {request.mission_id}")
             

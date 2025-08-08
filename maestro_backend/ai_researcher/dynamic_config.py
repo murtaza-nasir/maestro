@@ -273,12 +273,9 @@ def get_fast_model_name(mission_id: Optional[str] = None) -> str:
         print(f"[DEBUG] Using fast model from environment: {model_name}")
         return model_name
     
-    # Final fallback to hardcoded defaults from config.py
-    print(f"[DEBUG] No fast model found in user settings or environment, falling back to hardcoded defaults")
-    if provider == "local":
-        return "local-fast-model-id"  # Default from config.py
-    else:
-        return "openai/gpt-4o-mini"  # Default from config.py
+    # No fallback - require user configuration
+    print(f"[DEBUG] No fast model found in user settings or environment")
+    raise ValueError(f"No fast model configured for provider '{provider}'. Please configure your AI model settings in the user interface.")
 
 def get_mid_model_name(mission_id: Optional[str] = None) -> str:
     """Get the mid model name from user settings or environment."""
@@ -334,9 +331,9 @@ def get_mid_model_name(mission_id: Optional[str] = None) -> str:
         print(f"[DEBUG] Using mid model from environment: {model_name}")
         return model_name
     
-    # Final fallback - raise error if no model configured
-    print(f"[DEBUG] get_mid_model_name: No model found anywhere, raising error")
-    raise ValueError(f"No mid model configured. Please set user AI settings or environment variables.")
+    # No fallback - require user configuration
+    print(f"[DEBUG] No mid model found in user settings or environment")
+    raise ValueError(f"No mid model configured for provider '{provider}'. Please configure your AI model settings in the user interface.")
 
 def get_intelligent_model_name(mission_id: Optional[str] = None) -> str:
     """Get the intelligent model name from user settings or environment."""
@@ -367,7 +364,7 @@ def get_intelligent_model_name(mission_id: Optional[str] = None) -> str:
         model_name = os.getenv("OPENROUTER_INTELLIGENT_MODEL")
     
     if not model_name:
-        raise ValueError(f"No intelligent model configured. Please set user AI settings or environment variables.")
+        raise ValueError(f"No intelligent model configured for provider '{provider}'. Please configure your AI model settings in the user interface.")
     
     print(f"[DEBUG] Using intelligent model from environment: {model_name}")
     return model_name
@@ -401,7 +398,7 @@ def get_verifier_model_name(mission_id: Optional[str] = None) -> str:
         model_name = os.getenv("OPENROUTER_VERIFIER_MODEL")
     
     if not model_name:
-        raise ValueError(f"No verifier model configured. Please set user AI settings or environment variables.")
+        raise ValueError(f"No verifier model configured for provider '{provider}'. Please configure your AI model settings in the user interface.")
     
     print(f"[DEBUG] Using verifier model from environment: {model_name}")
     return model_name

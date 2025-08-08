@@ -8,7 +8,7 @@ import random # <-- Import random for jitter
 import httpx # <-- Import httpx again for pricing fetch
 from decimal import Decimal, InvalidOperation # <-- Import Decimal for accurate cost calculation
 from ai_researcher import config # Use absolute import
-from ai_researcher.config import get_model_name
+from ai_researcher.dynamic_config import get_model_name
 from ai_researcher.user_context import get_user_settings
 
 # Configure logging - respect LOG_LEVEL environment variable
@@ -220,54 +220,39 @@ class ModelDispatcher:
                 provider_name = model_config.get("provider")
                 model_name = model_config.get("model_name")
                 
-                # If provider is not explicitly set, try to extract it from the model name
-                if not provider_name and model_name:
-                    if model_name.startswith("openai/") or model_name.startswith("anthropic/") or model_name.startswith("google/") or model_name.startswith("meta-llama/") or model_name.startswith("z-ai/"):
-                        provider_name = "openrouter"  # These prefixes indicate OpenRouter models
-                    elif model_name.startswith("local/"):
-                        provider_name = "local"
-                    else:
-                        # Default to openrouter for models without clear provider prefix
-                        provider_name = "openrouter"
-                        logger.info(f"[DEBUG] No provider prefix found in model '{model_name}', defaulting to openrouter")
-                
-                logger.info(f"[DEBUG] Found user settings for {model_type} model: provider='{provider_name}', model='{model_name}'")
-                logger.info(f"[DEBUG] Full model config: {model_config}")
+                # If provider or model name are still missing, log and attempt to recover from other dynamic config keys
+                if not provider_name or not model_name:
+                    logger.warning(f"[DEBUG] Incomplete config for '{model_type}' in advanced_models: {model_config}. Attempting dynamic_config.get_model_name as fallback.")
+                    try:
+                        model_name = get_model_name(model_type)
+                        if not provider_name and model_name:
+                            if model_name.startswith("local/"):
+                                provider_name = "local"
+                            else:
+                                provider_name = "openrouter"
+                        logger.info(f"[DEBUG] Fallback recovered values: provider='{provider_name}', model='{model_name}'")
+                    except Exception as e:
+                        logger.error(f"[DEBUG] dynamic_config.get_model_name failed for '{model_type}': {e}")
                 
                 # Override with requested_model if provided
                 if requested_model:
                     logger.warning(f"Specific model '{requested_model}' requested, overriding user setting '{model_name}'.")
                     model_name = requested_model
             else:
-                logger.warning(f"Model type '{model_type}' not found in user's advanced_models. Available: {list(advanced_models.keys())}. Falling back to global config.")
+                logger.warning(f"Model type '{model_type}' not found in user's advanced_models. Attempting dynamic_config.get_model_name as ultimate fallback.")
+                try:
+                    model_name = get_model_name(model_type)
+                    if model_name.startswith('local/'):
+                        provider_name = 'local'
+                    else:
+                        provider_name = 'openrouter'
+                except Exception as e:
+                    logger.error(f"[DEBUG] dynamic_config.get_model_name failed for '{model_type}': {e}")
         
-        # Fallback to global config if user settings not available or incomplete
+        # Fallback to global config if still incomplete
         if not provider_name or not model_name:
-            logger.info(f"Falling back to global config for model type '{model_type}'")
-            
-            # Determine the intended provider based on the model type
-            if model_type == "fast":
-                provider_name = config.FAST_LLM_PROVIDER
-            elif model_type == "mid":
-                provider_name = config.MID_LLM_PROVIDER
-            elif model_type == "intelligent":
-                provider_name = config.INTELLIGENT_LLM_PROVIDER
-            elif model_type == "verifier":
-                provider_name = config.VERIFIER_LLM_PROVIDER
-            else:
-                logger.error(f"Invalid model type '{model_type}' derived for agent mode '{effective_agent_mode}'.")
-                return None, None, None
-
-            # Now, determine the model name using the dynamic config system
-            if requested_model:
-                # If a specific model is requested, use it directly with the provider determined above.
-                # Assume the requested model exists on the intended provider.
-                logger.warning(f"Specific model '{requested_model}' requested. Using provider '{provider_name}' determined by agent mode '{effective_agent_mode}' (type: {model_type}).")
-                model_name = requested_model
-            else:
-                # If no specific model requested, get the model name using the dynamic config system
-                model_name = get_model_name(model_type)
-                logger.info(f"Agent mode '{effective_agent_mode}' requires '{model_type}' model. Using dynamic config to get model name: '{model_name}'.")
+            logger.error(f"Model configuration missing or incomplete for model type '{model_type}'.")
+            raise ValueError(f"No valid model configured for '{model_type}'. User settings exist but values may be incomplete.")
 
         # Get the client for the determined provider, but check if we need fresh credentials
         client = self._get_or_create_client(provider_name, current_user_settings)

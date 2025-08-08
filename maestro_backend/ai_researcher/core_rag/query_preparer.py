@@ -6,7 +6,8 @@ from typing import Any, List, Dict, Optional, Literal, Tuple, Union
 
 # Use absolute imports
 from ai_researcher.agentic_layer.model_dispatcher import ModelDispatcher
-from ai_researcher import config # To get model names/providers
+from ai_researcher import config # To get model types
+from ai_researcher.dynamic_config import get_model_name # To get actual model names
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ class QueryPreparer:
         self.rewriting_model_type = config.AGENT_ROLE_MODEL_TYPE.get("query_preparation", "intelligent") # Default to intelligent for query preparation
         
         # Get the model name dynamically using the new system
-        self.rewriting_model = config.get_model_name(self.rewriting_model_type)
+        self.rewriting_model = get_model_name(self.rewriting_model_type)
             
         logger.info(f"QueryPreparer initialized using rewriting model: {self.rewriting_model} (model_type: {self.rewriting_model_type})")
 

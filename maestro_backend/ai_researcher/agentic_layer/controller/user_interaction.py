@@ -508,7 +508,12 @@ Output ONLY a single JSON object conforming EXACTLY to the RequestAnalysisOutput
                 # This is the missing piece - we need to trigger run_mission()
                 async def run_research_background():
                     try:
-                        logger.info(f"Starting background research execution for mission {mission_id}")
+                        # Set user context for background task to ensure proper model selection
+                        from ai_researcher.user_context import set_current_user, get_current_user
+                        background_user = get_current_user()
+                        set_current_user(background_user)
+                        
+                        logger.info(f"Starting background research execution for mission {mission_id} with user context: {background_user.id if background_user else 'None'}")
                         await self.controller.run_mission(
                             mission_id=mission_id,
                             log_queue=log_queue,
@@ -524,11 +529,19 @@ Output ONLY a single JSON object conforming EXACTLY to the RequestAnalysisOutput
                             f"Research execution failed: {str(research_error)}"
                         )
                 
-                # Import asyncio to create the background task
+                # Import asyncio and contextvars to create the background task with context
                 import asyncio
+                import contextvars
                 
-                # Start the research execution as a background task
-                asyncio.create_task(run_research_background())
+                # Copy the current context to preserve user settings in background task
+                ctx = contextvars.copy_context()
+                
+                # Wrapper to run the background task with preserved context
+                def run_with_context():
+                    return ctx.run(lambda: asyncio.create_task(run_research_background(), name=f"research_mission_{mission_id}"))
+                
+                # Start the research execution as a background task with preserved context
+                run_with_context()
                 
                 # Update the response to confirm research is starting
                 agent_output["response"] = f"{agent_output['response']}\n\nGreat! I'll now start the research process with the approved questions. You can monitor the progress in the research tabs."

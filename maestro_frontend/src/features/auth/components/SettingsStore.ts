@@ -185,28 +185,28 @@ const defaultSettings: UserSettings = {
     },
     advanced_models: {
       fast: {
-        provider: 'openrouter',
+        provider: '',
         api_key: null,
-        base_url: 'https://openrouter.ai/api/v1/',
-        model_name: 'openai/gpt-4o-mini'
+        base_url: '',
+        model_name: ''
       },
       mid: {
-        provider: 'openrouter',
+        provider: '',
         api_key: null,
-        base_url: 'https://openrouter.ai/api/v1/',
-        model_name: 'google/gemma-3-27b-it'
+        base_url: '',
+        model_name: ''
       },
       intelligent: {
-        provider: 'openrouter',
+        provider: '',
         api_key: null,
-        base_url: 'https://openrouter.ai/api/v1/',
-        model_name: 'google/gemma-3-27b-it'
+        base_url: '',
+        model_name: ''
       },
       verifier: {
-        provider: 'openrouter',
+        provider: '',
         api_key: null,
-        base_url: 'https://openrouter.ai/api/v1/',
-        model_name: 'anthropic/claude-3.7-sonnet'
+        base_url: '',
+        model_name: ''
       }
     }
   },

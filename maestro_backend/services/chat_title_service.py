@@ -4,7 +4,8 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from ai_researcher.agentic_layer.model_dispatcher import ModelDispatcher
-from ai_researcher.config import get_model_name, AGENT_ROLE_TEMPERATURE
+from ai_researcher.dynamic_config import get_model_name
+from ai_researcher.config import AGENT_ROLE_TEMPERATURE
 from database import crud
 from database.models import Chat
 
