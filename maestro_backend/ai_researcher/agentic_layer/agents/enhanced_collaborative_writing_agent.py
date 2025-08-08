@@ -8,6 +8,7 @@ from typing import Dict, Any, List, Optional, Tuple
 import asyncio
 
 from .base_agent import BaseAgent
+from ..utils.json_utils import parse_llm_json_response
 from ..context.writing_context_manager import WritingContextManager
 from ..tool_registry import ToolRegistry, ToolDefinition
 from ..tools import writing_tools # Import our new tools
@@ -220,7 +221,7 @@ Please provide only the text for the paragraph as a raw string, without any JSON
         if not llm_response or not llm_response.choices:
             raise Exception("Failed to generate a plan from the LLM.")
 
-        plan_json = json.loads(llm_response.choices[0].message.content)
+        plan_json = parse_llm_json_response(llm_response.choices[0].message.content)
         plan = plan_json.get("plan", [])
         
         if not plan:

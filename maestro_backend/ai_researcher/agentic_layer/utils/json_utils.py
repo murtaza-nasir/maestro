@@ -9,6 +9,7 @@ specialized functions for common use cases.
 
 import json
 import ast
+import re
 import logging
 from typing import Any, Dict, List, Tuple, Type, TypeVar, Optional, Union
 
@@ -71,6 +72,85 @@ def parse_json_string_recursively(data: Any) -> Any:
         # For other types (int, float, bool, None), return as is
         return data
 
+def extract_json_from_thinking_model_response(raw_response: str) -> str:
+    """
+    Extract JSON from responses that may contain thinking tokens or reasoning text.
+    
+    Thinking models (like GPT-5, o1-preview, o1-mini) often include reasoning
+    text before the actual JSON response. This function attempts to extract
+    the JSON portion from such responses.
+    
+    Args:
+        raw_response: The raw response from a thinking model that may contain
+                     thinking tokens followed by JSON.
+                     
+    Returns:
+        The extracted JSON string, or the original response if no JSON is found.
+    """
+    if not raw_response or not raw_response.strip():
+        return raw_response
+    
+    content = raw_response.strip()
+    
+    # Look for JSON objects or arrays
+    # Try to find the first occurrence of { or [ that starts a valid JSON structure
+    json_start_chars = ['{', '[']
+    
+    for start_char in json_start_chars:
+        start_idx = content.find(start_char)
+        if start_idx == -1:
+            continue
+            
+        # Try to find a complete JSON structure starting from this position
+        for end_idx in range(len(content), start_idx, -1):
+            potential_json = content[start_idx:end_idx]
+            try:
+                # Test if this is valid JSON
+                json.loads(potential_json)
+                return potential_json
+            except json.JSONDecodeError:
+                continue
+    
+    # If we couldn't find valid JSON, try looking for common JSON patterns
+    # Look for content between triple backticks (even if not marked as json)
+    
+    # Pattern to match content in code blocks
+    code_block_pattern = r'```(?:json)?\s*([\s\S]*?)```'
+    code_blocks = re.findall(code_block_pattern, content, re.MULTILINE)
+    
+    for block in code_blocks:
+        block_content = block.strip()
+        if block_content.startswith(('{', '[')):
+            try:
+                json.loads(block_content)
+                return block_content
+            except json.JSONDecodeError:
+                continue
+    
+    # Last resort: try to find JSON-like patterns in the text
+    # Look for lines that start with { or [ and attempt to parse from there
+    lines = content.split('\n')
+    for i, line in enumerate(lines):
+        line = line.strip()
+        if line.startswith(('{', '[')):
+            # Try to build JSON from this line onwards
+            remaining_content = '\n'.join(lines[i:])
+            for start_char in json_start_chars:
+                if line.startswith(start_char):
+                    try:
+                        json.loads(remaining_content)
+                        return remaining_content
+                    except json.JSONDecodeError:
+                        # Try just this line
+                        try:
+                            json.loads(line)
+                            return line
+                        except json.JSONDecodeError:
+                            continue
+    
+    # If all else fails, return the original content
+    return content
+
 def sanitize_json_string(raw_json: str) -> str:
     """
     Sanitize a JSON string by removing code blocks, extra whitespace, etc.
@@ -81,7 +161,10 @@ def sanitize_json_string(raw_json: str) -> str:
     Returns:
         A cleaned JSON string ready for parsing.
     """
-    sanitized_content = raw_json.strip()
+    # First, try to extract JSON from thinking model responses
+    content_with_json_extracted = extract_json_from_thinking_model_response(raw_json)
+    
+    sanitized_content = content_with_json_extracted.strip()
     if sanitized_content.startswith("```json"):
         sanitized_content = sanitized_content[len("```json"):].strip()
     if sanitized_content.startswith("```"):

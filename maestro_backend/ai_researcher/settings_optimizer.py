@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional, List
 from database.models import User
 from ai_researcher.agentic_layer.agent_controller import AgentController
 from ai_researcher.agentic_layer.context_manager import ContextManager
+from ai_researcher.agentic_layer.utils.json_utils import parse_llm_json_response
 from api.schemas import MissionSettings
 
 logger = logging.getLogger(__name__)
@@ -197,8 +198,8 @@ Critically analyze the provided `formatted_history` against these principles, wi
         
         if response and response.choices and response.choices[0].message.content:
             logger.info(f"AI returned raw parameters: {response.choices[0].message.content}")
-            # Parse the JSON response
-            params = json.loads(response.choices[0].message.content)
+            # Parse the JSON response using robust JSON utility
+            params = parse_llm_json_response(response.choices[0].message.content)
             # Ensure auto_optimize_params is set correctly
             params['auto_optimize_params'] = True
             return params

@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Optional
 from sqlalchemy.orm import Session
 
@@ -62,6 +63,8 @@ Examples of good writing titles:
 - "Technical Documentation"
 - "Essay Revision Help"
 
+IMPORTANT: Return ONLY the title text itself. Do NOT include formatting like "**Title:**", "Title:", or markdown. Do NOT include explanations or additional text.
+
 Title:"""
         else:
             return f"""You are a title generator for MAESTRO, an AI-powered research assistant that uses multiple specialized agents to conduct comprehensive research.
@@ -90,6 +93,8 @@ Examples of good research titles:
 - "Market Trends in Fintech"
 - "Python Performance Optimization"
 - "Healthcare AI Applications"
+
+IMPORTANT: Return ONLY the title text itself. Do NOT include formatting like "**Title:**", "Title:", or markdown. Do NOT include explanations or additional text.
 
 Title:"""
 
@@ -123,9 +128,14 @@ Title:"""
                 title = response.choices[0].message.content.strip()
                 
                 # Clean up the title
+                # Clean up common formatting patterns from thinking models
                 title = title.replace('"', '').replace("'", "")
-                if title.startswith("Title:"):
-                    title = title[6:].strip()
+                
+                # Remove markdown and label prefixes
+                title = re.sub(r'^\*\*Title:\*\*\s*', '', title, flags=re.IGNORECASE)
+                title = re.sub(r'^Title:\s*', '', title, flags=re.IGNORECASE)
+                title = re.sub(r'^\*\*.*?\*\*:\s*', '', title)  # Remove any **Label:** pattern
+                title = title.strip()
                 
                 # Ensure reasonable length
                 if len(title) > 60:

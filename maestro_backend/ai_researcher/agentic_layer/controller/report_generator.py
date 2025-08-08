@@ -128,6 +128,8 @@ Instructions:
 4. Match the title's tone to the inferred tone of the Original User Query and Goals.
 5. The title should be concise (ideally 5-15 words).
 6. Output ONLY the generated title text, with no extra formatting, quotes, or explanations.
+
+CRITICAL: Do NOT include formatting like "**Title:**", "Title:", markdown, or any prefixes. Return ONLY the plain title text itself.
 """
 
         generated_title = None
@@ -145,6 +147,13 @@ Instructions:
 
             if response and response.choices and response.choices[0].message.content:
                 generated_title = response.choices[0].message.content.strip().strip('"')  # Remove surrounding quotes if any
+                
+                # Clean up common formatting patterns from thinking models
+                generated_title = re.sub(r'^\*\*Title:\*\*\s*', '', generated_title, flags=re.IGNORECASE)
+                generated_title = re.sub(r'^Title:\s*', '', generated_title, flags=re.IGNORECASE)
+                generated_title = re.sub(r'^\*\*.*?\*\*:\s*', '', generated_title)  # Remove any **Label:** pattern
+                generated_title = generated_title.strip()
+                
                 if generated_title:
                     # Store the title in metadata
                     self.controller.context_manager.update_mission_metadata(mission_id, {"report_title": generated_title})

@@ -484,8 +484,8 @@ Example of a hierarchical outline and appropriate strategies:
                 logger.error(f"{self.agent_name}: Failed to get response from LLM for section strategy analysis.")
                 return
                 
-            # Parse the response
-            strategy_map = json.loads(llm_response.choices[0].message.content)
+            # Parse the response using the robust JSON utility
+            strategy_map = parse_llm_json_response(llm_response.choices[0].message.content)
             
             # Apply the strategies to the outline
             sections_updated = 0
