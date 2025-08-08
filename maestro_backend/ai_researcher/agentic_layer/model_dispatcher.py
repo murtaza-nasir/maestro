@@ -443,6 +443,22 @@ class ModelDispatcher:
         if response_format:
             request_params["response_format"] = response_format
 
+
+        # --- DEBUGGING ADDITION START ---
+        try:
+            logger.info("[DEBUG] Dispatch request parameters: "
+                         f"Provider={provider_name}, "
+                         f"BaseURL={getattr(client, 'base_url', None)}, "
+                         f"Model={selected_model_name}, "
+                         f"AgentMode={effective_agent_mode}, "
+                         f"MaxTokens={max_tokens_for_call}, "
+                         f"Temperature={temperature_for_call}, "
+                         f"MessagesCount={len(messages)}, "
+                         f"FirstMessagePreview={messages[0] if messages else None}")
+        except Exception as dbg_e:
+            logger.error(f"[DEBUG] Failed to log dispatch request params: {dbg_e}", exc_info=True)
+        # --- DEBUGGING ADDITION END ---
+
         for attempt in range(self.max_retries):
             try:
                 start_time = time.time()
