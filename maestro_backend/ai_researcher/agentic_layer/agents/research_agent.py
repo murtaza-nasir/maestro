@@ -156,9 +156,9 @@ If you DO NOT receive 'Focus Questions' but receive 'Existing Relevant Notes':
                           "source_id": original_id, # Store the base ID
                           "source_metadata": metadata_copy # Store relevant metadata copy
                      }
-            elif note.source_type == "internal" and "synthesized_from_notes" in note.source_metadata:
+            elif note.source_type == "internal" and hasattr(note.source_metadata, "synthesized_from_notes"):
                 # Follow the synthesis chain
-                for next_note_id in note.source_metadata.get("synthesized_from_notes", []):
+                for next_note_id in getattr(note.source_metadata, "synthesized_from_notes", None) or []:
                     if next_note_id not in processed_ids:
                         processed_ids.add(next_note_id)
                         queue.append(next_note_id)
@@ -770,6 +770,7 @@ Now, generate the questions for the provided research request.
                 response_format={"type": "json_object"},
                 log_queue=log_queue,
                 update_callback=update_callback,
+                log_llm_call=False # Disable duplicate LLM call logging since this is called by controller methods that already log
             )
 
             if response and response.choices and response.choices[0].message.content:
@@ -1066,7 +1067,8 @@ If no relevant sub-questions are identified, return an empty list for "sub_quest
                 agent_mode="research", # Use research model
                 response_format={"type": "json_object"}, # Request JSON output
                 log_queue=log_queue if 'log_queue' in locals() else None, # Pass log_queue for UI updates
-                update_callback=update_callback # <-- Pass the correct update_callback
+                update_callback=update_callback, # <-- Pass the correct update_callback
+                log_llm_call=False # Disable duplicate LLM call logging since explore_question is logged by the research manager
             )
             model_calls_list.append(synthesis_model_details)
 
@@ -1924,7 +1926,8 @@ Task: Extract all key information relevant to the section goal (and focus questi
                 agent_mode="research", # Use research model
                 log_queue=log_queue if 'log_queue' in locals() else None, # Pass log_queue for UI updates
                 update_callback=update_callback, # <-- Pass correct update_callback
-                model=model # <-- Pass the model parameter down
+                model=model, # <-- Pass the model parameter down
+                log_llm_call=False # Disable duplicate LLM call logging since this is an internal helper method
             )
             note_content = ""
             raw_llm_response_content = "" # <-- Add variable to store raw response

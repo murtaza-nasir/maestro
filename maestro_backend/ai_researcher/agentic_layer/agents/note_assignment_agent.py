@@ -118,7 +118,8 @@ class NoteAssignmentAgent(BaseAgent):
             agent_mode="note_assignment", # Use dedicated mode for note assignment
             response_format={"type": "json_object"}, # Pass response_format directly
             log_queue=log_queue, # Pass log_queue for UI updates
-            update_callback=update_callback # Pass update_callback for UI updates
+            update_callback=update_callback, # Pass update_callback for UI updates
+            log_llm_call=False # Disable duplicate LLM call logging since the overall operation is logged by the research manager
             # history=... if needed,
             # agent_scratchpad is not directly handled by _call_llm, manage separately if needed
         )

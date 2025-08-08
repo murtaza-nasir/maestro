@@ -61,6 +61,7 @@ class BaseAgent(ABC):
         agent_mode: Optional[str] = None, # <-- Add agent_mode parameter
         log_queue: Optional[Any] = None, # <-- Add log_queue parameter for UI updates
         update_callback: Optional[Any] = None, # <-- Add update_callback parameter for UI updates
+        log_llm_call: bool = True, # <-- Add parameter to control LLM call logging
         **kwargs: Any # Accept arbitrary keyword arguments
     ) -> Tuple[Optional[Any], Optional[Dict[str, Any]]]: # Return type: (ChatCompletion, model_details_dict) or (None, None)
         """
@@ -97,32 +98,33 @@ class BaseAgent(ABC):
                 **kwargs # Pass any extra arguments (like max_tokens, temperature)
             )
 
-            # --- ADD LOGGING FOR ALL LLM CALLS ---
-            log_status = "success" if response and response.choices else "failure"
-            output_summary = "No response"
-            if log_status == "success":
-                try:
-                    output_summary = f"Response received. Choice 0: {response.choices[0].message.content[:100]}..."
-                except Exception:
-                    output_summary = "Response received, but summary failed."
+            # --- ADD CONDITIONAL LOGGING FOR LLM CALLS ---
+            if log_llm_call:
+                log_status = "success" if response and response.choices else "failure"
+                output_summary = "No response"
+                if log_status == "success":
+                    try:
+                        output_summary = f"Response received. Choice 0: {response.choices[0].message.content[:100]}..."
+                    except Exception:
+                        output_summary = "Response received, but summary failed."
 
-            context_manager = None
-            if hasattr(self, 'controller') and self.controller and hasattr(self.controller, 'context_manager'):
-                context_manager = self.controller.context_manager
+                context_manager = None
+                if hasattr(self, 'controller') and self.controller and hasattr(self.controller, 'context_manager'):
+                    context_manager = self.controller.context_manager
 
-            if context_manager and mission_id and log_queue and update_callback:
-                context_manager.log_execution_step(
-                    mission_id=mission_id,
-                    agent_name=self.agent_name,
-                    action=f"LLM Call ({agent_mode or 'general'})",
-                    input_summary=f"Prompt: {user_prompt[:150]}...",
-                    output_summary=output_summary,
-                    status=log_status,
-                    model_details=model_call_details,
-                    log_queue=log_queue,
-                    update_callback=update_callback
-                )
-            # --- END LOGGING ---
+                if context_manager and mission_id and log_queue and update_callback:
+                    context_manager.log_execution_step(
+                        mission_id=mission_id,
+                        agent_name=self.agent_name,
+                        action=f"LLM Call ({agent_mode or 'general'})",
+                        input_summary=f"Prompt: {user_prompt[:150]}...",
+                        output_summary=output_summary,
+                        status=log_status,
+                        model_details=model_call_details,
+                        log_queue=log_queue,
+                        update_callback=update_callback
+                    )
+            # --- END CONDITIONAL LOGGING ---
 
             # Update mission stats if model_call_details is available
             # This ensures all agents update stats after LLM calls
@@ -148,25 +150,26 @@ class BaseAgent(ABC):
             # Consider logging the full traceback here
             # import traceback
             # traceback.print_exc()
-            # --- ADD ERROR LOGGING ---
-            context_manager = None
-            if hasattr(self, 'controller') and self.controller and hasattr(self.controller, 'context_manager'):
-                context_manager = self.controller.context_manager
-            mission_id = getattr(self, 'mission_id', None)
+            # --- ADD CONDITIONAL ERROR LOGGING ---
+            if log_llm_call:
+                context_manager = None
+                if hasattr(self, 'controller') and self.controller and hasattr(self.controller, 'context_manager'):
+                    context_manager = self.controller.context_manager
+                mission_id = getattr(self, 'mission_id', None)
 
-            if context_manager and mission_id and log_queue and update_callback:
-                context_manager.log_execution_step(
-                    mission_id=mission_id,
-                    agent_name=self.agent_name,
-                    action=f"LLM Call ({agent_mode or 'general'})",
-                    input_summary=f"Prompt: {user_prompt[:150]}...",
-                    output_summary=f"Error: {e}",
-                    status="failure",
-                    error_message=str(e),
-                    log_queue=log_queue,
-                    update_callback=update_callback
-                )
-            # --- END ERROR LOGGING ---
+                if context_manager and mission_id and log_queue and update_callback:
+                    context_manager.log_execution_step(
+                        mission_id=mission_id,
+                        agent_name=self.agent_name,
+                        action=f"LLM Call ({agent_mode or 'general'})",
+                        input_summary=f"Prompt: {user_prompt[:150]}...",
+                        output_summary=f"Error: {e}",
+                        status="failure",
+                        error_message=str(e),
+                        log_queue=log_queue,
+                        update_callback=update_callback
+                    )
+            # --- END CONDITIONAL ERROR LOGGING ---
             return None, None # Return None for both parts of the tuple on error
 
     async def _execute_tool(

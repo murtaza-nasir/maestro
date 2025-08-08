@@ -184,9 +184,9 @@ class WritingAgent(BaseAgent):
         for doc_id, source_notes in notes_by_source.items():
             # Try to get consistent metadata from the first note of the group
             first_note = source_notes[0]
-            title = first_note.source_metadata.get('title', 'Unknown Title')
-            year = first_note.source_metadata.get('publication_year', 'N/A') # Corrected key
-            authors = first_note.source_metadata.get('authors', 'Unknown Authors')
+            title = getattr(first_note.source_metadata, 'title', None) or 'Unknown Title'
+            year = getattr(first_note.source_metadata, 'publication_year', None) or 'N/A' # Corrected key
+            authors = getattr(first_note.source_metadata, 'authors', None) or 'Unknown Authors'
             source_header = f"### Source Document: {doc_id} (Title: {title}, Year: {year}, Authors: {authors})\n"
             formatted_text += source_header
             for note in source_notes:
@@ -247,14 +247,14 @@ class WritingAgent(BaseAgent):
 
             # --- Determine Header based on source_type ---
             if source_type == "document":
-                 title = first_note.source_metadata.get('title', 'Unknown Title')
-                 year = first_note.source_metadata.get('publication_year', 'N/A')
-                 authors = first_note.source_metadata.get('authors', 'Unknown Authors')
+                 title = getattr(first_note.source_metadata, 'title', None) or 'Unknown Title'
+                 year = getattr(first_note.source_metadata, 'publication_year', None) or 'N/A'
+                 authors = getattr(first_note.source_metadata, 'authors', None) or 'Unknown Authors'
                  source_header = f"### Source Document: {doc_id_for_citation} (Title: {title}, Year: {year}, Authors: {authors})\n"
                  source_header += f"**Use `[{doc_id_for_citation}]` for citations from this document.**\n\n"
             elif source_type == "web":
-                 title = first_note.source_metadata.get('title', 'Unknown Title')
-                 url = first_note.source_metadata.get('url', source_id) # Use metadata URL if available
+                 title = getattr(first_note.source_metadata, 'title', None) or 'Unknown Title'
+                 url = getattr(first_note.source_metadata, 'url', None) or source_id # Use metadata URL if available
                  # For web sources, the doc_id for citation IS the URL
                  source_header = f"### Web Source: {url} (Title: {title})\n"
                  # Instruct LLM to use URL as citation ID for web sources? Or stick to doc_id format?
@@ -287,7 +287,7 @@ class WritingAgent(BaseAgent):
             formatted_text += f"### Synthesized Information (Note ID: {note.note_id})\n"
             formatted_text += f"- Content: {note.content}\n"
 
-            aggregated_sources = note.source_metadata.get("aggregated_original_sources", [])
+            aggregated_sources = getattr(note.source_metadata, "aggregated_original_sources", None) or []
             if aggregated_sources:
                 formatted_text += "- **Derived from Original Sources:**\n"
                 for agg_source in aggregated_sources:
@@ -317,7 +317,7 @@ class WritingAgent(BaseAgent):
             else:
                  # This case might occur if the internal note was created before the aggregation logic was added,
                  # or if the trace-back failed.
-                 parent_ids = note.source_metadata.get("synthesized_from_notes", [])
+                 parent_ids = getattr(note.source_metadata, "synthesized_from_notes", None) or []
                  formatted_text += f"- **Origin:** Synthesized from notes: {parent_ids}. Original sources could not be traced.\n"
                  formatted_text += "  **WARNING: Cannot generate specific citation placeholders for this synthesized content.**\n"
 
@@ -496,7 +496,8 @@ class WritingAgent(BaseAgent):
             agent_mode="writing", # <-- Pass agent_mode
             log_queue=log_queue, # Pass log_queue for UI updates
             update_callback=update_callback, # Pass update_callback for UI updates
-            model=model # <-- Pass the model parameter down
+            model=model, # <-- Pass the model parameter down
+            log_llm_call=False # Disable duplicate LLM call logging since writing operations are logged by higher-level methods
             # Temperature is handled by the ModelDispatcher based on model defaults/config
             # No specific response format needed, expect raw text
         )
@@ -642,7 +643,8 @@ class WritingAgent(BaseAgent):
                 agent_mode="writing", # Use writing mode
                 log_queue=log_queue,
                 update_callback=update_callback,
-                model=model # Pass optional model override
+                model=model, # Pass optional model override
+                log_llm_call=False # Disable duplicate LLM call logging since synthesis operations are logged by higher-level methods
             )
 
             if llm_response and llm_response.choices and llm_response.choices[0].message.content:

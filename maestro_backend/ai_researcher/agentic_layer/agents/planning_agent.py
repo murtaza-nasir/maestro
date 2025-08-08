@@ -314,7 +314,8 @@ Planning Guidelines:
             response_format=response_format_pydantic,
             agent_mode="planning", # <-- Pass agent_mode
             log_queue=log_queue, # Pass log_queue for UI updates
-            update_callback=update_callback # Pass update_callback for UI updates
+            update_callback=update_callback, # Pass update_callback for UI updates
+            log_llm_call=False # Disable duplicate LLM call logging since planning operations are logged by the research manager
             # max_tokens is now handled by ModelDispatcher based on agent_mode ('planning')
             # Use the planning model specified during init or the default planning model
         )
