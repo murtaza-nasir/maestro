@@ -78,6 +78,7 @@ class SearchSettings(BaseModel):
     tavily_api_key: Optional[str] = None
     linkup_api_key: Optional[str] = None
     searxng_base_url: Optional[str] = None
+    searxng_categories: Optional[str] = None
 
 class ResearchParameters(BaseModel):
     initial_research_max_depth: int

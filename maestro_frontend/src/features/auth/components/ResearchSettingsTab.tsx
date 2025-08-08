@@ -60,14 +60,14 @@ const ResearchParameterInput: React.FC<ResearchParameterInputProps> = ({
           {label}
         </Label>
         <div className="flex items-center gap-2">
-          <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-md font-mono">
+          <span className="text-xs badge-default px-1.5 py-0.5 rounded-md font-mono">
             {defaultValue}
           </span>
           {isModified && (
             <Button
               variant="ghost"
               size="icon"
-              className="h-4 w-4 text-gray-500 hover:text-gray-800"
+              className="h-4 w-4 text-interactive"
               onClick={() => onReset(field)}
             >
               <X className="h-3 w-3" />
@@ -83,10 +83,10 @@ const ResearchParameterInput: React.FC<ResearchParameterInputProps> = ({
         value={value}
         onChange={(e) => onChange(field, e.target.value)}
         onBlur={(e) => onBlur(field, e.target.value)}
-        className={`h-8 text-sm ${isModified ? 'border-blue-400 bg-blue-50 ring-1 ring-blue-200' : 'border-gray-200'}`}
+        className={`h-8 text-sm ${isModified ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/20 ring-1 ring-blue-200 dark:ring-blue-700' : 'border-gray-200 dark:border-gray-600'}`}
         disabled={disabled}
       />
-      <p className="text-xs text-gray-500">{description}</p>
+      <p className="text-xs text-muted-foreground-foreground">{description}</p>
     </div>
   )
 }
@@ -172,14 +172,14 @@ export const ResearchSettingsTab: React.FC = () => {
         </CardHeader>
         <CardContent className="space-y-4">
           {/* AI-Powered Configuration */}
-          <Card className="p-3 bg-gradient-to-r from-purple-50 via-fuchsia-50 to-rose-50 border-purple-200">
+          <Card className="p-3 bg-gradient-to-r from-purple-50 via-fuchsia-50 to-rose-50 dark:from-purple-900/20 dark:via-fuchsia-900/20 dark:to-rose-900/20 border-purple-200 dark:border-purple-700">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold flex items-center gap-2">
                   <Bot className="h-4 w-4" />
                   AI-Powered Configuration
                 </h3>
-                <p className="text-xs text-gray-600">Let an AI agent dynamically optimize parameters based on your request.</p>
+                <p className="text-xs text-muted-foreground-foreground">Let an AI agent dynamically optimize parameters based on your request.</p>
               </div>
               <Switch
                 checked={isAutoOptimizeEnabled}
@@ -361,23 +361,23 @@ export const ResearchSettingsTab: React.FC = () => {
                 />
               </div>
               <div className="mt-4 pt-3 border-t">
-                <div className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                <div className="flex items-center justify-between p-2 bg-muted rounded-lg">
                   <div className="flex-1">
                     <Label htmlFor="skip-final-replanning" className="text-sm font-medium flex items-center gap-2">
                       Skip Final Replanning
-                      <Info className="h-3 w-3 text-gray-400" />
+                      <Info className="h-3 w-3 text-muted-foreground" />
                     </Label>
-                    <p className="text-xs text-gray-500">Skip final replanning for faster completion</p>
+                    <p className="text-xs text-muted-foreground">Skip final replanning for faster completion</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-md font-mono">
+                    <span className="text-xs badge-default px-1.5 py-0.5 rounded-md font-mono">
                       {DEFAULT_RESEARCH_PARAMS.skip_final_replanning ? 'ON' : 'OFF'}
                     </span>
                     {params.skip_final_replanning !== DEFAULT_RESEARCH_PARAMS.skip_final_replanning && (
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-4 w-4 text-gray-500 hover:text-gray-800"
+                        className="h-4 w-4 text-interactive"
                         onClick={() => handleResetParameter('skip_final_replanning')}
                         disabled={isAutoOptimizeEnabled}
                       >

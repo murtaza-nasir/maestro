@@ -23,7 +23,6 @@ import {
   UserX, 
   UserCheck,
   Loader2,
-  AlertTriangle
 } from 'lucide-react';
 
 interface User {
@@ -242,28 +241,28 @@ export const AdminSettingsTab: React.FC = () => {
     }
   };
 
-  const saveSystemSettings = async () => {
-    try {
-      await apiClient.put('/api/admin/settings', systemSettings, {
-        headers: {
-          'X-CSRF-Token': getCsrfToken()
-        }
-      });
+  // const saveSystemSettings = async () => {
+  //   try {
+  //     await apiClient.put('/api/admin/settings', systemSettings, {
+  //       headers: {
+  //         'X-CSRF-Token': getCsrfToken()
+  //       }
+  //     });
       
-      addToast({
-        type: 'success',
-        title: 'Success',
-        message: 'System settings saved successfully'
-      });
-    } catch (error) {
-      console.error('Failed to save system settings:', error);
-      addToast({
-        type: 'error',
-        title: 'Error',
-        message: 'Failed to save system settings'
-      });
-    }
-  };
+  //     addToast({
+  //       type: 'success',
+  //       title: 'Success',
+  //       message: 'System settings saved successfully'
+  //     });
+  //   } catch (error) {
+  //     console.error('Failed to save system settings:', error);
+  //     addToast({
+  //       type: 'error',
+  //       title: 'Error',
+  //       message: 'Failed to save system settings'
+  //     });
+  //   }
+  // };
 
   if (loading) {
     return (
@@ -286,7 +285,7 @@ export const AdminSettingsTab: React.FC = () => {
         </CardHeader>
         <CardContent>
           <div className="flex justify-between items-center mb-4">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-muted-foreground">
               Manage user accounts, roles, and permissions
             </p>
             <Button onClick={() => setShowCreateUser(true)} className="flex items-center gap-2">
@@ -333,9 +332,9 @@ export const AdminSettingsTab: React.FC = () => {
                       {user.is_admin ? (
                         <ShieldCheck className="h-4 w-4 text-blue-500" />
                       ) : (
-                        <Shield className="h-4 w-4 text-gray-400" />
+                        <Shield className="h-4 w-4 text-muted" />
                       )}
-                      <span className={user.is_admin ? 'text-blue-600' : 'text-gray-600'}>
+                      <span className={user.is_admin ? 'text-blue-600' : 'text-muted-foreground'}>
                         {user.is_admin ? 'Admin' : 'User'}
                       </span>
                     </div>
@@ -392,7 +391,7 @@ export const AdminSettingsTab: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <Label htmlFor="registration-toggle">Enable New User Registration</Label>
-              <p className="text-sm text-gray-600">Allow new users to register accounts</p>
+              <p className="text-sm text-muted-foreground">Allow new users to register accounts</p>
             </div>
             <Switch
               id="registration-toggle"
@@ -401,19 +400,6 @@ export const AdminSettingsTab: React.FC = () => {
                 setSystemSettings(prev => ({ ...prev, registration_enabled: checked }))
               }
             />
-          </div>
-
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md flex-1 mr-4">
-              <AlertTriangle className="h-4 w-4 text-yellow-600" />
-              <span className="text-sm text-yellow-800">
-                Additional system configuration options will be implemented in a future update.
-              </span>
-            </div>
-            <Button onClick={saveSystemSettings} className="flex items-center gap-2">
-              <Settings className="h-4 w-4" />
-              Save Settings
-            </Button>
           </div>
         </CardContent>
       </Card>

@@ -382,7 +382,7 @@ export const AISettingsTab: React.FC = () => {
           <div className="flex items-center justify-between">
             <div className="space-y-1">
               <Label className="text-sm font-medium">Advanced Mode</Label>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 Configure individual providers and API keys for each model type
               </p>
             </div>
@@ -395,7 +395,7 @@ export const AISettingsTab: React.FC = () => {
               {draftSettings.ai_endpoints.advanced_mode ? (
                 <ToggleRight className="h-5 w-5 text-blue-600" />
               ) : (
-                <ToggleLeft className="h-5 w-5 text-gray-400" />
+                <ToggleLeft className="h-5 w-5 text-muted" />
               )}
             </Button>
           </div>
@@ -436,7 +436,7 @@ export const AISettingsTab: React.FC = () => {
 
                 {enabledProvider === 'openrouter' && (
                   <div className="space-y-3 pl-3 border-l-2 border-blue-200 bg-blue-50/30 rounded-r-lg p-3">
-                    <p className="text-xs text-gray-600 mb-2">
+                    <p className="text-xs text-muted-foreground mb-2">
                       Access to 100+ models including GPT-4, Claude, and more.
                     </p>
                     <div className="grid grid-cols-1 gap-3">
@@ -477,7 +477,7 @@ export const AISettingsTab: React.FC = () => {
                         />
                       </div>
                     </div>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-muted-foreground">
                       Get your API key from{' '}
                       <a 
                         href="https://openrouter.ai/keys" 
@@ -493,7 +493,7 @@ export const AISettingsTab: React.FC = () => {
 
                 {enabledProvider === 'openai' && (
                   <div className="space-y-3 pl-3 border-l-2 border-green-200 bg-green-50/30 rounded-r-lg p-3">
-                    <p className="text-xs text-gray-600 mb-2">
+                    <p className="text-xs text-muted-foreground mb-2">
                       Direct access to OpenAI models like GPT-4 and GPT-3.5.
                     </p>
                     <div className="grid grid-cols-1 gap-3">
@@ -534,7 +534,7 @@ export const AISettingsTab: React.FC = () => {
                         />
                       </div>
                     </div>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-muted-foreground">
                       Get your API key from{' '}
                       <a 
                         href="https://platform.openai.com/api-keys" 
@@ -550,7 +550,7 @@ export const AISettingsTab: React.FC = () => {
 
                 {enabledProvider === 'custom' && (
                   <div className="space-y-3 pl-3 border-l-2 border-purple-200 bg-purple-50/30 rounded-r-lg p-3">
-                    <p className="text-xs text-gray-600 mb-2">
+                    <p className="text-xs text-muted-foreground mb-2">
                       Configure a custom OpenAI-compatible endpoint.
                     </p>
                     <div className="grid grid-cols-1 gap-3">
@@ -670,7 +670,7 @@ export const AISettingsTab: React.FC = () => {
                         options={getModelsForSimpleMode()}
                         placeholder="Quick responses"
                       />
-                      <p className="text-xs text-gray-500">For rapid, simple tasks</p>
+                      <p className="text-xs text-muted-foreground-foreground">For rapid, simple tasks</p>
                     </div>
 
                     <div className="space-y-1.5">
@@ -683,7 +683,7 @@ export const AISettingsTab: React.FC = () => {
                         onValueChange={(value) => handleModelChange('mid', value)}
                         options={getModelsForSimpleMode()}
                       />
-                      <p className="text-xs text-gray-500">For balanced performance</p>
+                      <p className="text-xs text-muted-foreground">For balanced performance</p>
                     </div>
 
                     <div className="space-y-1.5">
@@ -696,7 +696,7 @@ export const AISettingsTab: React.FC = () => {
                         onValueChange={(value) => handleModelChange('intelligent', value)}
                         options={getModelsForSimpleMode()}
                       />
-                      <p className="text-xs text-gray-500">For complex analysis</p>
+                      <p className="text-xs text-muted-foreground">For complex analysis</p>
                     </div>
 
                     <div className="space-y-1.5">
@@ -709,7 +709,7 @@ export const AISettingsTab: React.FC = () => {
                         onValueChange={(value) => handleModelChange('verifier', value)}
                         options={getModelsForSimpleMode()}
                       />
-                      <p className="text-xs text-gray-500">For verification tasks</p>
+                      <p className="text-xs text-muted-foreground">For verification tasks</p>
                     </div>
                   </div>
                 </>

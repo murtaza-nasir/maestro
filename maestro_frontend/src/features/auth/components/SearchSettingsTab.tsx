@@ -124,7 +124,7 @@ export const SearchSettingsTab: React.FC = () => {
 
             {draftSettings.search.provider === 'tavily' && (
               <div className="space-y-3 pl-3 border-l-2 border-blue-200 bg-blue-50/30 rounded-r-lg p-3">
-                <p className="text-xs text-gray-600 mb-2">
+                <p className="text-xs text-muted-foreground-foreground mb-2">
                   AI-powered search with real-time web data and citations.
                 </p>
                 <div className="space-y-1.5">
@@ -138,7 +138,7 @@ export const SearchSettingsTab: React.FC = () => {
                     className="h-8 text-sm"
                   />
                 </div>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   Get your API key from{' '}
                   <a 
                     href="https://app.tavily.com/home" 
@@ -154,7 +154,7 @@ export const SearchSettingsTab: React.FC = () => {
 
             {draftSettings.search.provider === 'linkup' && (
               <div className="space-y-3 pl-3 border-l-2 border-green-200 bg-green-50/30 rounded-r-lg p-3">
-                <p className="text-xs text-gray-600 mb-2">
+                <p className="text-xs text-muted-foreground-foreground mb-2">
                   Real-time search API with comprehensive web coverage.
                 </p>
                 <div className="space-y-1.5">
@@ -168,7 +168,7 @@ export const SearchSettingsTab: React.FC = () => {
                     className="h-8 text-sm"
                   />
                 </div>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   Get your API key from{' '}
                   <a 
                     href="https://linkup.com/dashboard" 
@@ -184,7 +184,7 @@ export const SearchSettingsTab: React.FC = () => {
 
             {draftSettings.search.provider === 'searxng' && (
               <div className="space-y-3 pl-3 border-l-2 border-purple-200 bg-purple-50/30 rounded-r-lg p-3">
-                <p className="text-xs text-gray-600 mb-2">
+                <p className="text-xs text-muted-foreground-foreground mb-2">
                   Open-source metasearch engine that aggregates results from multiple search engines.
                 </p>
                 <div className="space-y-1.5">
@@ -213,7 +213,7 @@ export const SearchSettingsTab: React.FC = () => {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent className="w-full p-0" align="start">
                         <div className="p-3">
-                          <p className="text-xs text-gray-600 mb-3">
+                          <p className="text-xs text-muted-foreground-foreground mb-3">
                             Select one or more categories for search results:
                           </p>
                           <div className="space-y-2">
@@ -248,7 +248,7 @@ export const SearchSettingsTab: React.FC = () => {
                     </DropdownMenu>
                   </div>
                 </div>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   Enter the URL of your SearXNG instance. You can use a public instance or{' '}
                   <a 
                     href="https://docs.searxng.org/" 
@@ -278,9 +278,9 @@ export const SearchSettingsTab: React.FC = () => {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="flex items-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-            <Construction className="h-4 w-4 text-gray-500 mr-2" />
-            <div className="text-sm text-gray-600 dark:text-gray-400">
+          <div className="flex items-center p-3 bg-muted rounded-lg">
+            <Construction className="h-4 w-4 text-muted mr-2" />
+            <div className="text-sm text-muted-foreground">
               Advanced search configuration options will be available in future updates.
             </div>
           </div>

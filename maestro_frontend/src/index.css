@@ -25,8 +25,8 @@
   --accent-foreground: 222.2 47.4% 11.2%;
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 210 40% 98%;
-  --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
+  --border: 214.3 31.8% 70%;
+  --input: 214.3 31.8% 70%;
   --ring: 222.2 84% 4.9%;
   --radius: 0.5rem;
   
@@ -66,7 +66,7 @@
   --secondary: 218 10% 18%; /* Warm medium gray */
   --secondary-foreground: 220 9% 85%;
   --muted: 218 8% 20%; /* Slightly lighter muted surface */
-  --muted-foreground: 220 9% 65%;
+  --muted-foreground: 220 9% 75%;
   
   /* Accent colors - soft sage green */
   --accent: 150 15% 65%; /* Muted sage green */
@@ -92,6 +92,114 @@
   --tab-trigger-active-background: 218 11% 20%; /* Active tab slightly lighter */
   --tab-trigger-hover-background: 218 10% 22%; /* Hover state */
 }
+}
+
+/* Semantic text color classes */
+@layer components {
+  .text-primary {
+    color: hsl(var(--text-primary));
+  }
+  
+  .text-secondary {
+    color: hsl(var(--text-secondary));
+  }
+  
+  .text-tertiary {
+    color: hsl(var(--text-tertiary));
+  }
+  
+  .text-muted {
+    color: hsl(var(--muted-foreground));
+  }
+  
+  .bg-muted {
+    background-color: hsl(var(--muted));
+  }
+  
+  .bg-secondary {
+    background-color: hsl(var(--secondary));
+  }
+  
+  /* Default badge styling */
+  .badge-default {
+    background-color: hsl(var(--muted));
+    color: hsl(var(--muted-foreground));
+  }
+  
+  /* Interactive elements */
+  .text-interactive {
+    color: hsl(var(--muted-foreground));
+    transition: color 0.2s ease-in-out;
+  }
+  
+  .text-interactive:hover {
+    color: hsl(var(--foreground));
+  }
+  
+  /* Enhanced input styling for better contrast in light mode */
+  input[type="text"], 
+  input[type="email"], 
+  input[type="password"], 
+  input[type="number"], 
+  input[type="url"], 
+  textarea, 
+  select {
+    border: 1.5px solid hsl(var(--border));
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+    transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+  }
+  
+  input[type="text"]:focus, 
+  input[type="email"]:focus, 
+  input[type="password"]:focus, 
+  input[type="number"]:focus, 
+  input[type="url"]:focus, 
+  textarea:focus, 
+  select:focus {
+    border-color: hsl(var(--ring));
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 0 0 3px hsl(var(--ring) / 0.1);
+    outline: none;
+  }
+  
+  /* Enhanced button styling */
+  button {
+    transition: all 0.2s ease-in-out;
+  }
+  
+  /* Outline button styling */
+  button[data-variant="outline"] {
+    border: 1.5px solid hsl(var(--border));
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  }
+  
+  button[data-variant="outline"]:hover {
+    border-color: hsl(var(--ring));
+    box-shadow: 0 2px 4px 0 rgb(0 0 0 / 0.1);
+  }
+  
+  /* Force input backgrounds to be white with visible borders in light mode ONLY */
+  html:not(.dark) input[class*="bg-background"],
+  html:not(.dark) .bg-background input,
+  html:not(.dark) input.bg-background {
+    background-color: white !important;
+    border: 1.5px solid hsl(var(--input)) !important;
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1) !important;
+  }
+  
+  html:not(.dark) input[class*="bg-background"]:focus,
+  html:not(.dark) .bg-background input:focus,
+  html:not(.dark) input.bg-background:focus {
+    border-color: hsl(var(--ring)) !important;
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 0 0 3px hsl(var(--ring) / 0.1) !important;
+  }
+  
+  /* Ensure dark mode inputs keep their proper dark backgrounds */
+  html.dark input[class*="bg-background"],
+  html.dark .bg-background input,
+  html.dark input.bg-background {
+    background-color: hsl(var(--input)) !important;
+    border: 1.5px solid hsl(var(--border)) !important;
+  }
 }
 
 @layer base {
