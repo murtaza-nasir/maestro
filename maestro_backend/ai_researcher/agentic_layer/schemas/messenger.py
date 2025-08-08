@@ -1,5 +1,5 @@
-from typing import Optional, List, Literal
-from pydantic import BaseModel, Field
+from typing import Optional, List, Literal, ClassVar
+from pydantic import BaseModel, Field, ConfigDict
 
 # Define the possible intents for the messenger agent
 IntentType = Literal["start_research", "refine_questions", "refine_goal", "approve_questions", "chat"] # Added refine_goal
@@ -26,6 +26,8 @@ class MessengerResponse(BaseModel):
     thoughts: str = Field(
         description="The agent's analysis and reasoning about the user's message (not shown to user)"
     )
+    
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra='forbid')
 
 class ChatMessage(BaseModel):
     """
@@ -41,6 +43,8 @@ class ChatMessage(BaseModel):
         None,
         description="The timestamp of when the message was sent (optional)"
     )
+    
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra='forbid')
 
 class ChatHistory(BaseModel):
     """
@@ -54,3 +58,5 @@ class ChatHistory(BaseModel):
         None,
         description="The ID of the associated research mission, if any"
     )
+    
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra='forbid')

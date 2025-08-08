@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, ClassVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 def generate_uuid():
@@ -23,7 +23,7 @@ class ThoughtEntry(BaseModel):
     agent_name: str = Field(..., description="Name of the agent that generated the thought.")
     content: str = Field(..., description="The concise content of the thought.")
 
-    class Config:
-        # Example for potential future use if needed with ORMs etc.
-        # from_attributes = True
-        pass
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra='forbid')  # Prevent additionalProperties and replace legacy Config
+    # Removed old Pydantic v1 Config to avoid conflict with model_config
+    # class Config:
+    #     pass

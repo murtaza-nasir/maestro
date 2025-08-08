@@ -1,8 +1,8 @@
 # ai_researcher/agentic_layer/schemas/goal.py
 import uuid
 import datetime
-from typing import Literal, Optional
-from pydantic import BaseModel, Field
+from typing import Literal, Optional, ClassVar
+from pydantic import BaseModel, Field, ConfigDict
 
 class GoalEntry(BaseModel):
     """Represents a single goal or guiding thought within the mission's goal pad."""
@@ -13,7 +13,4 @@ class GoalEntry(BaseModel):
     timestamp: datetime.datetime = Field(default_factory=datetime.datetime.now, description="Timestamp when the goal was created.")
     # parent_goal_id: Optional[str] = Field(None, description="ID of the parent goal if this is a sub-goal (optional).")
 
-    class Config:
-        # Example configuration if needed, e.g., for ORM mode or extra fields
-        # from_attributes = True
-        pass
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra='forbid')

@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional, Literal
+from pydantic import BaseModel, Field, ConfigDict
+from typing import List, Dict, Any, Optional, Literal, ClassVar
 
 # Define the types of modifications the Reflection Agent can suggest
 OutlineModificationType = Literal[
@@ -11,34 +11,67 @@ OutlineModificationType = Literal[
     "SPLIT_SECTION" # Split one section into multiple
 ]
 
+class ModificationDetails(BaseModel):
+    """Structured details for outline modifications."""
+    section_id: Optional[str] = Field(None, description="ID of the section to modify")
+    new_title: Optional[str] = Field(None, description="New title for the section")
+    new_topic: Optional[str] = Field(None, description="New topic description")
+    after_section_id: Optional[str] = Field(None, description="ID of section to add after")
+    section_id_to_remove: Optional[str] = Field(None, description="ID of section to remove")
+    target_order: Optional[List[str]] = Field(None, description="Target order for sections")
+    merge_into_section_id: Optional[str] = Field(None, description="ID of section to merge into")
+    split_into_titles: Optional[List[str]] = Field(None, description="Titles for split sections")
+    
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra='forbid', json_schema_extra={
+        "required": [
+            "section_id",
+            "new_title", 
+            "new_topic",
+            "after_section_id",
+            "section_id_to_remove",
+            "target_order",
+            "merge_into_section_id",
+            "split_into_titles"
+        ]
+    })
+
 class OutlineModification(BaseModel):
     """
     Represents a single proposed modification to the research outline.
     """
     modification_type: OutlineModificationType = Field(..., description="The type of change proposed.")
-    details: Dict[str, Any] = Field(..., description="Specific parameters for the modification (e.g., section IDs, new titles, topics, target order).")
+    details: ModificationDetails = Field(...)  # Remove description to avoid $ref conflict
     reasoning: str = Field(..., description="Explanation from the agent on why this modification is suggested.")
 
-    class Config:
-        schema_extra = {
-            "examples": [
-                {
-                    "modification_type": "ADD_SECTION",
-                    "details": {"new_title": "Ethical Considerations", "topic": "Discuss potential ethical issues arising from the findings.", "after_section_id": "sec_discussion"},
-                    "reasoning": "Emerging theme in notes suggests ethical implications need dedicated discussion."
-                },
-                {
-                    "modification_type": "REMOVE_SECTION",
-                    "details": {"section_id_to_remove": "sec_background_history"},
-                    "reasoning": "Notes indicate minimal relevant information found, and topic overlaps heavily with Introduction."
-                },
-                 {
-                    "modification_type": "REFRAME_SECTION_TOPIC",
-                    "details": {"section_id": "sec_results_a", "new_topic": "Focus specifically on quantitative results for metric X.", "new_title": "Quantitative Analysis of Metric X"},
-                    "reasoning": "Initial topic was too broad; notes primarily support analysis of metric X."
-                }
-            ]
-        }
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra='forbid', json_schema_extra={
+        "required": [
+            "modification_type",
+            "details",
+            "reasoning"
+        ]
+    })  # Prevent additionalProperties and replace legacy Config
+    # Removed old Pydantic v1 Config to avoid conflict with model_config
+    # schema_extra preserved for schema examples if needed
+    # class Config:
+    #     schema_extra = {
+    #         "examples": [
+    #             {
+    #                 "modification_type": "ADD_SECTION",
+    #                 "details": {"new_title": "Ethical Considerations", "topic": "Discuss potential ethical issues arising from the findings.", "after_section_id": "sec_discussion"},
+    #                 "reasoning": "Emerging theme in notes suggests ethical implications need dedicated discussion."
+    #             },
+    #             {
+    #                 "modification_type": "REMOVE_SECTION",
+    #                 "details": {"section_id_to_remove": "sec_background_history"},
+    #                 "reasoning": "Notes indicate minimal relevant information found, and topic overlaps heavily with Introduction."
+    #             },
+    #              {
+    #                 "modification_type": "REFRAME_SECTION_TOPIC",
+    #                 "details": {"section_id": "sec_results_a", "new_topic": "Focus specifically on quantitative results for metric X.", "new_title": "Quantitative Analysis of Metric X"},
+    #                 "reasoning": "Initial topic was too broad; notes primarily support analysis of metric X."
+    #             }
+    #         ]
+    #     }
 
 class SuggestedSubsectionTopic(BaseModel):
     """Represents a suggested topic for a potential new subsection based on analyzed notes."""
@@ -47,6 +80,15 @@ class SuggestedSubsectionTopic(BaseModel):
     description: str = Field(..., description="A brief description of the specific topic this potential subsection should cover.")
     relevant_note_ids: List[str] = Field(default_factory=list, description="IDs of existing notes that are highly relevant to this suggested topic.")
     reasoning: str = Field(..., description="Why this topic is being suggested as a potential subsection (e.g., 'Notes cover distinct subtopic X').")
+    
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra='forbid', json_schema_extra={
+        "required": [
+            "title",
+            "description",
+            "relevant_note_ids",
+            "reasoning"
+        ]
+    })
 
 class ReflectionOutput(BaseModel):
     """
@@ -68,28 +110,42 @@ class ReflectionOutput(BaseModel):
     generated_thought: Optional[str] = Field(None, description="A concise thought or reminder generated by the agent to be added to the thought_pad.")
     # --- End added field ---
 
-    class Config:
-        schema_extra = {
-            "example": {
-                "overall_assessment": "Notes for section 'sec_compass_method' cover the core algorithm but lack detail on parameter tuning and comparison setup mentioned in the goal. Note N5 contradicts N2 regarding data preprocessing.",
-                "new_questions": [
-                    "What are the recommended parameter ranges for the COMPASS algorithm based on the original paper?",
-                    "How was the dataset preprocessed before applying COMPASS in source X?",
-                    "Clarify the discrepancy in preprocessing steps between Note N5 and Note N2."
-                ],
-                "suggested_subsection_topics": [ # Updated field name and structure
-                    {
-                        # No subsection_id here
-                        "title": "Parameter Tuning",
-                        "description": "Focus on the selection and impact of different parameters for the COMPASS method.",
-                        "relevant_note_ids": ["N7", "N8"],
-                        "reasoning": "Sufficient notes exist on parameters to warrant suggesting this as a potential subsection."
-                    }
-                ],
-                "proposed_modifications": [], # No changes to overall outline structure proposed this cycle
-                "sections_needing_review": [], # Current section needs more detail via new_questions, not a full re-run yet
-                "critical_issues_summary": "Contradiction identified in data preprocessing steps between notes N5 and N2.",
-                "discard_note_ids": ["N10", "N15"], # Example: Suggest discarding these notes
-                "generated_thought": "Parameter tuning for COMPASS algorithm needs deeper investigation; contradictory preprocessing methods identified."
-            }
-        }
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra='forbid', json_schema_extra={
+        "required": [
+            "overall_assessment",
+            "new_questions",
+            "suggested_subsection_topics",
+            "proposed_modifications", 
+            "sections_needing_review",
+            "critical_issues_summary",
+            "discard_note_ids",
+            "generated_thought"
+        ]
+    })  # Prevent additionalProperties and replace legacy Config
+    # Removed old Pydantic v1 Config to avoid conflict with model_config
+    # schema_extra preserved for schema example if needed
+    # class Config:
+    #     schema_extra = {
+    #         "example": {
+    #             "overall_assessment": "Notes for section 'sec_compass_method' cover the core algorithm but lack detail on parameter tuning and comparison setup mentioned in the goal. Note N5 contradicts N2 regarding data preprocessing.",
+    #             "new_questions": [
+    #                 "What are the recommended parameter ranges for the COMPASS algorithm based on the original paper?",
+    #                 "How was the dataset preprocessed before applying COMPASS in source X?",
+    #                 "Clarify the discrepancy in preprocessing steps between Note N5 and Note N2."
+    #             ],
+    #             "suggested_subsection_topics": [ # Updated field name and structure
+    #                 {
+    #                     # No subsection_id here
+    #                     "title": "Parameter Tuning",
+    #                     "description": "Focus on the selection and impact of different parameters for the COMPASS method.",
+    #                     "relevant_note_ids": ["N7", "N8"],
+    #                     "reasoning": "Sufficient notes exist on parameters to warrant suggesting this as a potential subsection."
+    #                 }
+    #             ],
+    #             "proposed_modifications": [], # No changes to overall outline structure proposed this cycle
+    #             "sections_needing_review": [], # Current section needs more detail via new_questions, not a full re-run yet
+    #             "critical_issues_summary": "Contradiction identified in data preprocessing steps between notes N5 and N2.",
+    #             "discard_note_ids": ["N10", "N15"], # Example: Suggest discarding these notes
+    #             "generated_thought": "Parameter tuning for COMPASS algorithm needs deeper investigation; contradictory preprocessing methods identified."
+    #         }
+    #     }
