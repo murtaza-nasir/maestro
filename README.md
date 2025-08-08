@@ -346,6 +346,37 @@ MAESTRO is built on a modern, decoupled architecture:
 
 MAESTRO can be configured for a completely self-hosted environment. It supports local, OpenAI-compatible API models, allowing you to run your own LLMs. For web searches, it integrates with **SearXNG**, a private and hackable metasearch engine, ensuring that your entire research workflow can remain on your own hardware.
 
+#### SearXNG Configuration
+
+If you choose to use SearXNG as your search provider, ensure your SearXNG instance is properly configured:
+
+**Required Configuration:**
+- Your SearXNG instance must support JSON output format
+- Add `-json` to the `format` section in your SearXNG settings after `-html`
+
+**Example SearXNG settings.yml configuration:**
+```yaml
+search:
+  format:
+    - html
+    - json  # <- This line is required for MAESTRO integration
+```
+
+**Available Search Categories:**
+MAESTRO supports the following SearXNG categories, which you can configure in the Settings > Search section:
+- General (default)
+- Science
+- IT
+- News  
+- Images
+- Videos
+- Music
+- Files
+- Map
+- Social Media
+
+You can select multiple categories to refine your search results based on your research needs.
+
 For advanced users and administrators, a powerful **Command Line Interface (CLI)** is available for bulk document ingestion, user management, and other administrative tasks.
 
 #### CLI Usage

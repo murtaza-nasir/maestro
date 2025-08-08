@@ -34,6 +34,7 @@ export interface SearchSettings {
   tavily_api_key: string | null
   linkup_api_key: string | null
   searxng_base_url: string | null
+  searxng_categories: string | null
 }
 
 export interface ResearchParameters {

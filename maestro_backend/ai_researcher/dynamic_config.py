@@ -138,6 +138,18 @@ def get_searxng_base_url(mission_id: Optional[str] = None) -> Optional[str]:
     # Fallback to environment variable
     return os.getenv("SEARXNG_BASE_URL")
 
+def get_searxng_categories(mission_id: Optional[str] = None) -> str:
+    """Get the SearXNG categories from user settings or environment."""
+    # Check user settings first
+    user_settings = get_user_settings()
+    if user_settings:
+        search_settings = user_settings.get("search", {})
+        if search_settings and search_settings.get("searxng_categories"):
+            return search_settings["searxng_categories"]
+    
+    # Fallback to environment variable
+    return os.getenv("SEARXNG_CATEGORIES", "general")
+
 # --- AI Provider Settings ---
 def get_ai_provider_config(provider_name: str, mission_id: Optional[str] = None) -> Dict[str, Any]:
     """Get AI provider configuration from user settings or environment."""

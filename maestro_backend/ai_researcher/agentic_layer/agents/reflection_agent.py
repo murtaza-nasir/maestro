@@ -145,38 +145,44 @@ You are a meticulous Research Analyst performing iterative refinement. Your task
 5.  **Suggest Broader Outline Changes (Consider between Research Rounds):** Based on the notes for *this section* AND the *overall outline context* AND the *Active Mission Goals*, if you identify a need for broader structural changes (e.g., a major theme emerging from this section's notes warrants a *new top-level section*, or this section's content strongly suggests *merging* with another existing section), suggest these using `proposed_modifications`. Clearly state the reasoning. Check the existing outline carefully before proposing additions/merges. Use this more judiciously than generating questions or suggesting subsections for the current section.
 6.  **Flag for Full Review (RARELY):** Only if the notes for *this section* are **completely irrelevant**, contain **irreparable contradictions**, are otherwise **critically unusable**, **or fundamentally misaligned with mission goals**, add the section ID to `sections_needing_review`. Do not use this for simple incompleteness.
 7.  **Identify Notes to Discard:** If any notes are clearly redundant (repeating information already present) or irrelevant (off-topic for the section goal **or mission goals**), list their IDs in `discard_note_ids`. Be conservative; only discard notes that add no value or actively detract.
-8.  **Scratchpad Update:** Provide a concise update for the 'Agent Scratchpad' summarizing your reflection on this section (e.g., "Identified 2 gaps for section X, proposed 3 questions aligned with tone goal, flagged 1 note for discard.").
-9.  **Generate Thought:** Based on your analysis, formulate a concise, focused thought (1-2 sentences) capturing a key insight, reminder, or focus point about the research direction for *this section* or the *overall mission* that would be valuable to remember. Populate the `generated_thought` field with this thought.
+8.  **Generate Thought:** Based on your analysis, formulate a concise, focused thought (1-2 sentences) capturing a key insight, reminder, or focus point about the research direction for *this section* or the *overall mission* that would be valuable to remember. Populate the `generated_thought` field with this thought.
 
 **Output Format:**
-Provide ONLY a single JSON object conforming EXACTLY to the ReflectionOutput schema below. Ensure all fields are present, using empty lists `[]` if no questions, suggestions, modifications, reviews, or discards are needed. Include the `scratchpad_update` and `generated_thought` fields. IMPORTANT: Never include null values in lists - if you have no items for a list field, use an empty list `[]` instead.
+Provide ONLY a single JSON object conforming EXACTLY to the ReflectionOutput schema below. Ensure all fields are present, using empty lists `[]` if no questions, suggestions, modifications, reviews, or discards are needed. IMPORTANT: Never include null values in lists - if you have no items for a list field, use an empty list `[]` instead.
+
+**PERMITTED FIELDS ONLY (DO NOT include any other fields):**
+- `overall_assessment` (string): Your detailed assessment 
+- `new_questions` (array of strings): Questions for next research iteration
+- `suggested_subsection_topics` (array of objects): Subsection suggestions with required fields: title, description, relevant_note_ids, reasoning
+- `proposed_modifications` (array of objects): Outline structure changes (use sparingly)  
+- `sections_needing_review` (array of strings): Section IDs needing full re-run
+- `critical_issues_summary` (string or null): Summary of critical issues
+- `discard_note_ids` (array of strings): Note IDs to discard
+- `generated_thought` (string or null): Your thought about research direction
 
 ```json
 {{
-  "overall_assessment": "string", // Your detailed assessment of the notes for THIS section.
-  "new_questions": ["string"], // List of specific, unnumbered questions for the next research iteration on THIS section.
-  "suggested_subsection_topics": [ // List of SUGGESTED topics for potential future subsections.
+  "overall_assessment": "string",
+  "new_questions": ["string"],
+  "suggested_subsection_topics": [
     {{
-      // "subsection_id" is NOT included here.
-      "title": "string", // REQUIRED: A concise title for the subsection
-      "description": "string", // REQUIRED: A brief description of what this subsection would cover
-      "relevant_note_ids": ["string"], // IDs of existing notes relevant to this topic.
-      "reasoning": "string" // REQUIRED: Why this topic should be a subsection
+      "title": "string",
+      "description": "string", 
+      "relevant_note_ids": ["string"],
+      "reasoning": "string"
     }}
-    // IMPORTANT: Each item MUST be a complete object with all required fields, NOT just a string
   ],
-  "proposed_modifications": [ // List of modifications to the OVERALL outline structure (use VERY sparingly).
+  "proposed_modifications": [
      {{
-       "modification_type": "ADD_SECTION | REMOVE_SECTION | ...",
+       "modification_type": "ADD_SECTION | REMOVE_SECTION | MERGE_SECTIONS | REORDER_SECTIONS | REFRAME_SECTION_TOPIC | SPLIT_SECTION",
        "details": {{}},
        "reasoning": "string"
      }}
   ],
-  "sections_needing_review": ["string"], // List of section IDs needing a full re-run.
-  "critical_issues_summary": "string | null", // Summary of critical issues found in THIS section's notes.
-  "discard_note_ids": ["string"], // List of Note IDs to discard (redundant/irrelevant).
-  "scratchpad_update": "string", // Concise summary of this reflection step for the scratchpad.
-  "generated_thought": "string | null" // Your concise thought about the research direction/focus.
+  "sections_needing_review": ["string"],
+  "critical_issues_summary": "string or null",
+  "discard_note_ids": ["string"],
+  "generated_thought": "string or null"
 }}
 ```
 
@@ -258,106 +264,133 @@ Provide ONLY a single JSON object conforming EXACTLY to the ReflectionOutput sch
             }
         }
 
+        # Add retry logic similar to other agents
+        max_retries = 3
         model_call_details = None
         response_model = None # Initialize response_model
-        try:
-            # Use the dispatch method - assuming it returns (response_object, details_dict)
-            response, model_call_details = await self.model_dispatcher.dispatch( # <-- Add await
-                messages=messages,
-                response_format=response_format_pydantic,
+        
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"ReflectionAgent attempt {attempt + 1}/{max_retries} for section {section_id}")
+                
+                # Use the dispatch method - assuming it returns (response_object, details_dict)
+                response, model_call_details = await self.model_dispatcher.dispatch( # <-- Add await
+                    messages=messages,
+                    response_format=response_format_pydantic,
                 model=self.model_name,
                 agent_mode="reflection", # <-- Pass agent_mode
                 log_queue=log_queue, # Pass log_queue for UI updates
                 update_callback=update_callback # Pass update_callback for UI updates
-            )
+                )
 
-            if response and response.choices and response.choices[0].message.content:
-                raw_json_output = response.choices[0].message.content
-                try:
-                    # Use the centralized JSON utilities to parse and prepare the response
+                if response and response.choices and response.choices[0].message.content:
                     raw_json_output = response.choices[0].message.content
-                    
-                    # Parse the JSON response
-                    parsed_data = parse_llm_json_response(raw_json_output)
-                    
-                    # Extract non-schema fields like scratchpad_update
-                    extra_fields = extract_non_schema_fields(parsed_data, ReflectionOutput)
-                    scratchpad_update = extra_fields.get("scratchpad_update")
-                    
-                    # Prepare the data for Pydantic validation
-                    prepared_data = prepare_for_pydantic_validation(parsed_data, ReflectionOutput)
-                    
-                    # Special handling for suggested_subsection_topics
-                    if 'suggested_subsection_topics' in prepared_data:
-                        # Filter out null values
-                        if prepared_data['suggested_subsection_topics'] is not None:
-                            prepared_data['suggested_subsection_topics'] = filter_null_values_from_list(prepared_data['suggested_subsection_topics'])
-                            logger.info(f"Filtered null values from suggested_subsection_topics, resulting in {len(prepared_data['suggested_subsection_topics'])} items")
+                    try:
+                        # Use the centralized JSON utilities to parse and prepare the response
+                        raw_json_output = response.choices[0].message.content
+                        
+                        # Parse the JSON response
+                        parsed_data = parse_llm_json_response(raw_json_output)
+                        
+                        # Extract non-schema fields like scratchpad_update
+                        extra_fields = extract_non_schema_fields(parsed_data, ReflectionOutput)
+                        scratchpad_update = extra_fields.get("scratchpad_update")
+                        
+                        # Prepare the data for Pydantic validation
+                        prepared_data = prepare_for_pydantic_validation(parsed_data, ReflectionOutput)
+                        
+                        # Special handling for suggested_subsection_topics
+                        if 'suggested_subsection_topics' in prepared_data:
+                            # Filter out null values
+                            if prepared_data['suggested_subsection_topics'] is not None:
+                                prepared_data['suggested_subsection_topics'] = filter_null_values_from_list(prepared_data['suggested_subsection_topics'])
+                                logger.info(f"Filtered null values from suggested_subsection_topics, resulting in {len(prepared_data['suggested_subsection_topics'])} items")
+                                
+                                # Check if the first item is a tuple (only if the list is not empty)
+                                if len(prepared_data['suggested_subsection_topics']) > 0 and isinstance(prepared_data['suggested_subsection_topics'][0], tuple):
+                                    # Flatten the tuple into individual items
+                                    prepared_data['suggested_subsection_topics'] = list(prepared_data['suggested_subsection_topics'][0])
+                                    logger.info("Flattened tuple in suggested_subsection_topics")
+                        
+                        # Log the parsed data structure for debugging
+                        logger.debug(f"Parsed data after processing: {json.dumps(prepared_data, indent=2)}")
+                        
+                        # Validate the rest of the data against the schema
+                        response_model = ReflectionOutput(**prepared_data)
+                        # If we successfully created response_model, break out of retry loop
+                        if response_model:
+                            break
                             
-                            # Check if the first item is a tuple (only if the list is not empty)
-                            if len(prepared_data['suggested_subsection_topics']) > 0 and isinstance(prepared_data['suggested_subsection_topics'][0], tuple):
-                                # Flatten the tuple into individual items
-                                prepared_data['suggested_subsection_topics'] = list(prepared_data['suggested_subsection_topics'][0])
-                                logger.info("Flattened tuple in suggested_subsection_topics")
-                    
-                    # Log the parsed data structure for debugging
-                    logger.debug(f"Parsed data after processing: {json.dumps(prepared_data, indent=2)}")
-                    
-                    # Validate the rest of the data against the schema
-                    response_model = ReflectionOutput(**prepared_data)
-                except (json.JSONDecodeError, ValidationError) as e:
-                    logger.error(f"Failed to parse/validate ReflectionOutput JSON for section {section_id}: {e}\nRaw output: {raw_json_output}", exc_info=True)
-                    
-                    # Enhanced debugging for validation errors
-                    if isinstance(e, ValidationError):
-                        logger.error("Validation error details:")
-                        for error in e.errors():
-                            logger.error(f"  Field: {error['loc']}, Error: {error['msg']}, Input: {error.get('input', 'N/A')}")
+                    except (json.JSONDecodeError, ValidationError) as e:
+                        logger.error(f"Attempt {attempt + 1}/{max_retries}: Failed to parse/validate ReflectionOutput JSON for section {section_id}: {e}\nRaw output: {raw_json_output}", exc_info=True)
+                        
+                        # Enhanced debugging for validation errors
+                        if isinstance(e, ValidationError):
+                            logger.error("Validation error details:")
+                            for error in e.errors():
+                                logger.error(f"  Field: {error['loc']}, Error: {error['msg']}, Input: {error.get('input', 'N/A')}")
+                                
+                                # If the error is in suggested_subsection_topics, log more details
+                                if error['loc'] and error['loc'][0] == 'suggested_subsection_topics':
+                                    if 'suggested_subsection_topics' in parsed_data:
+                                        logger.error(f"  suggested_subsection_topics content: {parsed_data['suggested_subsection_topics']}")
+                                        
+                                        # Log the type of each item
+                                        for i, topic in enumerate(parsed_data['suggested_subsection_topics']):
+                                            logger.error(f"  Item {i} type: {type(topic)}, Value: {topic}")
+                        
+                        # If this was the last attempt, return None
+                        if attempt == max_retries - 1:
+                            logger.error(f"All {max_retries} attempts failed for section {section_id}")
+                            return None, model_call_details, scratchpad_update
+                        else:
+                            logger.warning(f"Attempt {attempt + 1} failed, retrying...")
+                            continue
                             
-                            # If the error is in suggested_subsection_topics, log more details
-                            if error['loc'] and error['loc'][0] == 'suggested_subsection_topics':
-                                if 'suggested_subsection_topics' in parsed_data:
-                                    logger.error(f"  suggested_subsection_topics content: {parsed_data['suggested_subsection_topics']}")
-                                    
-                                    # Log the type of each item
-                                    for i, topic in enumerate(parsed_data['suggested_subsection_topics']):
-                                        logger.error(f"  Item {i} type: {type(topic)}, Value: {topic}")
+                else:
+                    logger.error(f"Attempt {attempt + 1}/{max_retries}: ReflectionAgent failed for section {section_id}: No valid response content received from model.")
+                    # If this was the last attempt, return None
+                    if attempt == max_retries - 1:
+                        logger.error(f"All {max_retries} attempts failed for section {section_id}")
+                        return None, model_call_details, scratchpad_update
+                    else:
+                        logger.warning(f"Attempt {attempt + 1} failed, retrying...")
+                        continue
                     
-                    # Return details even on parse error, scratchpad_update might be None here
-                    return None, model_call_details, scratchpad_update # Return scratchpad_update (which might be None)
-            else:
-                logger.error(f"ReflectionAgent failed for section {section_id}: No valid response content received from model.")
-                # Return details even on empty response
-                return None, model_call_details, scratchpad_update # Return scratchpad_update (which might be None)
+            except Exception as e:
+                logger.error(f"Attempt {attempt + 1}/{max_retries}: Error during ReflectionAgent execution for section {section_id}: {e}", exc_info=True)
+                # If this was the last attempt, return None
+                if attempt == max_retries - 1:
+                    logger.error(f"All {max_retries} attempts failed for section {section_id}")
+                    return None, model_call_details, scratchpad_update
+                else:
+                    logger.warning(f"Attempt {attempt + 1} failed, retrying...")
+                    continue
+        
+        # Handle successful response outside the retry loop
+        if response_model:
+            # --- Force sections_needing_review to be empty ---
+            if response_model.sections_needing_review:
+                logger.warning(f"LLM suggested sections for review: {response_model.sections_needing_review}. Overriding to empty list.")
+                response_model.sections_needing_review = []
+            # --- End override ---
 
-            if response_model:
-                # --- Force sections_needing_review to be empty ---
-                if response_model.sections_needing_review:
-                    logger.warning(f"LLM suggested sections for review: {response_model.sections_needing_review}. Overriding to empty list.")
-                    response_model.sections_needing_review = []
-                # --- End override ---
-
-                logger.info(f"ReflectionAgent completed successfully for section {section_id}.")
-                # Log key decisions from the updated schema
-                logger.info(f"  Assessment: {response_model.overall_assessment[:100]}...")
-                logger.info(f"  New Questions: {len(response_model.new_questions)}")
-                logger.info(f"  Suggested Subsection Topics: {len(response_model.suggested_subsection_topics)}") # Updated field name
-                logger.info(f"  Proposed Modifications: {len(response_model.proposed_modifications)}")
-                logger.info(f"  Sections Needing Review: {response_model.sections_needing_review}")
-                logger.info(f"  Critical Issues: {bool(response_model.critical_issues_summary)}")
-                # --- Log discarded notes ---
-                logger.info(f"  Notes Suggested for Discard: {len(response_model.discard_note_ids)}")
-                if response_model.discard_note_ids:
-                    logger.info(f"    Discard IDs: {response_model.discard_note_ids}")
-                # --- End log discarded notes ---
-                logger.info(f"  Scratchpad Update: {scratchpad_update}")
-                return response_model, model_call_details, scratchpad_update
-            else:
-                # This case might be redundant now but kept for safety
-                logger.error(f"ReflectionAgent failed: Could not create response model for section {section_id}.")
-                return None, model_call_details, scratchpad_update # Return scratchpad_update (which might be None)
-
-        except Exception as e:
-            logger.error(f"Error during ReflectionAgent execution for section {section_id}: {e}", exc_info=True)
-            # Return details even on outer exception
-            return None, model_call_details, scratchpad_update # Return scratchpad_update (which might be None)
+            logger.info(f"ReflectionAgent completed successfully for section {section_id}.")
+            # Log key decisions from the updated schema
+            logger.info(f"  Assessment: {response_model.overall_assessment[:100]}...")
+            logger.info(f"  New Questions: {len(response_model.new_questions)}")
+            logger.info(f"  Suggested Subsection Topics: {len(response_model.suggested_subsection_topics)}") # Updated field name
+            logger.info(f"  Proposed Modifications: {len(response_model.proposed_modifications)}")
+            logger.info(f"  Sections Needing Review: {response_model.sections_needing_review}")
+            logger.info(f"  Critical Issues: {bool(response_model.critical_issues_summary)}")
+            # --- Log discarded notes ---
+            logger.info(f"  Notes Suggested for Discard: {len(response_model.discard_note_ids)}")
+            if response_model.discard_note_ids:
+                logger.info(f"    Discard IDs: {response_model.discard_note_ids}")
+            # --- End log discarded notes ---
+            logger.info(f"  Scratchpad Update: {scratchpad_update}")
+            return response_model, model_call_details, scratchpad_update
+        else:
+            # This case means all retries failed
+            logger.error(f"ReflectionAgent failed: Could not create response model for section {section_id} after {max_retries} attempts.")
+            return None, model_call_details, scratchpad_update

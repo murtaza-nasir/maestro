@@ -35,6 +35,7 @@ interface SearchSettings {
   tavily_api_key: string | null
   linkup_api_key: string | null
   searxng_base_url: string | null
+  searxng_categories: string | null
 }
 
 export interface ResearchParameters {
@@ -214,7 +215,8 @@ const defaultSettings: UserSettings = {
     provider: 'linkup',
     tavily_api_key: null,
     linkup_api_key: null,
-    searxng_base_url: null
+    searxng_base_url: null,
+    searxng_categories: null
   },
   research_parameters: {
     initial_research_max_depth: 2,

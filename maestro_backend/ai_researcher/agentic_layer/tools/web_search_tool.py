@@ -6,7 +6,7 @@ from typing import List, Dict, Any, Optional, Callable
 
 # Import dynamic config to access user-specific provider settings
 from ai_researcher.dynamic_config import (
-    get_web_search_provider, get_tavily_api_key, get_linkup_api_key, get_searxng_base_url
+    get_web_search_provider, get_tavily_api_key, get_linkup_api_key, get_searxng_base_url, get_searxng_categories
 )
 
 logger = logging.getLogger(__name__)
@@ -203,11 +203,12 @@ class WebSearchTool:
             elif self.provider == "searxng":
                 # SearXNG search using requests
                 search_url = f"{self.client}/search"
+                categories = get_searxng_categories()
                 params = {
                     'q': search_query,
                     'format': 'json',
                     'engines': 'google,bing,duckduckgo',  # Use multiple engines for better results
-                    'categories': 'general',
+                    'categories': categories,
                     'safesearch': '1'
                 }
                 

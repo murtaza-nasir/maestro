@@ -365,13 +365,41 @@ CRITICAL: Do NOT include formatting like "**Title:**", "Title:", markdown, or an
                     source_type = metadata_note.source_type
                     metadata = metadata_note.source_metadata
 
-                    if source_type == "document" and 'overlapping_chunks' in metadata and metadata['overlapping_chunks']:
-                        # Document Source Handling
-                        chunk_metadata = metadata['overlapping_chunks'][0]
-                        title = chunk_metadata.get('title')  # Get raw value or None
-                        year = chunk_metadata.get('publication_year')  # Get raw value or None
-                        authors = chunk_metadata.get('authors')  # Get raw value or None
-                        journal = chunk_metadata.get('journal_or_source')  # Extract journal
+                    logger.debug(f"Processing doc_id '{doc_id}': source_type='{source_type}', metadata keys: {list(metadata.dict().keys()) if hasattr(metadata, 'dict') else list(metadata.keys() if isinstance(metadata, dict) else 'Not a dict')}")
+
+                    # Handle different metadata structure - check if it's a Pydantic model or dict
+                    metadata_dict = metadata.dict() if hasattr(metadata, 'dict') else metadata
+                    
+                    if source_type == "document":
+                        # Document Source Handling - try overlapping_chunks first, then fallback
+                        title = None
+                        year = None
+                        authors = None
+                        journal = None
+                        
+                        if 'overlapping_chunks' in metadata_dict and metadata_dict['overlapping_chunks']:
+                            # Extract from overlapping_chunks metadata
+                            chunk_metadata = metadata_dict['overlapping_chunks'][0]
+                            title = chunk_metadata.get('title')
+                            year = chunk_metadata.get('publication_year')
+                            authors = chunk_metadata.get('authors')
+                            journal = chunk_metadata.get('journal_or_source')
+                            
+                            logger.debug(f"Document metadata from overlapping_chunks for '{doc_id}': title='{title}', authors='{authors}', year='{year}', journal='{journal}'")
+                        else:
+                            # Fallback: try to extract from top-level metadata fields
+                            logger.warning(f"Document '{doc_id}' missing or empty overlapping_chunks metadata. Trying fallback extraction.")
+                            
+                            title = metadata_dict.get('title') or metadata_dict.get('original_filename', f'Document {doc_id}')
+                            year = metadata_dict.get('publication_year') or metadata_dict.get('year')
+                            authors = metadata_dict.get('authors')
+                            journal = metadata_dict.get('journal_or_source')
+                            
+                            # Remove file extension from title if it's a filename
+                            if title and title.endswith('.pdf'):
+                                title = title[:-4]
+                            
+                            logger.debug(f"Document fallback metadata for '{doc_id}': title='{title}', authors='{authors}', year='{year}', journal='{journal}'")
 
                         # Process authors only if available and not the default placeholder
                         authors_str = None
@@ -421,8 +449,8 @@ CRITICAL: Do NOT include formatting like "**Title:**", "Title:", markdown, or an
 
                     elif source_type == "web":
                         # Web Source Handling
-                        title = metadata.get('title', 'Unknown Title')
-                        url = metadata.get('url', doc_id)  # Use doc_id (which should be URL hash or similar) as fallback
+                        title = metadata_dict.get('title', 'Unknown Title')
+                        url = metadata_dict.get('url', doc_id)  # Use doc_id (which should be URL hash or similar) as fallback
 
                         # Get timestamp from the Note object itself
                         access_timestamp = metadata_note.created_at
@@ -443,10 +471,10 @@ CRITICAL: Do NOT include formatting like "**Title:**", "Title:", markdown, or an
                         # Extract metadata fields similar to document sources
                         # The metadata here comes from the Note's source_metadata,
                         # which should now contain the output from MetadataExtractor
-                        web_title = metadata.get('title', 'Unknown Title')
-                        web_year = metadata.get('publication_year')  # Get raw value or None
-                        web_authors = metadata.get('authors')  # Get raw value or None
-                        web_source_name = metadata.get('journal_or_source')  # e.g., website name
+                        web_title = metadata_dict.get('title', 'Unknown Title')
+                        web_year = metadata_dict.get('publication_year')  # Get raw value or None
+                        web_authors = metadata_dict.get('authors')  # Get raw value or None
+                        web_source_name = metadata_dict.get('journal_or_source')  # e.g., website name
 
                         # Process authors (similar to document handling)
                         web_authors_str = None
@@ -496,7 +524,7 @@ CRITICAL: Do NOT include formatting like "**Title:**", "Title:", markdown, or an
                     elif source_type == "internal":
                         # Internal/Synthesized Note Handling (Optional)
                         # Decide how to represent these if they are ever cited directly
-                        ref_entry = f"{citation_counter}. Internal Synthesis ({doc_id}). Based on notes: {metadata.get('synthesized_from_notes', [])}"
+                        ref_entry = f"{citation_counter}. Internal Synthesis ({doc_id}). Based on notes: {metadata_dict.get('synthesized_from_notes', [])}"
                         logger.warning(f"Cited an internal note '{doc_id}'. Representation may need refinement.")
 
                     else:

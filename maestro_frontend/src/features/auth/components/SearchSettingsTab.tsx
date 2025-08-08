@@ -5,7 +5,24 @@ import { Input } from '../../../components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card'
 import { Label } from '../../../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select'
-import { Globe, Settings, Construction } from 'lucide-react'
+import { Globe, Settings, Construction, ChevronDown } from 'lucide-react'
+import { Button } from '../../../components/ui/button'
+import { Checkbox } from '../../../components/ui/checkbox'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../../../components/ui/dropdown-menu'
+
+// SearXNG category options
+const SEARXNG_CATEGORIES = [
+  { value: 'general', label: 'General' },
+  { value: 'images', label: 'Images' },
+  { value: 'videos', label: 'Videos' },
+  { value: 'news', label: 'News' },
+  { value: 'map', label: 'Map' },
+  { value: 'music', label: 'Music' },
+  { value: 'it', label: 'IT' },
+  { value: 'science', label: 'Science' },
+  { value: 'files', label: 'Files' },
+  { value: 'social media', label: 'Social Media' }
+]
 
 export const SearchSettingsTab: React.FC = () => {
   const { draftSettings, setDraftSettings } = useSettingsStore()
@@ -30,6 +47,44 @@ export const SearchSettingsTab: React.FC = () => {
     }
     
     setDraftSettings({ search: newSearch })
+  }
+
+  const handleCategoriesChange = (categoryValue: string, checked: boolean) => {
+    if (!draftSettings) return
+    
+    const currentCategories = draftSettings.search.searxng_categories || 'general'
+    const categoriesArray = currentCategories.split(',').map(c => c.trim()).filter(c => c)
+    
+    let newCategoriesArray
+    if (checked) {
+      newCategoriesArray = [...categoriesArray.filter(c => c !== categoryValue), categoryValue]
+    } else {
+      newCategoriesArray = categoriesArray.filter(c => c !== categoryValue)
+    }
+    
+    // Ensure at least one category is selected
+    if (newCategoriesArray.length === 0) {
+      newCategoriesArray = ['general']
+    }
+    
+    const newSearch = {
+      ...draftSettings.search,
+      searxng_categories: newCategoriesArray.join(',')
+    }
+    
+    setDraftSettings({ search: newSearch })
+  }
+
+  const getSelectedCategories = (): string[] => {
+    if (!draftSettings?.search?.searxng_categories) return ['general']
+    return draftSettings.search.searxng_categories.split(',').map(c => c.trim()).filter(c => c)
+  }
+
+  const getSelectedCategoriesDisplay = (): string => {
+    const selected = getSelectedCategories()
+    if (selected.length === 0) return 'Select categories'
+    if (selected.length === 1) return SEARXNG_CATEGORIES.find(c => c.value === selected[0])?.label || selected[0]
+    return `${selected.length} categories selected`
   }
 
   if (!draftSettings) {
@@ -143,6 +198,56 @@ export const SearchSettingsTab: React.FC = () => {
                     className="h-8 text-sm"
                   />
                 </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Search Categories</Label>
+                  <div className="relative">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className="h-8 w-full justify-between text-sm"
+                        >
+                          {getSelectedCategoriesDisplay()}
+                          <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-full p-0" align="start">
+                        <div className="p-3">
+                          <p className="text-xs text-gray-600 mb-3">
+                            Select one or more categories for search results:
+                          </p>
+                          <div className="space-y-2">
+                            {SEARXNG_CATEGORIES.map((category) => {
+                              const isSelected = getSelectedCategories().includes(category.value)
+                              return (
+                                <DropdownMenuItem
+                                  key={category.value}
+                                  className="flex items-center space-x-2 cursor-pointer"
+                                  onClick={(e) => {
+                                    e.preventDefault()
+                                    handleCategoriesChange(category.value, !isSelected)
+                                  }}
+                                >
+                                  <Checkbox
+                                    id={`category-${category.value}`}
+                                    checked={isSelected}
+                                    onCheckedChange={() => {}} // Prevent direct checkbox interaction since clicking the item handles it
+                                  />
+                                  <Label
+                                    htmlFor={`category-${category.value}`}
+                                    className="text-sm font-normal cursor-pointer"
+                                  >
+                                    {category.label}
+                                  </Label>
+                                </DropdownMenuItem>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
                 <p className="text-xs text-gray-500">
                   Enter the URL of your SearXNG instance. You can use a public instance or{' '}
                   <a 
@@ -153,6 +258,8 @@ export const SearchSettingsTab: React.FC = () => {
                   >
                     deploy your own
                   </a>
+                  <br />
+                  <strong>Note:</strong> Your SearXNG instance must be configured to output JSON format.
                 </p>
               </div>
             )}
