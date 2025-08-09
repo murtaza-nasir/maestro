@@ -41,11 +41,11 @@ export $(grep -v '^#' .env | xargs)
 
 # Start services
 echo "🐳 Starting Docker services..."
-docker-compose $COMPOSE_FILES up -d
+docker compose $COMPOSE_FILES up -d
 
 # Check if services are running
 sleep 5
-if docker-compose ps | grep -q "Up"; then
+if docker compose ps | grep -q "Up"; then
     echo "✅ Maestro is running!"
     echo ""
     echo "📍 Access points:"
@@ -54,6 +54,6 @@ if docker-compose ps | grep -q "Up"; then
     echo ""
     echo "📊 GPU Status: ${GPU_AVAILABLE}"
 else
-    echo "❌ Failed to start services. Check logs with: docker-compose logs"
+    echo "❌ Failed to start services. Check logs with: docker compose logs"
     exit 1
 fi

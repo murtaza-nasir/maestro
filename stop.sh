@@ -14,6 +14,6 @@ else
 fi
 
 # Stop services
-docker-compose $COMPOSE_FILES down
+docker compose $COMPOSE_FILES down
 
 echo "✅ Maestro stopped."

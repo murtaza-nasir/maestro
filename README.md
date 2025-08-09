@@ -327,7 +327,7 @@ GPU_AVAILABLE=true
 docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi
 
 # View service logs
-docker-compose logs backend
+docker compose logs backend
 ```
 
 > **Windows Users**: For detailed Windows setup instructions, troubleshooting, and CLI usage, see [WINDOWS_SETUP.md](./WINDOWS_SETUP.md).

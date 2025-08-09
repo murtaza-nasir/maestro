@@ -72,7 +72,7 @@ fi
 if ! docker ps -a --format '{{.Names}}' | grep -q '^maestro-backend$'; then
     echo -e "${RED}Error: maestro-backend container not found${NC}"
     echo "Please ensure the Maestro application is deployed with:"
-    echo "  docker-compose up -d"
+    echo "  docker compose up -d"
     exit 1
 fi
 
@@ -127,8 +127,8 @@ if [ "$STATS" = false ] && [ "$CHECK" = false ]; then
     echo
     echo -e "${CYAN}Next steps:${NC}"
     echo "1. Restart the Docker containers:"
-    echo "   docker-compose down"
-    echo "   docker-compose up -d"
+    echo "   docker compose down"
+    echo "   docker compose up -d"
     echo "2. Re-upload any documents you need"
     echo "3. Documents will be processed and synchronized across all databases"
 fi
