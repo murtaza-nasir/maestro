@@ -35,6 +35,10 @@
   --header-background: 210 40% 96.1%;
   --stats-background: 210 40% 99%;
   
+  /* Code block colors for light mode */
+  --code-background: 210 40% 96.1%;
+  --code-foreground: 222.2 84% 4.9%;
+  
   /* Tab styling */
   --tab-list-background: 210 40% 96.1%;
   --tab-trigger-background: transparent;
@@ -86,6 +90,10 @@
   --header-background: 218 11% 14%; /* Subtle header distinction */
   --stats-background: 218 11% 17%; /* Stats panel background */
   
+  /* Code block colors for dark mode */
+  --code-background: 220 13% 12%; /* Darker background for code blocks */
+  --code-foreground: 220 9% 85%; /* Soft light text */
+  
   /* Tab styling - cohesive with overall theme */
   --tab-list-background: 218 10% 16%;
   --tab-trigger-background: transparent;
@@ -118,6 +126,25 @@
   
   .bg-secondary {
     background-color: hsl(var(--secondary));
+  }
+  
+  /* Code block styling utilities */
+  .bg-code-background {
+    background-color: hsl(var(--code-background));
+  }
+  
+  .text-code-foreground {
+    color: hsl(var(--code-foreground));
+  }
+  
+  /* Inline code styling */
+  .inline-code {
+    background-color: hsl(var(--code-background)) !important;
+    color: hsl(var(--code-foreground)) !important;
+    padding: 0.125rem 0.25rem !important;
+    border-radius: 0.25rem !important;
+    font-size: 0.6875rem !important;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace !important;
   }
   
   /* Default badge styling */
@@ -294,13 +321,17 @@
   }
 
   .prose code {
-    @apply bg-gray-200 text-gray-800 rounded px-1 py-0.5;
+    background-color: hsl(var(--code-background));
+    color: hsl(var(--code-foreground));
+    @apply rounded px-1 py-0.5;
     font-size: 0.6875rem; /* 11px */
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
   }
 
   .prose pre {
-    @apply bg-gray-800 text-gray-100 rounded-md p-3;
+    background-color: hsl(var(--code-background));
+    color: hsl(var(--code-foreground));
+    @apply rounded-md p-3;
     font-size: 0.6875rem; /* 11px */
     line-height: 1.4;
     margin-top: 0.5rem;
@@ -317,13 +348,13 @@
   }
 
   .dark .prose code {
-    background: hsl(218 8% 25%); /* Muted dark background */
-    color: hsl(150 15% 75%); /* Soft sage green text */
+    background-color: hsl(var(--code-background));
+    color: hsl(var(--code-foreground));
   }
 
   .dark .prose pre {
-    background: hsl(220 13% 12%); /* Darker background for code blocks */
-    color: hsl(220 9% 85%); /* Soft light text */
+    background-color: hsl(var(--code-background));
+    color: hsl(var(--code-foreground));
   }
 
   .dark .prose blockquote {
@@ -438,6 +469,8 @@
   --border: 220 20% 88%; /* light blue border */
   --input: 220 10% 99%; /* white input background */
   --ring: 220 70% 55%; /* blue focus ring */
+  --code-background: 220 15% 94%;
+  --code-foreground: 220 70% 25%;
   --sidebar-background: 220 15% 96%;
   --header-background: 220 15% 96%;
   --stats-background: 220 10% 99%;
@@ -461,6 +494,8 @@
   --border: 150 20% 88%; /* light green border */
   --input: 150 10% 99%; /* white input background */
   --ring: 150 60% 45%; /* emerald focus ring */
+  --code-background: 150 15% 94%;
+  --code-foreground: 150 60% 20%;
   --sidebar-background: 150 15% 96%;
   --header-background: 150 15% 96%;
   --stats-background: 150 10% 99%;
@@ -484,6 +519,8 @@
   --border: 270 20% 88%; /* light purple border */
   --input: 270 10% 99%; /* white input background */
   --ring: 270 60% 55%; /* purple focus ring */
+  --code-background: 270 15% 94%;
+  --code-foreground: 270 60% 25%;
   --sidebar-background: 270 15% 96%;
   --header-background: 270 15% 96%;
   --stats-background: 270 10% 99%;
@@ -507,6 +544,8 @@
   --border: 350 20% 88%; /* light rose border */
   --input: 350 10% 99%; /* white input background */
   --ring: 350 70% 55%; /* rose focus ring */
+  --code-background: 350 15% 94%;
+  --code-foreground: 350 70% 25%;
   --sidebar-background: 350 15% 96%;
   --header-background: 350 15% 96%;
   --stats-background: 350 10% 99%;
@@ -530,6 +569,8 @@
   --border: 45 20% 88%; /* light amber border */
   --input: 45 10% 99%; /* white input background */
   --ring: 45 90% 50%; /* amber focus ring */
+  --code-background: 45 15% 94%;
+  --code-foreground: 45 90% 25%;
   --sidebar-background: 45 15% 96%;
   --header-background: 45 15% 96%;
   --stats-background: 45 10% 99%;
@@ -553,6 +594,8 @@
   --border: 180 20% 88%; /* light teal border */
   --input: 180 10% 99%; /* white input background */
   --ring: 180 60% 45%; /* teal focus ring */
+  --code-background: 180 15% 94%;
+  --code-foreground: 180 60% 20%;
   --sidebar-background: 180 15% 96%;
   --header-background: 180 15% 96%;
   --stats-background: 180 10% 99%;
@@ -577,6 +620,8 @@
   --border: 220 8% 25%; /* visible blue border */
   --input: 220 8% 18%; /* dark blue input background */
   --ring: 220 50% 70%; /* blue focus ring */
+  --code-background: 220 15% 12%;
+  --code-foreground: 220 50% 85%;
   --sidebar-background: 220 10% 16%;
   --header-background: 220 12% 14%;
   --stats-background: 220 10% 17%;
@@ -600,6 +645,8 @@
   --border: 150 8% 25%; /* visible emerald border */
   --input: 150 8% 18%; /* dark emerald input background */
   --ring: 150 50% 65%; /* emerald focus ring */
+  --code-background: 150 15% 12%;
+  --code-foreground: 150 50% 85%;
   --sidebar-background: 150 10% 16%;
   --header-background: 150 12% 14%;
   --stats-background: 150 10% 17%;
@@ -623,6 +670,8 @@
   --border: 270 8% 25%; /* visible purple border */
   --input: 270 8% 18%; /* dark purple input background */
   --ring: 270 50% 70%; /* purple focus ring */
+  --code-background: 270 15% 12%;
+  --code-foreground: 270 50% 85%;
   --sidebar-background: 270 10% 16%;
   --header-background: 270 12% 14%;
   --stats-background: 270 10% 17%;
@@ -646,6 +695,8 @@
   --border: 350 8% 25%; /* visible rose border */
   --input: 350 8% 18%; /* dark rose input background */
   --ring: 350 50% 70%; /* rose focus ring */
+  --code-background: 350 15% 12%;
+  --code-foreground: 350 50% 85%;
   --sidebar-background: 350 10% 16%;
   --header-background: 350 12% 14%;
   --stats-background: 350 10% 17%;
@@ -669,6 +720,8 @@
   --border: 45 8% 25%; /* visible amber border */
   --input: 45 8% 18%; /* dark amber input background */
   --ring: 45 70% 65%; /* amber focus ring */
+  --code-background: 45 15% 12%;
+  --code-foreground: 45 70% 85%;
   --sidebar-background: 45 10% 16%;
   --header-background: 45 12% 14%;
   --stats-background: 45 10% 17%;
@@ -692,6 +745,8 @@
   --border: 180 8% 25%; /* visible teal border */
   --input: 180 8% 18%; /* dark teal input background */
   --ring: 180 50% 65%; /* teal focus ring */
+  --code-background: 180 15% 12%;
+  --code-foreground: 180 50% 85%;
   --sidebar-background: 180 10% 16%;
   --header-background: 180 12% 14%;
   --stats-background: 180 10% 17%;

@@ -1,7 +1,6 @@
 import React, { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import rehypeRaw from 'rehype-raw'
 import { Copy, RotateCcw, Check, Bot, User, Trash2 } from 'lucide-react'
 import { formatChatMessageTime } from '../../../utils/timezone'
 import { SourceBubbles } from './SourceBubbles'
@@ -60,8 +59,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
 
   const isUserMessage = message.role === 'user'
 
-  // Parse content blocks and regular content
-  const { contentBlocks, regularContent } = React.useMemo(() => {
+  // Parse content into segments with inline content blocks
+  const contentSegments = React.useMemo(() => {
     let content = message.content
     
     // Check if the entire content is wrapped in a markdown code block first
@@ -72,26 +71,56 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
       content = markdownMatch[1].trim()
     }
     
-    // Extract content blocks
+    // Split content by content blocks while preserving their positions
     const contentBlockRegex = /```content-block:(\w+)\s*\n([\s\S]*?)\n```/g
-    const blocks: Array<{type: string, content: string, id: string}> = []
+    const segments: Array<{type: 'text' | 'content-block', content: string, blockType?: string, id?: string}> = []
+    
+    let lastIndex = 0
     let match
     
     while ((match = contentBlockRegex.exec(content)) !== null) {
-      blocks.push({
-        type: match[1],
+      // Add text before this content block
+      if (match.index > lastIndex) {
+        const textBefore = content.slice(lastIndex, match.index).trim()
+        if (textBefore) {
+          segments.push({
+            type: 'text',
+            content: textBefore
+          })
+        }
+      }
+      
+      // Add the content block
+      segments.push({
+        type: 'content-block',
         content: match[2].trim(),
+        blockType: match[1],
         id: `block-${Math.random().toString(36).substr(2, 9)}`
+      })
+      
+      lastIndex = match.index + match[0].length
+    }
+    
+    // Add any remaining text after the last content block
+    if (lastIndex < content.length) {
+      const textAfter = content.slice(lastIndex).trim()
+      if (textAfter) {
+        segments.push({
+          type: 'text',
+          content: textAfter
+        })
+      }
+    }
+    
+    // If no content blocks found, treat entire content as text
+    if (segments.length === 0) {
+      segments.push({
+        type: 'text',
+        content: content
       })
     }
     
-    // Remove content blocks from regular content
-    const cleanContent = content.replace(contentBlockRegex, '').trim()
-    
-    return {
-      contentBlocks: blocks,
-      regularContent: cleanContent
-    }
+    return segments
   }, [message.content])
 
   return (
@@ -150,244 +179,238 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
               : 'bg-card border border-border text-text-primary rounded-bl-md shadow-sm'
           }`}>
             <div className="prose prose-xs max-w-none text-current break-words text-sm">
-              {/* Render regular content if any */}
-              {regularContent && (
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  rehypePlugins={[rehypeRaw]}
-                  components={{
-                    // Links
-                    a: ({node, ...props}) => (
-                      <a 
-                        {...props} 
-                        target="_blank" 
-                        rel="noopener noreferrer" 
-                        className={isUserMessage ? "text-primary-foreground/80 hover:underline" : "text-primary hover:underline"}
-                      />
-                    ),
-                    
-                    // Lists
-                    ul: ({node, ...props}) => <ul {...props} className="my-1 space-y-0.5" />,
-                    ol: ({node, ...props}) => <ol {...props} className="my-1 space-y-0.5" />,
-                    li: ({node, ...props}) => <li {...props} className="ml-4" />,
-                    
-                    // Paragraphs
-                    p: ({node, ...props}) => <p {...props} className="mb-1 last:mb-0 break-words leading-relaxed" />,
-                    
-                    // Headings
-                    h1: ({node, ...props}) => <h1 {...props} className="text-lg font-bold mb-1 mt-2 first:mt-0" />,
-                    h2: ({node, ...props}) => <h2 {...props} className="text-base font-semibold mb-1 mt-1.5 first:mt-0" />,
-                    h3: ({node, ...props}) => <h3 {...props} className="text-sm font-medium mb-0.5 mt-1 first:mt-0" />,
-                    h4: ({node, ...props}) => <h4 {...props} className="text-xs font-medium mb-0.5 mt-0.5 first:mt-0" />,
-                    h5: ({node, ...props}) => <h5 {...props} className="text-xs font-medium mb-0.5 mt-0.5 first:mt-0" />,
-                    h6: ({node, ...props}) => <h6 {...props} className="text-xs font-medium mb-0.5 mt-0.5 first:mt-0" />,
-                    
-                    // Blockquotes
-                    blockquote: ({node, ...props}) => (
-                      <blockquote 
-                        {...props} 
-                        className={`border-l-4 pl-4 my-1.5 italic ${
-                          isUserMessage ? 'border-primary-foreground/50' : 'border-border'
-                        }`} 
-                      />
-                    ),
-                    
-                    // Tables
-                    table: ({node, ...props}) => (
-                      <div className="overflow-x-auto my-3">
-                        <table {...props} className="min-w-full border-collapse border border-border" />
-                      </div>
-                    ),
-                    th: ({node, ...props}) => (
-                      <th {...props} className="border border-border px-3 py-2 bg-muted font-medium text-left" />
-                    ),
-                    td: ({node, ...props}) => (
-                      <td {...props} className="border border-border px-3 py-2" />
-                    ),
-                    
-                    // Inline code
-                    code: ({node, className, children, ...props}) => {
-                      const match = /language-(\w+)/.exec(className || '')
-                      const isInline = !match
-                      const codeContent = String(children).replace(/\n$/, '')
-                      
-                      if (isInline) {
-                        return (
-                          <code 
-                            {...props} 
-                            className={`px-1 py-0.5 rounded text-xs font-mono ${
-                              isUserMessage 
-                                ? 'bg-primary-foreground/20 text-primary-foreground' 
-                                : 'bg-muted text-text-primary'
-                            }`}
-                          >
-                            {children}
-                          </code>
-                        )
-                      }
-                      
-                      // Code block with copy button
-                      const blockId = `code-${Math.random().toString(36).substr(2, 9)}`
-                      
-                      return (
-                        <div 
-                          className="relative group/code my-3"
-                          onMouseEnter={() => setHoveredCodeBlock(blockId)}
-                          onMouseLeave={() => setHoveredCodeBlock(null)}
-                        >
-                          {/* Copy button for code block */}
-                          <button
-                            onClick={() => copyToClipboard(codeContent, 'code')}
-                            className={`absolute top-1.5 right-1.5 transition-opacity duration-200 bg-gray-700 hover:bg-gray-600 text-white rounded p-1 text-xs ${
-                              hoveredCodeBlock === blockId ? 'opacity-100' : 'opacity-0'
-                            }`}
-                            title="Copy code"
-                          >
-                            {copiedContent === codeContent ? (
-                              <Check className="h-2.5 w-2.5" />
-                            ) : (
-                              <Copy className="h-2.5 w-2.5" />
-                            )}
-                          </button>
-                          
-                          <pre className="bg-code-background text-code-foreground p-3 rounded-lg overflow-x-auto">
-                            <code className="text-xs font-mono whitespace-pre">
-                              {children}
-                            </code>
-                          </pre>
-                          
-                          {match && (
-                            <div className="text-xs text-text-tertiary mt-1 font-mono">
-                              {match[1]}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    },
-                    
-                    // Pre blocks (fallback)
-                    pre: ({node, children, ...props}) => {
-                      // If it's already handled by code component, don't double-wrap
-                      if (React.isValidElement(children) && children.type === 'code') {
-                        return <>{children}</>
-                      }
-                      
-                      return (
-                        <pre 
-                          {...props} 
-                          className="bg-code-background text-code-foreground p-3 rounded-lg overflow-x-auto my-2 text-xs font-mono whitespace-pre-wrap"
-                        >
-                          {children}
-                        </pre>
-                      )
-                    },
-                    
-                    // Horizontal rules
-                    hr: ({node, ...props}) => (
-                      <hr {...props} className="my-1.5 border-border" />
-                    ),
-                  }}
-                >
-                  {regularContent}
-                </ReactMarkdown>
-              )}
-
-              {/* Render content blocks with individual copy buttons */}
-              {contentBlocks.map((block) => (
-                <div key={block.id} className="relative my-3 group/content-block">
-                  {/* Content block copy button */}
-                  <button
-                    onClick={() => copyToClipboard(block.content, 'code')}
-                    className="absolute top-1.5 right-1.5 z-10 bg-background border border-border rounded-md p-1 shadow-sm hover:bg-muted opacity-100"
-                    title={`Copy ${block.type} content`}
-                  >
-                    {copiedContent === block.content ? (
-                      <Check className="h-2.5 w-2.5 text-green-500" />
-                    ) : (
-                      <Copy className="h-2.5 w-2.5 text-text-secondary" />
-                    )}
-                  </button>
-
-                  {/* Content block container */}
-                  <div className="border border-border rounded-lg p-3 bg-muted">
-                    <div className="text-xs text-text-tertiary mb-1.5 font-mono uppercase">
-                      {block.type} content
-                    </div>
-                    <div className="prose prose-xs max-w-none">
+              {/* Render content segments in their original order */}
+              {contentSegments.map((segment, index) => {
+                if (segment.type === 'text') {
+                  return (
+                    <div key={index}>
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
-                        rehypePlugins={[rehypeRaw]}
                         components={{
-                          // Same components as above but simplified for content blocks
+                          // Links
                           a: ({node, ...props}) => (
-                            <a {...props} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline" />
+                            <a 
+                              {...props} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className={isUserMessage ? "text-primary-foreground/80 hover:underline" : "text-primary hover:underline"}
+                            />
                           ),
-                          ul: ({node, ...props}) => <ul {...props} className="my-2 space-y-1" />,
-                          ol: ({node, ...props}) => <ol {...props} className="my-2 space-y-1" />,
+                          
+                          // Lists
+                          ul: ({node, ...props}) => <ul {...props} className="my-1 space-y-0.5" />,
+                          ol: ({node, ...props}) => <ol {...props} className="my-1 space-y-0.5" />,
                           li: ({node, ...props}) => <li {...props} className="ml-4" />,
-                          p: ({node, ...props}) => <p {...props} className="mb-2 last:mb-0 break-words leading-relaxed" />,
-                          h1: ({node, ...props}) => <h1 {...props} className="text-lg font-bold mb-2 mt-3 first:mt-0" />,
-                          h2: ({node, ...props}) => <h2 {...props} className="text-base font-semibold mb-2 mt-2 first:mt-0" />,
-                          h3: ({node, ...props}) => <h3 {...props} className="text-sm font-medium mb-1 mt-2 first:mt-0" />,
-                          h4: ({node, ...props}) => <h4 {...props} className="text-xs font-medium mb-1 mt-1 first:mt-0" />,
-                          h5: ({node, ...props}) => <h5 {...props} className="text-xs font-medium mb-1 mt-1 first:mt-0" />,
-                          h6: ({node, ...props}) => <h6 {...props} className="text-xs font-medium mb-1 mt-1 first:mt-0" />,
+                          
+                          // Paragraphs
+                          p: ({node, ...props}) => <p {...props} className="mb-1 last:mb-0 break-words leading-relaxed" />,
+                          
+                          // Headings
+                          h1: ({node, ...props}) => <h1 {...props} className="text-lg font-bold mb-1 mt-2 first:mt-0" />,
+                          h2: ({node, ...props}) => <h2 {...props} className="text-base font-semibold mb-1 mt-1.5 first:mt-0" />,
+                          h3: ({node, ...props}) => <h3 {...props} className="text-sm font-medium mb-0.5 mt-1 first:mt-0" />,
+                          h4: ({node, ...props}) => <h4 {...props} className="text-xs font-medium mb-0.5 mt-0.5 first:mt-0" />,
+                          h5: ({node, ...props}) => <h5 {...props} className="text-xs font-medium mb-0.5 mt-0.5 first:mt-0" />,
+                          h6: ({node, ...props}) => <h6 {...props} className="text-xs font-medium mb-0.5 mt-0.5 first:mt-0" />,
+                          
+                          // Blockquotes
                           blockquote: ({node, ...props}) => (
-                            <blockquote {...props} className="border-l-4 border-border pl-4 my-3 italic" />
+                            <blockquote 
+                              {...props} 
+                              className={`border-l-4 pl-4 my-1.5 italic ${
+                                isUserMessage ? 'border-primary-foreground/50' : 'border-border'
+                              }`} 
+                            />
                           ),
+                          
+                          // Tables
+                          table: ({node, ...props}) => (
+                            <div className="overflow-x-auto my-3">
+                              <table {...props} className="min-w-full border-collapse border border-border" />
+                            </div>
+                          ),
+                          th: ({node, ...props}) => (
+                            <th {...props} className="border border-border px-3 py-2 bg-muted font-medium text-left" />
+                          ),
+                          td: ({node, ...props}) => (
+                            <td {...props} className="border border-border px-3 py-2" />
+                          ),
+                          
+                          // Inline code
                           code: ({node, className, children, ...props}) => {
                             const match = /language-(\w+)/.exec(className || '')
                             const isInline = !match
+                            const codeContent = String(children).replace(/\n$/, '')
                             
                             if (isInline) {
+                              // Remove backticks from inline code
+                              const processedChildren = React.Children.map(children, child => {
+                                if (typeof child === 'string') {
+                                  return child.replace(/`/g, '')
+                                }
+                                return child
+                              })
+                              
                               return (
-                                <code {...props} className="px-1 py-0.5 rounded text-xs font-mono bg-background text-text-primary">
-                                  {children}
+                                <code 
+                                  {...props} 
+                                  className={`px-1 py-0.5 rounded text-xs font-mono ${
+                                    isUserMessage 
+                                      ? 'bg-primary-foreground/20 text-primary-foreground' 
+                                      : 'bg-code-background text-code-foreground'
+                                  }`}
+                                >
+                                  {processedChildren}
                                 </code>
                               )
                             }
                             
+                            // Code block with copy button
+                            const blockId = `code-${Math.random().toString(36).substr(2, 9)}`
+                            
                             return (
-                              <pre className="bg-code-background text-code-foreground p-3 rounded-lg overflow-x-auto my-2">
-                                <code className="text-xs font-mono whitespace-pre">
-                                  {children}
-                                </code>
+                              <div 
+                                className="relative group/code my-3"
+                                onMouseEnter={() => setHoveredCodeBlock(blockId)}
+                                onMouseLeave={() => setHoveredCodeBlock(null)}
+                              >
+                                {/* Copy button for code block */}
+                                <button
+                                  onClick={() => copyToClipboard(codeContent, 'code')}
+                                  className={`absolute top-1.5 right-1.5 transition-opacity duration-200 bg-gray-700 hover:bg-gray-600 text-white rounded p-1 text-xs ${
+                                    hoveredCodeBlock === blockId ? 'opacity-100' : 'opacity-0'
+                                  }`}
+                                  title="Copy code"
+                                >
+                                  {copiedContent === codeContent ? (
+                                    <Check className="h-2.5 w-2.5" />
+                                  ) : (
+                                    <Copy className="h-2.5 w-2.5" />
+                                  )}
+                                </button>
+                                
+                                <pre className="bg-code-background text-code-foreground p-3 rounded-lg overflow-x-auto">
+                                  <code className="text-xs font-mono whitespace-pre">
+                                    {children}
+                                  </code>
+                                </pre>
+                                
+                                {match && (
+                                  <div className="text-xs text-text-tertiary mt-1 font-mono">
+                                    {match[1]}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          },
+                          
+                          // Pre blocks (fallback)
+                          pre: ({node, children, ...props}) => {
+                            // If it's already handled by code component, don't double-wrap
+                            if (React.isValidElement(children) && children.type === 'code') {
+                              return <>{children}</>
+                            }
+                            
+                            return (
+                              <pre 
+                                {...props} 
+                                className="bg-code-background text-code-foreground p-3 rounded-lg overflow-x-auto my-2 text-xs font-mono whitespace-pre-wrap"
+                              >
+                                {children}
                               </pre>
                             )
                           },
+                          
+                          // Horizontal rules
+                          hr: ({node, ...props}) => (
+                            <hr {...props} className="my-1.5 border-border" />
+                          ),
                         }}
                       >
-                        {block.content}
+                        {segment.content}
                       </ReactMarkdown>
                     </div>
-                  </div>
-                </div>
-              ))}
+                  )
+                } else {
+                  // Render content block inline
+                  return (
+                    <div key={segment.id || index} className="relative my-3 group/content-block">
+                      {/* Content block copy button */}
+                      <button
+                        onClick={() => copyToClipboard(segment.content, 'code')}
+                        className="absolute top-1.5 right-1.5 z-10 bg-background border border-border rounded-md p-1 shadow-sm hover:bg-muted opacity-100"
+                        title={`Copy ${segment.blockType} content`}
+                      >
+                        {copiedContent === segment.content ? (
+                          <Check className="h-2.5 w-2.5 text-green-500" />
+                        ) : (
+                          <Copy className="h-2.5 w-2.5 text-text-secondary" />
+                        )}
+                      </button>
 
-              {/* Fallback: render original content if no blocks found and no regular content */}
-              {contentBlocks.length === 0 && !regularContent && (
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  rehypePlugins={[rehypeRaw]}
-                  components={{
-                    // Same components as the first ReactMarkdown instance
-                    a: ({node, ...props}) => (
-                      <a 
-                        {...props} 
-                        target="_blank" 
-                        rel="noopener noreferrer" 
-                        className={isUserMessage ? "text-primary-foreground/80 hover:underline" : "text-primary hover:underline"}
-                      />
-                    ),
-                    p: ({node, ...props}) => <p {...props} className="mb-2 last:mb-0 break-words leading-relaxed" />,
-                    h1: ({node, ...props}) => <h1 {...props} className="text-lg font-bold mb-2 mt-3 first:mt-0" />,
-                    h2: ({node, ...props}) => <h2 {...props} className="text-base font-semibold mb-2 mt-2 first:mt-0" />,
-                    h3: ({node, ...props}) => <h3 {...props} className="text-sm font-medium mb-1 mt-2 first:mt-0" />,
-                  }}
-                >
-                  {message.content}
-                </ReactMarkdown>
-              )}
+                      {/* Content block container */}
+                      <div className="border border-border rounded-lg p-3 bg-muted">
+                        <div className="text-xs text-text-tertiary mb-1.5 font-mono uppercase">
+                          {segment.blockType} content
+                        </div>
+                        {/* Render code content blocks as raw code, others as markdown */}
+                        {segment.blockType === 'code' ? (
+                          <pre className="bg-code-background text-code-foreground p-3 rounded-lg overflow-x-auto text-xs font-mono whitespace-pre-wrap leading-relaxed">
+                            {segment.content}
+                          </pre>
+                        ) : (
+                          <div className="prose prose-xs max-w-none">
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              components={{
+                                // Same components as above but simplified for content blocks
+                                a: ({node, ...props}) => (
+                                  <a {...props} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline" />
+                                ),
+                                ul: ({node, ...props}) => <ul {...props} className="my-2 space-y-1" />,
+                                ol: ({node, ...props}) => <ol {...props} className="my-2 space-y-1" />,
+                                li: ({node, ...props}) => <li {...props} className="ml-4" />,
+                                p: ({node, ...props}) => <p {...props} className="mb-2 last:mb-0 break-words leading-relaxed" />,
+                                h1: ({node, ...props}) => <h1 {...props} className="text-lg font-bold mb-2 mt-3 first:mt-0" />,
+                                h2: ({node, ...props}) => <h2 {...props} className="text-base font-semibold mb-2 mt-2 first:mt-0" />,
+                                h3: ({node, ...props}) => <h3 {...props} className="text-sm font-medium mb-1 mt-2 first:mt-0" />,
+                                h4: ({node, ...props}) => <h4 {...props} className="text-xs font-medium mb-1 mt-1 first:mt-0" />,
+                                h5: ({node, ...props}) => <h5 {...props} className="text-xs font-medium mb-1 mt-1 first:mt-0" />,
+                                h6: ({node, ...props}) => <h6 {...props} className="text-xs font-medium mb-1 mt-1 first:mt-0" />,
+                                blockquote: ({node, ...props}) => (
+                                  <blockquote {...props} className="border-l-4 border-border pl-4 my-3 italic" />
+                                ),
+                                code: ({node, className, children, ...props}) => {
+                                  const match = /language-(\w+)/.exec(className || '')
+                                  const isInline = !match
+                                  
+                                  if (isInline) {
+                                    return (
+                                      <code {...props} className="px-1 py-0.5 rounded text-xs font-mono bg-code-background text-code-foreground">
+                                        {children}
+                                      </code>
+                                    )
+                                  }
+                                  
+                                  return (
+                                    <pre className="bg-code-background text-code-foreground p-3 rounded-lg overflow-x-auto my-2">
+                                      <code className="text-xs font-mono whitespace-pre">
+                                        {children}
+                                      </code>
+                                    </pre>
+                                  )
+                                },
+                              }}
+                            >
+                              {segment.content}
+                            </ReactMarkdown>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                }
+              })}
             </div>
             
             {/* Sources for assistant messages */}
