@@ -719,6 +719,11 @@ Instructions:
                     report_outline=plan_response.report_outline
                 )
                 
+                # Fix: If there's only one section, automatically convert it to research-based
+                if len(final_plan_obj.report_outline) == 1:
+                    logger.info(f"Auto-converting single section to research_based for mission {mission_id}")
+                    final_plan_obj.report_outline[0].research_strategy = "research_based"
+                
                 # Validate the outline has at least one section and at least one research-based section
                 validation_result = self.controller._validate_outline_minimum_requirements(final_plan_obj.report_outline)
                 if not validation_result["valid"]:
