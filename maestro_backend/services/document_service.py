@@ -26,7 +26,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
 
-from ai_researcher.core_rag.vector_store import VectorStore
+from ai_researcher.core_rag.vector_store_manager import VectorStoreManager as VectorStore
 from ai_researcher.core_rag.embedder import TextEmbedder
 from ai_researcher.core_rag.processor import DocumentProcessor
 from ai_researcher.core_rag.database import Database
@@ -934,6 +934,228 @@ class DocumentService:
             import traceback
             traceback.print_exc()
             return False
+
+    async def update_document_metadata(self, doc_id: str, user_id: int, metadata_update: Dict[str, Any], db: Session) -> Optional[Dict[str, Any]]:
+        """
+        Update document metadata across all databases (Main DB, AI DB, Vector Store).
+        Ensures atomic updates with rollback capabilities.
+        """
+        try:
+            print(f"Starting metadata update for document {doc_id}")
+            
+            # Get the document first to ensure it exists and user has access
+            document = crud.get_document(db, doc_id=doc_id, user_id=user_id)
+            if not document:
+                print(f"Document {doc_id} not found for user {user_id}")
+                return None
+            
+            # Prepare updated metadata
+            current_metadata = document.metadata_ or {}
+            updated_metadata = {**current_metadata, **metadata_update}
+            
+            # Track update success for rollback
+            main_db_updated = False
+            ai_db_updated = False
+            vector_store_updated = False
+            
+            try:
+                # 1. Update main database
+                document.metadata_ = updated_metadata
+                document.updated_at = datetime.now()
+                
+                # Update title and authors at the document level for compatibility
+                if 'title' in metadata_update:
+                    document.title = metadata_update['title']
+                if 'authors' in metadata_update:
+                    document.authors = json.dumps(metadata_update['authors']) if isinstance(metadata_update['authors'], list) else metadata_update['authors']
+                
+                db.commit()
+                main_db_updated = True
+                print(f"Updated main database for document {doc_id}")
+                
+                # 2. Update AI researcher database
+                try:
+                    ai_db = self._get_ai_db()
+                    if ai_db.document_exists(doc_id):
+                        ai_update_success = ai_db.update_document_metadata(doc_id, updated_metadata)
+                        if ai_update_success:
+                            ai_db_updated = True
+                            print(f"Updated AI database for document {doc_id}")
+                        else:
+                            print(f"Failed to update AI database for document {doc_id}")
+                except Exception as e:
+                    print(f"Error updating AI database: {e}")
+                
+                # 3. Update vector store metadata
+                try:
+                    vector_store = self._get_vector_store()
+                    collection = vector_store.dense_collection
+                    
+                    # Get all chunks for this document
+                    results = collection.get(
+                        where={"doc_id": doc_id},
+                        include=['metadatas']
+                    )
+                    
+                    if results['metadatas']:
+                        # Update metadata for all chunks of this document
+                        chunk_ids = results['ids'] if results['ids'] else []
+                        updated_metadatas = []
+                        
+                        for metadata in results['metadatas']:
+                            chunk_metadata = {**metadata, **metadata_update}
+                            updated_metadatas.append(chunk_metadata)
+                        
+                        if chunk_ids and updated_metadatas:
+                            collection.update(
+                                ids=chunk_ids,
+                                metadatas=updated_metadatas
+                            )
+                            vector_store_updated = True
+                            print(f"Updated vector store for document {doc_id} ({len(chunk_ids)} chunks)")
+                
+                    # Also update sparse collection if it exists
+                    if hasattr(vector_store, 'sparse_collection') and vector_store.sparse_collection:
+                        sparse_results = vector_store.sparse_collection.get(
+                            where={"doc_id": doc_id},
+                            include=['metadatas']
+                        )
+                        
+                        if sparse_results['metadatas']:
+                            sparse_chunk_ids = sparse_results['ids'] if sparse_results['ids'] else []
+                            sparse_updated_metadatas = []
+                            
+                            for metadata in sparse_results['metadatas']:
+                                chunk_metadata = {**metadata, **metadata_update}
+                                sparse_updated_metadatas.append(chunk_metadata)
+                            
+                            if sparse_chunk_ids and sparse_updated_metadatas:
+                                vector_store.sparse_collection.update(
+                                    ids=sparse_chunk_ids,
+                                    metadatas=sparse_updated_metadatas
+                                )
+                                print(f"Updated sparse vector store for document {doc_id} ({len(sparse_chunk_ids)} chunks)")
+                
+                except Exception as e:
+                    print(f"Error updating vector store: {e}")
+                
+                # Clear cache to ensure fresh data on next request
+                self._document_cache = {}
+                self._cache_timestamp = None
+                
+                # Return updated document data
+                return {
+                    'id': document.id,
+                    'original_filename': document.original_filename,
+                    'user_id': document.user_id,
+                    'created_at': document.created_at.isoformat(),
+                    'title': document.title,
+                    'authors': document.authors,
+                    'processing_status': document.processing_status,
+                    'upload_progress': document.upload_progress,
+                    'file_size': document.file_size,
+                    'processing_error': document.processing_error,
+                    'metadata_': updated_metadata
+                }
+                
+            except Exception as e:
+                print(f"Error during metadata update, attempting rollback: {e}")
+                
+                # Rollback main database if it was updated
+                if main_db_updated:
+                    try:
+                        db.rollback()
+                        print("Rolled back main database changes")
+                    except Exception as rollback_error:
+                        print(f"Error rolling back main database: {rollback_error}")
+                
+                raise e
+                
+        except Exception as e:
+            print(f"Error updating document metadata: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    async def get_document_content(self, doc_id: str, user_id: int, db: Session) -> Optional[Dict[str, Any]]:
+        """
+        Get document content for viewing, including markdown content and metadata.
+        """
+        try:
+            print(f"Retrieving content for document {doc_id}")
+            
+            # Get the document from main database first
+            document = crud.get_document(db, doc_id=doc_id, user_id=user_id)
+            if not document:
+                print(f"Document {doc_id} not found for user {user_id}")
+                return None
+            
+            # Try to get markdown content from file system
+            markdown_content = ""
+            markdown_file_path = self.markdown_dir / f"{doc_id}.md"
+            
+            try:
+                if markdown_file_path.exists():
+                    with open(markdown_file_path, 'r', encoding='utf-8') as f:
+                        markdown_content = f.read()
+                    print(f"Found markdown content for document {doc_id}")
+                else:
+                    print(f"No markdown file found for document {doc_id} at {markdown_file_path}")
+            except Exception as e:
+                print(f"Error reading markdown file for document {doc_id}: {e}")
+                
+                # Fallback: try to get content from vector store chunks
+                try:
+                    vector_store = self._get_vector_store()
+                    collection = vector_store.dense_collection
+                    
+                    results = collection.get(
+                        where={"doc_id": doc_id},
+                        include=['documents', 'metadatas']
+                    )
+                    
+                    if results['documents']:
+                        # Combine all chunks into content
+                        chunks = []
+                        for i, (doc_text, metadata) in enumerate(zip(results['documents'], results['metadatas'])):
+                            chunk_id = metadata.get('chunk_id', i)
+                            chunks.append((chunk_id, doc_text))
+                        
+                        # Sort by chunk_id and combine
+                        chunks.sort(key=lambda x: x[0])
+                        markdown_content = "\n\n".join([chunk[1] for chunk in chunks])
+                        print(f"Reconstructed content from {len(chunks)} vector store chunks")
+                    
+                except Exception as vector_error:
+                    print(f"Error retrieving content from vector store: {vector_error}")
+            
+            # Get enhanced metadata from AI database if available
+            enhanced_metadata = document.metadata_ or {}
+            try:
+                ai_db = self._get_ai_db()
+                if ai_db.document_exists(doc_id):
+                    ai_metadata = ai_db.get_document_metadata(doc_id)
+                    if ai_metadata:
+                        enhanced_metadata = {**enhanced_metadata, **ai_metadata}
+                        print(f"Enhanced metadata from AI database for document {doc_id}")
+            except Exception as e:
+                print(f"Error getting metadata from AI database: {e}")
+            
+            return {
+                'id': document.id,
+                'original_filename': document.original_filename,
+                'title': document.title or enhanced_metadata.get('title', document.original_filename),
+                'content': markdown_content,
+                'metadata_': enhanced_metadata,
+                'created_at': document.created_at.isoformat(),
+                'file_size': document.file_size
+            }
+            
+        except Exception as e:
+            print(f"Error retrieving document content: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
 
     async def cancel_document_processing(self, doc_id: str, user_id: int, db: Session) -> bool:
         """

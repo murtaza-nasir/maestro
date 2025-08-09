@@ -503,6 +503,67 @@ async def bulk_remove_documents_from_group(
         "message": f"Removed {removed_count} documents from group"
     }
 
+# Document Metadata and Content endpoints
+@router.put("/documents/{doc_id}/metadata", response_model=schemas.Document)
+async def update_document_metadata(
+    doc_id: str,
+    metadata_update: schemas.DocumentMetadataUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user_from_cookie)
+):
+    """
+    Update document metadata across all databases (Main DB, AI DB, Vector Store).
+    """
+    try:
+        updated_document = await document_service.update_document_metadata(
+            doc_id=doc_id,
+            user_id=current_user.id,
+            metadata_update=metadata_update.dict(exclude_unset=True),
+            db=db
+        )
+        
+        if not updated_document:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        # Send websocket update for real-time UI updates
+        await send_document_update({
+            "type": "metadata_updated",
+            "doc_id": doc_id,
+            "user_id": current_user.id,
+            "metadata": updated_document.get("metadata_", {})
+        })
+        
+        return schemas.Document(**updated_document)
+        
+    except Exception as e:
+        logger.error(f"Error updating metadata for document {doc_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update document metadata")
+
+@router.get("/documents/{doc_id}/view", response_model=schemas.DocumentViewResponse)
+async def view_document_content(
+    doc_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user_from_cookie)
+):
+    """
+    Get document content for viewing (includes markdown content and metadata).
+    """
+    try:
+        document_data = await document_service.get_document_content(
+            doc_id=doc_id,
+            user_id=current_user.id,
+            db=db
+        )
+        
+        if not document_data:
+            raise HTTPException(status_code=404, detail="Document not found or no content available")
+            
+        return schemas.DocumentViewResponse(**document_data)
+        
+    except Exception as e:
+        logger.error(f"Error retrieving content for document {doc_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve document content")
+
 @router.post("/documents/{doc_id}/cancel", status_code=200)
 async def cancel_document_processing(
     doc_id: str,

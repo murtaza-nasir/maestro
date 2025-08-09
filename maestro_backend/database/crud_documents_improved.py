@@ -311,10 +311,12 @@ def get_document_processing_stats(db: Session, user_id: int) -> Dict[str, Any]:
             
             # Vector store count
             vector_store = consistency_manager._get_vector_store()
-            dense_results = vector_store.dense_collection.get(include=['metadatas'])
-            user_chunks = [meta for meta in dense_results.get('metadatas', []) 
-                          if any(d.id == meta.get('doc_id') for d in documents)]
-            stats['storage_usage']['vector_store_chunks'] = len(user_chunks)
+            with vector_store._file_lock("read"):
+                client, dense_collection, sparse_collection = vector_store._get_client()
+                dense_results = dense_collection.get(include=['metadatas'])
+                user_chunks = [meta for meta in dense_results.get('metadatas', []) 
+                              if any(d.id == meta.get('doc_id') for d in documents)]
+                stats['storage_usage']['vector_store_chunks'] = len(user_chunks)
             
         except Exception as e:
             logger.warning(f"Could not get storage system stats: {e}")

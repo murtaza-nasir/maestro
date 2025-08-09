@@ -24,7 +24,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 import logging
 
-from ai_researcher.core_rag.vector_store import VectorStore
+from ai_researcher.core_rag.vector_store_manager import VectorStoreManager as VectorStore
 from ai_researcher.core_rag.database import Database
 from database import crud, models
 
@@ -125,8 +125,10 @@ class DocumentConsistencyManager:
             # Check vector store
             try:
                 vector_store = self._get_vector_store()
-                dense_results = vector_store.dense_collection.get(where={"doc_id": doc_id}, limit=1)
-                exists['vector_store'] = len(dense_results.get('ids', [])) > 0
+                with vector_store._file_lock("read"):
+                    client, dense_collection, sparse_collection = vector_store._get_client()
+                    dense_results = dense_collection.get(where={"doc_id": doc_id}, limit=1)
+                    exists['vector_store'] = len(dense_results.get('ids', [])) > 0
             except Exception:
                 exists['vector_store'] = False
                 
@@ -165,10 +167,14 @@ class DocumentConsistencyManager:
             # Get documents from vector store
             try:
                 vector_store = self._get_vector_store()
-                dense_results = vector_store.dense_collection.get(include=['metadatas'])
-                vector_doc_ids = {meta.get('doc_id') for meta in dense_results.get('metadatas', []) if meta.get('doc_id')}
-                vector_doc_ids.discard(None)
-            except Exception:
+                # Use the proper method to access collections
+                with vector_store._file_lock("read"):
+                    client, dense_collection, sparse_collection = vector_store._get_client()
+                    dense_results = dense_collection.get(include=['metadatas'])
+                    vector_doc_ids = {meta.get('doc_id') for meta in dense_results.get('metadatas', []) if meta.get('doc_id')}
+                    vector_doc_ids.discard(None)
+            except Exception as e:
+                logger.error(f"Error getting vector store documents: {e}")
                 vector_doc_ids = set()
                 
             # Find orphans
@@ -213,19 +219,22 @@ class DocumentConsistencyManager:
             try:
                 vector_store = self._get_vector_store()
                 
-                # Delete from dense collection
-                dense_results = vector_store.dense_collection.get(where={"doc_id": doc_id})
-                if dense_results['ids']:
-                    vector_store.dense_collection.delete(ids=dense_results['ids'])
-                    transaction.add_rollback_action(
-                        lambda: logger.warning(f"Cannot rollback vector store deletion for {doc_id}"),
-                        f"Vector store dense collection deletion (not reversible)"
-                    )
-                
-                # Delete from sparse collection  
-                sparse_results = vector_store.sparse_collection.get(where={"doc_id": doc_id})
-                if sparse_results['ids']:
-                    vector_store.sparse_collection.delete(ids=sparse_results['ids'])
+                with vector_store._file_lock("write"):
+                    client, dense_collection, sparse_collection = vector_store._get_client()
+                    
+                    # Delete from dense collection
+                    dense_results = dense_collection.get(where={"doc_id": doc_id})
+                    if dense_results['ids']:
+                        dense_collection.delete(ids=dense_results['ids'])
+                        transaction.add_rollback_action(
+                            lambda: logger.warning(f"Cannot rollback vector store deletion for {doc_id}"),
+                            f"Vector store dense collection deletion (not reversible)"
+                        )
+                    
+                    # Delete from sparse collection  
+                    sparse_results = sparse_collection.get(where={"doc_id": doc_id})
+                    if sparse_results['ids']:
+                        sparse_collection.delete(ids=sparse_results['ids'])
                     
                 transaction.mark_step_completed('vector_store_deleted')
                 logger.info(f"Deleted {len(dense_results['ids']) + len(sparse_results['ids'])} chunks from vector store")
@@ -342,15 +351,18 @@ class DocumentConsistencyManager:
                 try:
                     vector_store = self._get_vector_store()
                     
-                    # Clean up dense collection
-                    dense_results = vector_store.dense_collection.get(where={"doc_id": doc_id})
-                    if dense_results['ids']:
-                        vector_store.dense_collection.delete(ids=dense_results['ids'])
+                    with vector_store._file_lock("write"):
+                        client, dense_collection, sparse_collection = vector_store._get_client()
                         
-                    # Clean up sparse collection  
-                    sparse_results = vector_store.sparse_collection.get(where={"doc_id": doc_id})
-                    if sparse_results['ids']:
-                        vector_store.sparse_collection.delete(ids=sparse_results['ids'])
+                        # Clean up dense collection
+                        dense_results = dense_collection.get(where={"doc_id": doc_id})
+                        if dense_results['ids']:
+                            dense_collection.delete(ids=dense_results['ids'])
+                            
+                        # Clean up sparse collection  
+                        sparse_results = sparse_collection.get(where={"doc_id": doc_id})
+                        if sparse_results['ids']:
+                            sparse_collection.delete(ids=sparse_results['ids'])
                         
                     transaction.mark_step_completed('vector_store_cleaned')
                     
@@ -435,13 +447,16 @@ class DocumentConsistencyManager:
             vector_store = self._get_vector_store()
             for doc_id in orphans['vector_store_only']:
                 try:
-                    dense_results = vector_store.dense_collection.get(where={"doc_id": doc_id})
-                    sparse_results = vector_store.sparse_collection.get(where={"doc_id": doc_id})
-                    
-                    if dense_results['ids']:
-                        vector_store.dense_collection.delete(ids=dense_results['ids'])
-                    if sparse_results['ids']:
-                        vector_store.sparse_collection.delete(ids=sparse_results['ids'])
+                    with vector_store._file_lock("write"):
+                        client, dense_collection, sparse_collection = vector_store._get_client()
+                        
+                        dense_results = dense_collection.get(where={"doc_id": doc_id})
+                        sparse_results = sparse_collection.get(where={"doc_id": doc_id})
+                        
+                        if dense_results['ids']:
+                            dense_collection.delete(ids=dense_results['ids'])
+                        if sparse_results['ids']:
+                            sparse_collection.delete(ids=sparse_results['ids'])
                         
                     if dense_results['ids'] or sparse_results['ids']:
                         cleanup_stats['vector_store_cleaned'] += 1

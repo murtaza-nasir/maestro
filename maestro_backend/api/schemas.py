@@ -374,6 +374,23 @@ class DocumentProgressUpdate(BaseModel):
     error: Optional[str] = None
     timestamp: str
 
+class DocumentMetadataUpdate(BaseModel):
+    title: Optional[str] = None
+    authors: Optional[List[str]] = None
+    journal_or_source: Optional[str] = None
+    publication_year: Optional[int] = None
+    abstract: Optional[str] = None
+    keywords: Optional[List[str]] = None
+
+class DocumentViewResponse(BaseModel):
+    id: str
+    original_filename: str
+    title: Optional[str] = None
+    content: str  # Markdown content of the document
+    metadata_: Optional[Dict[str, Any]] = None
+    created_at: Optional[datetime] = None
+    file_size: Optional[int] = None
+
 # Pagination schemas
 class PaginationInfo(BaseModel):
     total_count: int

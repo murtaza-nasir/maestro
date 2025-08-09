@@ -495,6 +495,100 @@ class Database:
         finally:
             conn.close()
 
+    def document_exists(self, doc_id: str) -> bool:
+        """
+        Check if a document exists in the AI researcher database.
+        
+        Args:
+            doc_id: The document ID to check
+            
+        Returns:
+            True if the document exists, False otherwise
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT COUNT(*) FROM processed_documents WHERE doc_id = ?", (doc_id,))
+            result = cursor.fetchone()
+            return result[0] > 0 if result else False
+        except sqlite3.Error as e:
+            print(f"Error checking if document exists: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def update_document_metadata(self, doc_id: str, metadata: Dict[str, Any]) -> bool:
+        """
+        Update the metadata for an existing document.
+        
+        Args:
+            doc_id: The document ID to update
+            metadata: The new metadata dictionary
+            
+        Returns:
+            True if the update was successful, False otherwise
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            # First check if the document exists
+            cursor.execute("SELECT COUNT(*) FROM processed_documents WHERE doc_id = ?", (doc_id,))
+            if cursor.fetchone()[0] == 0:
+                print(f"Document {doc_id} not found for metadata update")
+                return False
+            
+            # Update the metadata
+            metadata_str = json.dumps(metadata)
+            cursor.execute(
+                "UPDATE processed_documents SET metadata_json = ? WHERE doc_id = ?",
+                (metadata_str, doc_id)
+            )
+            conn.commit()
+            
+            if cursor.rowcount > 0:
+                print(f"Updated metadata for document {doc_id}")
+                return True
+            else:
+                print(f"No rows updated for document {doc_id}")
+                return False
+                
+        except sqlite3.Error as e:
+            print(f"Error updating document metadata: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def get_document_metadata(self, doc_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get the metadata for a specific document.
+        
+        Args:
+            doc_id: The document ID to retrieve metadata for
+            
+        Returns:
+            The metadata dictionary if found, None otherwise
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT metadata_json FROM processed_documents WHERE doc_id = ?", (doc_id,))
+            result = cursor.fetchone()
+            
+            if result and result[0]:
+                try:
+                    return json.loads(result[0])
+                except json.JSONDecodeError as e:
+                    print(f"Error decoding metadata JSON for doc_id '{doc_id}': {e}")
+                    return None
+            
+            return None
+            
+        except sqlite3.Error as e:
+            print(f"Error getting document metadata: {e}")
+            return None
+        finally:
+            conn.close()
+
 
 # Example Usage (for testing purposes)
 # Note: This block will be removed later to avoid syntax issues.
