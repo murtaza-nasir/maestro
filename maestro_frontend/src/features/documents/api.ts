@@ -109,3 +109,33 @@ export const cancelDocumentProcessing = async (docId: string): Promise<any> => {
   const response = await apiClient.post(`/api/documents/${docId}/cancel`);
   return response.data;
 };
+
+// Metadata editing and document viewing API calls
+export interface DocumentMetadataUpdate {
+  title?: string;
+  authors?: string[];
+  journal_or_source?: string;
+  publication_year?: number;
+  abstract?: string;
+  keywords?: string[];
+}
+
+export interface DocumentViewResponse {
+  id: string;
+  original_filename: string;
+  title?: string;
+  content: string; // Markdown content
+  metadata_?: Record<string, any>;
+  created_at?: string;
+  file_size?: number;
+}
+
+export const updateDocumentMetadata = async (docId: string, metadata: DocumentMetadataUpdate): Promise<Document> => {
+  const response = await apiClient.put(`/api/documents/${docId}/metadata`, metadata);
+  return response.data;
+};
+
+export const getDocumentContent = async (docId: string): Promise<DocumentViewResponse> => {
+  const response = await apiClient.get(`/api/documents/${docId}/view`);
+  return response.data;
+};

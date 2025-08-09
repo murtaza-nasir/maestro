@@ -9,7 +9,9 @@ import {
   FileText, 
   Calendar, 
   BookOpen,
-  Upload
+  Upload,
+  Edit,
+  Eye
 } from 'lucide-react';
 import type { Document, PaginationInfo } from '../types';
 import { 
@@ -22,6 +24,8 @@ import { useDocumentContext } from '../context/DocumentContext';
 import { DeleteConfirmationModal } from '../../../components/ui/DeleteConfirmationModal';
 import { DocumentUploadZone } from './DocumentUploadZone';
 import { useDocumentUploadManager } from '../context/DocumentUploadContext';
+import { DocumentMetadataEditModal } from './DocumentMetadataEditModal';
+import { DocumentViewModal } from './DocumentViewModal';
 
 interface EnhancedDocumentListProps {
   documents: Document[];
@@ -59,6 +63,11 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  
+  // Modal state
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
 
   // Extract unique filter options from documents
   const filterOptions = useMemo(() => {
@@ -260,6 +269,28 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
     onDocumentAdded?.();
   }, [selectedGroupId, startUploads, onDocumentAdded]);
 
+  // Modal handlers
+  const handleEditDocument = useCallback((document: Document) => {
+    setSelectedDocument(document);
+    setEditModalOpen(true);
+  }, []);
+
+  const handleViewDocument = useCallback((document: Document) => {
+    setSelectedDocument(document);
+    setViewModalOpen(true);
+  }, []);
+
+  const handleDocumentUpdated = useCallback((_updatedDocument: Document) => {
+    // Refresh the documents list
+    onDocumentAdded?.(); // This will trigger a refresh
+  }, [onDocumentAdded]);
+
+  const handleCloseModals = useCallback(() => {
+    setEditModalOpen(false);
+    setViewModalOpen(false);
+    setSelectedDocument(null);
+  }, []);
+
   return (
     <div 
       className={`h-full bg-background flex flex-col relative ${isDragOver ? 'bg-primary/5' : ''}`}
@@ -403,7 +434,7 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
             return (
               <div 
                 key={doc.id} 
-                className={`p-2 rounded-md transition-all duration-200 ${
+                className={`group p-2 rounded-md transition-all duration-200 ${
                   isSelected
                     ? 'bg-primary/5 border border-primary/20 shadow-sm'
                     : 'bg-background border border-border/50 hover:bg-muted/50 hover:border-border'
@@ -476,6 +507,32 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
                           <span>{formatFileSize(doc.file_size)}</span>
                         )}
                       </div>
+                      
+                      {/* Action buttons - only show for completed documents */}
+                      {doc.processing_status === 'completed' && (
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleViewDocument(doc);
+                            }}
+                            className="p-1 text-muted-foreground hover:text-primary rounded transition-colors"
+                            title="View document"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditDocument(doc);
+                            }}
+                            className="p-1 text-muted-foreground hover:text-primary rounded transition-colors"
+                            title="Edit metadata"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     {/* Processing Status */}
@@ -542,6 +599,21 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
         itemName={selectedDocuments.size === 1 ? 'document' : `${selectedDocuments.size} documents`}
         itemType="document"
         isLoading={isDeleting}
+      />
+
+      {/* Document Metadata Edit Modal */}
+      <DocumentMetadataEditModal
+        document={selectedDocument}
+        isOpen={editModalOpen}
+        onClose={handleCloseModals}
+        onSave={handleDocumentUpdated}
+      />
+
+      {/* Document View Modal */}
+      <DocumentViewModal
+        document={selectedDocument}
+        isOpen={viewModalOpen}
+        onClose={handleCloseModals}
       />
     </div>
   );

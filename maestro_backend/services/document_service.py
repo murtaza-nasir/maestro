@@ -102,10 +102,10 @@ class DocumentService:
         
         try:
             vector_store = self._get_vector_store()
-            collection = vector_store.dense_collection
+            client, dense_collection, sparse_collection = vector_store._get_client()
             
             # Get all metadata from the vector store
-            results = collection.get(include=['metadatas'])
+            results = dense_collection.get(include=['metadatas'])
             all_metadatas = results.get('metadatas', [])
             
             print(f"DEBUG: Total metadata entries retrieved: {len(all_metadatas)}")
@@ -684,7 +684,7 @@ class DocumentService:
         # Get documents associated with this group
         documents = []
         vector_store = self._get_vector_store()
-        collection = vector_store.dense_collection
+        client, dense_collection, sparse_collection = vector_store._get_client()
         
         for doc in db_group.documents:
             # Start with database data
@@ -701,7 +701,7 @@ class DocumentService:
             
             # Try to get rich metadata from vector store
             try:
-                results = collection.get(
+                results = dense_collection.get(
                     where={"doc_id": doc.id},
                     include=['metadatas'],
                     limit=1
@@ -746,10 +746,10 @@ class DocumentService:
         try:
             # Check if document exists in vector store
             vector_store = self._get_vector_store()
-            collection = vector_store.dense_collection
+            client, dense_collection, sparse_collection = vector_store._get_client()
             
             # Query for this specific document
-            results = collection.get(
+            results = dense_collection.get(
                 where={"doc_id": doc_id},
                 include=['metadatas'],
                 limit=1
@@ -867,16 +867,15 @@ class DocumentService:
         """Delete a document from the vector store."""
         try:
             vector_store = self._get_vector_store()
+            client, dense_collection, sparse_collection = vector_store._get_client()
             
             # Remove from dense collection
-            dense_collection = vector_store.dense_collection
             dense_results = dense_collection.get(where={"doc_id": doc_id})
             if dense_results['ids']:
                 dense_collection.delete(ids=dense_results['ids'])
                 print(f"Removed {len(dense_results['ids'])} chunks from dense collection for document {doc_id}")
             
             # Remove from sparse collection
-            sparse_collection = vector_store.sparse_collection
             sparse_results = sparse_collection.get(where={"doc_id": doc_id})
             if sparse_results['ids']:
                 sparse_collection.delete(ids=sparse_results['ids'])
@@ -963,12 +962,6 @@ class DocumentService:
                 document.metadata_ = updated_metadata
                 document.updated_at = datetime.now()
                 
-                # Update title and authors at the document level for compatibility
-                if 'title' in metadata_update:
-                    document.title = metadata_update['title']
-                if 'authors' in metadata_update:
-                    document.authors = json.dumps(metadata_update['authors']) if isinstance(metadata_update['authors'], list) else metadata_update['authors']
-                
                 db.commit()
                 main_db_updated = True
                 print(f"Updated main database for document {doc_id}")
@@ -989,10 +982,10 @@ class DocumentService:
                 # 3. Update vector store metadata
                 try:
                     vector_store = self._get_vector_store()
-                    collection = vector_store.dense_collection
+                    client, dense_collection, sparse_collection = vector_store._get_client()
                     
                     # Get all chunks for this document
-                    results = collection.get(
+                    results = dense_collection.get(
                         where={"doc_id": doc_id},
                         include=['metadatas']
                     )
@@ -1007,7 +1000,7 @@ class DocumentService:
                             updated_metadatas.append(chunk_metadata)
                         
                         if chunk_ids and updated_metadatas:
-                            collection.update(
+                            dense_collection.update(
                                 ids=chunk_ids,
                                 metadatas=updated_metadatas
                             )
@@ -1015,8 +1008,8 @@ class DocumentService:
                             print(f"Updated vector store for document {doc_id} ({len(chunk_ids)} chunks)")
                 
                     # Also update sparse collection if it exists
-                    if hasattr(vector_store, 'sparse_collection') and vector_store.sparse_collection:
-                        sparse_results = vector_store.sparse_collection.get(
+                    if sparse_collection:
+                        sparse_results = sparse_collection.get(
                             where={"doc_id": doc_id},
                             include=['metadatas']
                         )
@@ -1030,7 +1023,7 @@ class DocumentService:
                                 sparse_updated_metadatas.append(chunk_metadata)
                             
                             if sparse_chunk_ids and sparse_updated_metadatas:
-                                vector_store.sparse_collection.update(
+                                sparse_collection.update(
                                     ids=sparse_chunk_ids,
                                     metadatas=sparse_updated_metadatas
                                 )
@@ -1049,8 +1042,8 @@ class DocumentService:
                     'original_filename': document.original_filename,
                     'user_id': document.user_id,
                     'created_at': document.created_at.isoformat(),
-                    'title': document.title,
-                    'authors': document.authors,
+                    'title': updated_metadata.get('title'),
+                    'authors': json.dumps(updated_metadata.get('authors', [])) if updated_metadata.get('authors') else None,
                     'processing_status': document.processing_status,
                     'upload_progress': document.upload_progress,
                     'file_size': document.file_size,
@@ -1107,9 +1100,9 @@ class DocumentService:
                 # Fallback: try to get content from vector store chunks
                 try:
                     vector_store = self._get_vector_store()
-                    collection = vector_store.dense_collection
+                    client, dense_collection, sparse_collection = vector_store._get_client()
                     
-                    results = collection.get(
+                    results = dense_collection.get(
                         where={"doc_id": doc_id},
                         include=['documents', 'metadatas']
                     )
@@ -1144,7 +1137,7 @@ class DocumentService:
             return {
                 'id': document.id,
                 'original_filename': document.original_filename,
-                'title': document.title or enhanced_metadata.get('title', document.original_filename),
+                'title': enhanced_metadata.get('title', document.original_filename),
                 'content': markdown_content,
                 'metadata_': enhanced_metadata,
                 'created_at': document.created_at.isoformat(),
@@ -1257,7 +1250,7 @@ class DocumentService:
         """
         try:
             vector_store = self._get_vector_store()
-            collection = vector_store.dense_collection
+            client, dense_collection, sparse_collection = vector_store._get_client()
             
             # Create mapping dictionary
             code_to_filename = {}
@@ -1268,7 +1261,7 @@ class DocumentService:
                     
                 try:
                     # Query vector store for this document
-                    results = collection.get(
+                    results = dense_collection.get(
                         where={"doc_id": doc_code},
                         include=['metadatas'],
                         limit=1

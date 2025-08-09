@@ -526,10 +526,10 @@ async def update_document_metadata(
             raise HTTPException(status_code=404, detail="Document not found")
         
         # Send websocket update for real-time UI updates
-        await send_document_update({
+        await send_document_update(str(current_user.id), {
             "type": "metadata_updated",
             "doc_id": doc_id,
-            "user_id": current_user.id,
+            "status": "metadata_updated",
             "metadata": updated_document.get("metadata_", {})
         })
         
