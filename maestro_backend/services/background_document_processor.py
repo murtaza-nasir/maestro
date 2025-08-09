@@ -347,13 +347,27 @@ class BackgroundDocumentProcessor:
             
             processor = self._get_processor_with_user_settings(user_settings)
             
-            # Step 2: Process PDF to Markdown (30% progress)
-            print(f"[{doc_id}] Starting PDF processing with Marker...")
+            # Step 2: Process document to Markdown (30% progress)
+            file_extension = original_filename.lower().split('.')[-1]
+            print(f"[{doc_id}] Starting {file_extension.upper()} processing...")
             self._update_job_progress_sync(job_id, user_id, 30, "running")
             self._update_document_progress_sync(doc_id, user_id, 30, "processing")
             
             # Copy the uploaded file to the expected location with the correct name
-            target_path = self.pdf_dir / f"{doc_id}_{original_filename}"
+            # For backwards compatibility, PDFs go to pdf_dir, others to subdirs
+            if original_filename.lower().endswith('.pdf'):
+                target_path = self.pdf_dir / f"{doc_id}_{original_filename}"
+            elif original_filename.lower().endswith(('.docx', '.doc')):
+                word_dir = self.pdf_dir / 'word_documents'
+                word_dir.mkdir(parents=True, exist_ok=True)
+                target_path = word_dir / f"{doc_id}_{original_filename}"
+            elif original_filename.lower().endswith(('.md', '.markdown')):
+                markdown_dir = self.pdf_dir / 'markdown_files'
+                markdown_dir.mkdir(parents=True, exist_ok=True)
+                target_path = markdown_dir / f"{doc_id}_{original_filename}"
+            else:
+                raise Exception(f"Unsupported file format: {original_filename}")
+                
             if not target_path.exists():
                 import shutil
                 shutil.copy2(file_path, target_path)
@@ -364,8 +378,12 @@ class BackgroundDocumentProcessor:
             self._update_job_progress_sync(job_id, user_id, 50, "running")
             self._update_document_progress_sync(doc_id, user_id, 50, "processing")
             
-            # Extract metadata using the processor's method
-            initial_text = processor._extract_header_footer_text(target_path)
+            # Extract metadata using appropriate method based on file type
+            if original_filename.lower().endswith('.pdf'):
+                initial_text = processor._extract_header_footer_text(target_path)
+            else:
+                initial_text = processor.document_converter.extract_initial_text_for_metadata(target_path)
+            
             extracted_metadata = processor.metadata_extractor.extract(initial_text)
             
             if extracted_metadata:
@@ -374,12 +392,21 @@ class BackgroundDocumentProcessor:
             else:
                 final_metadata = {"doc_id": doc_id, "original_filename": original_filename}
             
-            # Convert PDF to Markdown using Marker with intelligent table handling
-            print(f"[{doc_id}] Converting PDF to Markdown using Marker with intelligent table handling...")
-            markdown_content = processor._convert_pdf_with_table_handling(target_path)
+            # Convert document to Markdown based on file type
+            if original_filename.lower().endswith('.pdf'):
+                print(f"[{doc_id}] Converting PDF to Markdown using Marker with intelligent table handling...")
+                markdown_content = processor._convert_pdf_with_table_handling(target_path)
+            elif original_filename.lower().endswith(('.docx', '.doc')):
+                print(f"[{doc_id}] Converting Word document to Markdown...")
+                markdown_content = processor.document_converter.convert_word_to_markdown(target_path)
+            elif original_filename.lower().endswith(('.md', '.markdown')):
+                print(f"[{doc_id}] Reading Markdown file content...")
+                markdown_content = processor.document_converter.read_markdown_file(target_path)
+            else:
+                raise Exception(f"Unsupported file format for processing: {original_filename}")
             
             if not markdown_content:
-                raise Exception("Marker produced empty markdown content")
+                raise Exception(f"Document processing produced empty markdown content for {original_filename}")
             
             # Save markdown with our doc_id
             md_filename = f"{doc_id}.md"

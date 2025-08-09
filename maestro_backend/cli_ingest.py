@@ -77,7 +77,7 @@ class LiveProgressCallback:
         typer.secho(f"{timestamp} ⚠ {message}", fg=typer.colors.YELLOW)
 
 def process_single_document(
-    pdf_path: Path, 
+    file_path: Path, 
     doc_id: str, 
     user_id: int, 
     group_id: Optional[str], 
@@ -88,20 +88,31 @@ def process_single_document(
 ) -> bool:
     """
     Process a single document with live progress feedback.
+    Supports PDF, Word (docx, doc), and Markdown (md, markdown) files.
     Only creates database records for successfully processed documents.
     Returns True if successful, False otherwise.
     """
     try:
-        progress.log_step("Starting document processing", f"File: {pdf_path.name}")
+        progress.log_step("Starting document processing", f"File: {file_path.name}")
         
         # Get file size for progress tracking
-        file_size = pdf_path.stat().st_size
-        progress.log_step("File analysis", f"Size: {file_size:,} bytes")
+        file_size = file_path.stat().st_size
+        file_type = file_path.suffix.lower()
+        progress.log_step("File analysis", f"Size: {file_size:,} bytes, Type: {file_type}")
         
         # Process the document using the AI researcher pipeline FIRST
         # Don't create database record until we know processing succeeds
-        progress.log_step("PDF text extraction", "Extracting header/footer for metadata")
-        result = processor.process_pdf(pdf_path)
+        if file_type == '.pdf':
+            progress.log_step("PDF text extraction", "Extracting header/footer for metadata")
+        elif file_type in ['.docx', '.doc']:
+            progress.log_step("Word document processing", "Converting to Markdown and extracting metadata")
+        elif file_type in ['.md', '.markdown']:
+            progress.log_step("Markdown file processing", "Reading content and extracting metadata")
+        else:
+            progress.log_error(f"Unsupported file format: {file_type}")
+            return False
+            
+        result = processor.process_document(file_path)
         
         if result is None:
             progress.log_error("Document processing failed - document will not be added to database")
@@ -116,12 +127,12 @@ def process_single_document(
             db=db,
             doc_id=doc_id,
             user_id=user_id,
-            original_filename=pdf_path.name,
+            original_filename=file_path.name,
             metadata=result.get('extracted_metadata', {}),
             processing_status='completed',  # Only create completed documents
             upload_progress=100,
             file_size=file_size,
-            file_path=str(pdf_path)
+            file_path=str(file_path)
         )
         
         # Add to group if group_id is provided
@@ -133,11 +144,11 @@ def process_single_document(
         
         progress.log_success(f"Document processing completed successfully")
         
-        # Delete the PDF file if requested and processing was successful
+        # Delete the source file if requested and processing was successful
         if delete_after_success:
             try:
-                pdf_path.unlink()  # Delete the file
-                progress.log_success(f"Deleted source file: {pdf_path.name}")
+                file_path.unlink()  # Delete the file
+                progress.log_success(f"Deleted source file: {file_path.name}")
             except Exception as delete_error:
                 progress.log_warning(f"Failed to delete source file: {delete_error}")
                 # Don't fail the entire operation if file deletion fails
@@ -267,16 +278,17 @@ def list_groups(
 @app.command()
 def ingest(
     username: str = typer.Argument(..., help="Username of the user who will own the documents"),
-    pdf_dir: Path = typer.Argument(..., help="Directory containing PDF files to ingest"),
+    document_dir: Path = typer.Argument(..., help="Directory containing documents to ingest (PDF, Word, Markdown)"),
     group_id: Optional[str] = typer.Option(None, "--group", help="ID of the document group to add documents to (optional)"),
-    force_reembed: bool = typer.Option(False, "--force-reembed", help="Force re-processing and re-embedding for all PDFs"),
+    force_reembed: bool = typer.Option(False, "--force-reembed", help="Force re-processing and re-embedding for all documents"),
     device: Optional[str] = typer.Option(None, "--device", help="Device to use for processing (e.g., 'cuda:0', 'cpu')"),
-    delete_after_success: bool = typer.Option(False, "--delete-after-success", help="Delete PDF files after successful processing"),
+    delete_after_success: bool = typer.Option(False, "--delete-after-success", help="Delete source files after successful processing"),
     batch_size: int = typer.Option(5, "--batch-size", "--batch", help="Number of documents to process in parallel"),
 ):
     """
-    Directly process PDF documents with live feedback.
-    This command processes PDFs synchronously, showing real-time progress for each document.
+    Directly process documents with live feedback.
+    Supports PDF, Word (docx, doc), and Markdown (md, markdown) files.
+    This command processes documents synchronously, showing real-time progress for each document.
     Documents are added to the user's library and can be organized into groups later.
     """
     try:
@@ -296,17 +308,29 @@ def ingest(
                 typer.secho(f"Error: Document group '{group_id}' not found for user '{username}'.", fg=typer.colors.RED)
                 raise typer.Exit(code=1)
         
-        # Validate PDF directory
-        pdf_dir = Path(pdf_dir).resolve()
-        if not pdf_dir.is_dir():
-            typer.secho(f"Error: PDF directory not found: {pdf_dir}", fg=typer.colors.RED)
+        # Validate document directory
+        document_dir = Path(document_dir).resolve()
+        if not document_dir.is_dir():
+            typer.secho(f"Error: Document directory not found: {document_dir}", fg=typer.colors.RED)
             raise typer.Exit(code=1)
         
-        # Find PDF files
-        pdf_files = list(pdf_dir.glob("*.pdf"))
-        if not pdf_files:
-            typer.secho(f"No PDF files found in {pdf_dir}", fg=typer.colors.YELLOW)
+        # Find supported document files
+        supported_extensions = ['*.pdf', '*.docx', '*.doc', '*.md', '*.markdown']
+        document_files = []
+        
+        for extension in supported_extensions:
+            files = list(document_dir.glob(extension))
+            document_files.extend(files)
+        
+        if not document_files:
+            typer.secho(f"No supported document files found in {document_dir}", fg=typer.colors.YELLOW)
+            typer.echo("Supported formats: PDF, DOCX, DOC, MD, MARKDOWN")
             raise typer.Exit()
+        
+        # Group files by type for reporting
+        pdf_files = [f for f in document_files if f.suffix.lower() == '.pdf']
+        word_files = [f for f in document_files if f.suffix.lower() in ['.docx', '.doc']]
+        markdown_files = [f for f in document_files if f.suffix.lower() in ['.md', '.markdown']]
         
         typer.echo(f"\n=== MAESTRO Direct Document Processing ===")
         typer.echo(f"Target user: {username} (ID: {user.id})")
@@ -314,7 +338,10 @@ def ingest(
             typer.echo(f"Target group: {group.name} (ID: {group.id})")
         else:
             typer.echo(f"Target group: None (documents will be added to user library)")
-        typer.echo(f"Found {len(pdf_files)} PDF files to process")
+        typer.echo(f"Found {len(document_files)} document files to process:")
+        typer.echo(f"  - {len(pdf_files)} PDF files")
+        typer.echo(f"  - {len(word_files)} Word documents")
+        typer.echo(f"  - {len(markdown_files)} Markdown files")
         typer.echo(f"Force re-embed: {force_reembed}")
         if device:
             typer.echo(f"Using device: {device}")
@@ -346,7 +373,7 @@ def ingest(
         
         # Initialize processor with direct paths and components
         processor = DocumentProcessor(
-            pdf_dir=pdf_dir,  # Use the input directory
+            pdf_dir=document_dir,  # Use the input directory
             markdown_dir=base_path / "processed" / "markdown",
             metadata_dir=base_path / "processed" / "metadata",
             db_path=base_path / "processed" / "metadata.db",
@@ -365,19 +392,19 @@ def ingest(
         success_count = 0
         error_count = 0
         
-        for i, pdf_file in enumerate(pdf_files, 1):
-            typer.echo(f"\n--- Processing {i}/{len(pdf_files)}: {pdf_file.name} ---")
+        for i, document_file in enumerate(document_files, 1):
+            typer.echo(f"\n--- Processing {i}/{len(document_files)}: {document_file.name} ---")
             
             # Generate document ID
             doc_id = str(uuid.uuid4())[:8]
             
             # Create progress tracker
-            progress = LiveProgressCallback(pdf_file.name)
+            progress = LiveProgressCallback(document_file.name)
             
             try:
                 # Process the document
                 success = process_single_document(
-                    pdf_path=pdf_file,
+                    file_path=document_file,
                     doc_id=doc_id,
                     user_id=user.id,
                     group_id=group_id,
@@ -389,14 +416,14 @@ def ingest(
                 
                 if success:
                     success_count += 1
-                    typer.secho(f"✓ Successfully processed {pdf_file.name} (ID: {doc_id})", fg=typer.colors.GREEN)
+                    typer.secho(f"✓ Successfully processed {document_file.name} (ID: {doc_id})", fg=typer.colors.GREEN)
                 else:
                     error_count += 1
-                    typer.secho(f"✗ Failed to process {pdf_file.name}", fg=typer.colors.RED)
+                    typer.secho(f"✗ Failed to process {document_file.name}", fg=typer.colors.RED)
                     
             except Exception as e:
                 error_count += 1
-                typer.secho(f"✗ Error processing {pdf_file.name}: {e}", fg=typer.colors.RED)
+                typer.secho(f"✗ Error processing {document_file.name}: {e}", fg=typer.colors.RED)
         
         # Summary
         typer.echo(f"\n=== Processing Summary ===")

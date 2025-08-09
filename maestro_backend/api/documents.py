@@ -122,8 +122,15 @@ async def upload_document_to_group(
     """
     Upload a new document and add it to a group.
     """
-    if not file.filename.lower().endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+    # Check for supported file formats
+    filename_lower = file.filename.lower()
+    supported_extensions = ['.pdf', '.docx', '.doc', '.md', '.markdown']
+    
+    if not any(filename_lower.endswith(ext) for ext in supported_extensions):
+        raise HTTPException(
+            status_code=400, 
+            detail="Only PDF, Word (docx, doc), and Markdown (md, markdown) files are supported"
+        )
     
     file_content = await file.read()
     result = await document_service.upload_document(

@@ -183,10 +183,16 @@ const DocumentsPage: React.FC = () => {
   };
 
   const handleFilesSelected = (files: File[]) => {
+    console.log(`DocumentsPage: handleFilesSelected called with ${files.length} files:`, files.map(f => `${f.name} (${f.type})`));
+    
     if (!selectedGroup) {
-      setError('Please select a document group first');
+      const errorMsg = 'Please select a document group first';
+      console.error(errorMsg);
+      setError(errorMsg);
       return;
     }
+    
+    console.log(`Starting uploads for group: ${selectedGroup.id}`);
     startUploads(files, selectedGroup.id);
   };
 
@@ -227,12 +233,40 @@ const DocumentsPage: React.FC = () => {
     e.preventDefault();
     setIsDragOver(false);
     
-    const files = Array.from(e.dataTransfer.files).filter(file => 
-      file.type === 'application/pdf'
-    );
+    // Accept multiple file types: PDF, Word documents, and Markdown files
+    const supportedTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+      'application/msword', // .doc
+      'text/markdown', // .md
+      'text/x-markdown' // alternative .md MIME type
+    ];
+    
+    const supportedExtensions = ['.pdf', '.docx', '.doc', '.md', '.markdown'];
+    
+    const allFiles = Array.from(e.dataTransfer.files);
+    console.log(`DocumentsPage: Files dropped:`, allFiles.map(f => `${f.name} (type: ${f.type})`));
+    
+    const files = allFiles.filter(file => {
+      const hasValidType = supportedTypes.includes(file.type);
+      const hasValidExtension = supportedExtensions.some(ext => 
+        file.name.toLowerCase().endsWith(ext)
+      );
+      
+      const isValid = hasValidType || hasValidExtension;
+      console.log(`File ${file.name}: type=${file.type}, extension valid=${hasValidExtension}, type valid=${hasValidType}, accepted=${isValid}`);
+      
+      // Accept file if either MIME type OR file extension matches
+      return isValid;
+    });
+    
+    console.log(`DocumentsPage: ${files.length}/${allFiles.length} files passed validation`);
     
     if (files.length > 0) {
       handleFilesSelected(files);
+    } else if (allFiles.length > 0) {
+      console.error('All files were rejected by validation');
+      setError(`Unsupported file types. Supported: PDF, Word (docx/doc), Markdown (md/markdown)`);
     }
   }, [handleFilesSelected]);
 
@@ -432,8 +466,8 @@ const DocumentsPage: React.FC = () => {
           <div className="absolute inset-0 bg-blue-100 bg-opacity-75 flex items-center justify-center z-50 pointer-events-none">
             <div className="bg-white rounded-lg p-8 shadow-lg text-center">
               <Upload className="h-16 w-16 text-blue-500 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">Drop PDF files here</h3>
-              <p className="text-gray-600">Select a document group first to upload files</p>
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">Drop documents here</h3>
+              <p className="text-gray-600">Supports PDF, Word (docx/doc), and Markdown (md) files</p>
             </div>
           </div>
         )}

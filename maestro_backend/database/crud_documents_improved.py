@@ -48,8 +48,20 @@ async def create_document_atomically(
     
     try:
         # Step 1: Save physical file first
-        consistency_manager.pdf_dir.mkdir(parents=True, exist_ok=True)
-        file_path = consistency_manager.pdf_dir / f"{doc_id}_{original_filename}"
+        # Create appropriate directory based on file type
+        filename_lower = original_filename.lower()
+        
+        if filename_lower.endswith('.pdf'):
+            file_dir = consistency_manager.pdf_dir
+        elif filename_lower.endswith(('.docx', '.doc')):
+            file_dir = consistency_manager.pdf_dir / 'word_documents'  # Store Word docs in subdirectory
+        elif filename_lower.endswith(('.md', '.markdown')):
+            file_dir = consistency_manager.pdf_dir / 'markdown_files'  # Store Markdown files in subdirectory
+        else:
+            raise ValueError(f"Unsupported file format: {original_filename}")
+            
+        file_dir.mkdir(parents=True, exist_ok=True)
+        file_path = file_dir / f"{doc_id}_{original_filename}"
         
         with open(file_path, 'wb') as f:
             f.write(file_content)

@@ -79,13 +79,14 @@ Commands:
   list-groups [--user <username>]
     List document groups
 
-  ingest <username> <pdf_directory> [--group <group_id>] [--force-reembed] [--device <device>] [--delete-after-success] [--batch-size <num>]
-    DIRECTLY process PDF documents with live feedback
+  ingest <username> <document_directory> [--group <group_id>] [--force-reembed] [--device <device>] [--delete-after-success] [--batch-size <num>]
+    DIRECTLY process documents with live feedback (PDF, Word, Markdown)
+    - Supports PDF, Word (docx, doc), and Markdown (md, markdown) files
     - Shows real-time progress for each document
     - Processes documents synchronously (no background queue)
     - Documents are immediately available after processing
     - Documents added to user library (can be organized into groups later)
-    - Optionally delete PDF files after successful processing
+    - Optionally delete source files after successful processing
     - Control parallel processing with --batch-size (default: 5)
 
   status [--user <username>] [--group <group_id>]
@@ -123,16 +124,16 @@ Examples:
   $0 create-group researcher "AI Papers" --description "Machine Learning Research"
 
   # Direct document processing with live feedback (no group)
-  $0 ingest researcher ./pdfs
+  $0 ingest researcher ./documents
 
-  # Process with specific group
-  $0 ingest researcher ./pdfs --group GROUP_ID
+  # Process with specific group  
+  $0 ingest researcher ./documents --group GROUP_ID
 
   # Process with specific GPU device
-  $0 ingest researcher ./pdfs --device cuda:0
+  $0 ingest researcher ./documents --device cuda:0
 
   # Force re-processing of existing documents
-  $0 ingest researcher ./pdfs --force-reembed
+  $0 ingest researcher ./documents --force-reembed
 
   # Check status
   $0 status --user researcher
@@ -195,43 +196,61 @@ case "$1" in
         fi
         
         if [ $# -lt 2 ]; then
-            print_error "ingest requires username and pdf_directory"
-            echo "Usage: $0 ingest <username> <pdf_directory> [--group <group_id>] [--force-reembed] [--device <device>] [--delete-after-success] [--batch-size <num>]"
+            print_error "ingest requires username and document_directory"
+            echo "Usage: $0 ingest <username> <document_directory> [--group <group_id>] [--force-reembed] [--device <device>] [--delete-after-success] [--batch-size <num>]"
             exit 1
         fi
         
-        # Check if PDF directory exists and has PDFs
-        pdf_dir="$2"
-        if [ ! -d "$pdf_dir" ]; then
-            print_error "PDF directory '$pdf_dir' does not exist"
+        # Check if document directory exists and has supported files
+        doc_dir="$2"
+        if [ ! -d "$doc_dir" ]; then
+            print_error "Document directory '$doc_dir' does not exist"
             exit 1
         fi
         
-        pdf_count=$(find "$pdf_dir" -name "*.pdf" | wc -l)
-        if [ "$pdf_count" -eq 0 ]; then
-            print_warning "No PDF files found in '$pdf_dir'"
+        # Count supported document types
+        pdf_count=$(find "$doc_dir" -name "*.pdf" | wc -l)
+        docx_count=$(find "$doc_dir" -name "*.docx" -o -name "*.doc" | wc -l)
+        md_count=$(find "$doc_dir" -name "*.md" -o -name "*.markdown" | wc -l)
+        total_count=$((pdf_count + docx_count + md_count))
+        
+        if [ "$total_count" -eq 0 ]; then
+            print_warning "No supported document files found in '$doc_dir'"
+            print_info "Supported formats: PDF, DOCX, DOC, MD, MARKDOWN"
             read -p "Continue anyway? (y/N): " -n 1 -r
             echo
             if [[ ! $REPLY =~ ^[Yy]$ ]]; then
                 exit 0
             fi
         else
-            print_info "Found $pdf_count PDF files in '$pdf_dir'"
+            print_info "Found $total_count supported document files in '$doc_dir':"
+            if [ "$pdf_count" -gt 0 ]; then
+                print_info "  - $pdf_count PDF files"
+            fi
+            if [ "$docx_count" -gt 0 ]; then
+                print_info "  - $docx_count Word documents"
+            fi
+            if [ "$md_count" -gt 0 ]; then
+                print_info "  - $md_count Markdown files"
+            fi
         fi
         
         print_info "Starting DIRECT document processing for user '$1'..."
         print_warning "This will process documents immediately with live feedback"
         
         # Convert local path to container path
-        container_path="/app/pdfs"
-        if [[ "$pdf_dir" == "./pdfs" || "$pdf_dir" == "pdfs" ]]; then
+        container_path="/app/documents"
+        if [[ "$doc_dir" == "./documents" || "$doc_dir" == "documents" ]]; then
+            container_path="/app/documents"
+        elif [[ "$doc_dir" == "./pdfs" || "$doc_dir" == "pdfs" ]]; then
+            # Backwards compatibility - still support ./pdfs
             container_path="/app/pdfs"
-        elif [[ "$pdf_dir" == /* ]]; then
-            print_warning "Using absolute path '$pdf_dir' - make sure it's mounted in the container"
-            container_path="$pdf_dir"
+        elif [[ "$doc_dir" == /* ]]; then
+            print_warning "Using absolute path '$doc_dir' - make sure it's mounted in the container"
+            container_path="$doc_dir"
         else
-            print_warning "Converting relative path '$pdf_dir' to '/app/pdfs'"
-            container_path="/app/pdfs"
+            print_warning "Converting relative path '$doc_dir' to '/app/documents'"
+            container_path="/app/documents"
         fi
         
         # Replace the local path with container path for the CLI command

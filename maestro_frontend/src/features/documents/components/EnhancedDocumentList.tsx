@@ -250,21 +250,56 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
       return;
     }
     
-    const files = Array.from(e.dataTransfer.files).filter(file => 
-      file.type === 'application/pdf'
-    );
+    // Accept multiple file types: PDF, Word documents, and Markdown files
+    const supportedTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+      'application/msword', // .doc
+      'text/markdown', // .md
+      'text/x-markdown' // alternative .md MIME type
+    ];
+    
+    const supportedExtensions = ['.pdf', '.docx', '.doc', '.md', '.markdown'];
+    
+    const allFiles = Array.from(e.dataTransfer.files);
+    console.log(`EnhancedDocumentList: Files dropped:`, allFiles.map(f => `${f.name} (type: ${f.type})`));
+    
+    const files = allFiles.filter(file => {
+      const hasValidType = supportedTypes.includes(file.type);
+      const hasValidExtension = supportedExtensions.some(ext => 
+        file.name.toLowerCase().endsWith(ext)
+      );
+      
+      const isValid = hasValidType || hasValidExtension;
+      console.log(`File ${file.name}: type=${file.type}, extension valid=${hasValidExtension}, type valid=${hasValidType}, accepted=${isValid}`);
+      
+      // Accept file if either MIME type OR file extension matches
+      return isValid;
+    });
+    
+    console.log(`EnhancedDocumentList: ${files.length}/${allFiles.length} files passed validation`);
     
     if (files.length > 0) {
       startUploads(files, selectedGroupId);
       onDocumentAdded?.();
+    } else if (allFiles.length > 0) {
+      console.error('All files were rejected by validation');
+      setError(`Unsupported file types. Supported: PDF, Word (docx/doc), Markdown (md/markdown)`);
     }
   }, [selectedGroupId, startUploads, onDocumentAdded]);
 
   const handleFilesSelected = useCallback((files: File[]) => {
+    console.log(`handleFilesSelected called with ${files.length} files:`, files.map(f => f.name));
+    console.log('selectedGroupId:', selectedGroupId);
+    
     if (!selectedGroupId) {
-      setError('Please select a document group first');
+      const errorMsg = 'Please select a document group first';
+      console.error(errorMsg);
+      setError(errorMsg);
       return;
     }
+    
+    console.log('Starting uploads...');
     startUploads(files, selectedGroupId);
     onDocumentAdded?.();
   }, [selectedGroupId, startUploads, onDocumentAdded]);
@@ -303,10 +338,10 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
         <div className="absolute inset-0 bg-primary/10 bg-opacity-75 flex items-center justify-center z-50 pointer-events-none">
           <div className="bg-background rounded-lg p-8 shadow-lg text-center border-2 border-primary border-dashed">
             <Upload className="h-16 w-16 text-primary mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-foreground mb-2">Drop PDF files here</h3>
+            <h3 className="text-xl font-semibold text-foreground mb-2">Drop documents here</h3>
             <p className="text-muted-foreground">
               {selectedGroupId 
-                ? 'Files will be added to this document group'
+                ? 'Supports PDF, Word (docx/doc), and Markdown (md) files'
                 : 'Select a document group first to upload files'
               }
             </p>

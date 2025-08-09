@@ -36,6 +36,9 @@ export const DocumentUploadProvider: React.FC<{ children: React.ReactNode }> = (
   }, []);
 
   const startUploads = useCallback(async (files: File[], groupId: string) => {
+    console.log(`DocumentUploadContext: startUploads called with ${files.length} files for group ${groupId}`);
+    console.log('Files:', files.map(f => `${f.name} (${f.size} bytes, ${f.type})`));
+    
     const newUploadFiles: UploadFile[] = files.map(file => ({
       id: generateFileId(),
       file,
@@ -43,15 +46,30 @@ export const DocumentUploadProvider: React.FC<{ children: React.ReactNode }> = (
       progress: 0
     }));
 
-    setUploadingFiles(prev => [...prev, ...newUploadFiles]);
+    console.log('Created upload files:', newUploadFiles.map(uf => `${uf.id}: ${uf.file.name}`));
+    
+    setUploadingFiles(prev => {
+      const updated = [...prev, ...newUploadFiles];
+      console.log('Updated uploadingFiles count:', updated.length);
+      return updated;
+    });
 
     for (const uploadFile of newUploadFiles) {
-      await uploadService.uploadFile(
-        uploadFile.file,
-        groupId,
-        uploadFile.id,
-        (progress) => updateFileProgress(uploadFile.id, progress)
-      );
+      console.log(`Starting upload for: ${uploadFile.file.name} (ID: ${uploadFile.id})`);
+      try {
+        const result = await uploadService.uploadFile(
+          uploadFile.file,
+          groupId,
+          uploadFile.id,
+          (progress) => {
+            console.log(`Progress for ${uploadFile.file.name}:`, progress);
+            updateFileProgress(uploadFile.id, progress);
+          }
+        );
+        console.log(`Upload result for ${uploadFile.file.name}:`, result);
+      } catch (error) {
+        console.error(`Upload error for ${uploadFile.file.name}:`, error);
+      }
     }
   }, [updateFileProgress]);
 

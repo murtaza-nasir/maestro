@@ -30,12 +30,24 @@ export const DocumentUploadZone: React.FC<DocumentUploadZoneProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const validateFile = (file: File): string | null => {
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      return 'Only PDF files are supported';
+    const supportedExtensions = ['.pdf', '.docx', '.doc', '.md', '.markdown'];
+    const fileName = file.name.toLowerCase();
+    
+    // Debug logging
+    console.log(`Validating file: ${file.name}, size: ${file.size}, type: ${file.type}`);
+    
+    if (!supportedExtensions.some(ext => fileName.endsWith(ext))) {
+      const error = `Only PDF, Word (docx, doc), and Markdown (md, markdown) files are supported. Got: ${file.name}`;
+      console.error('File validation failed:', error);
+      return error;
     }
     if (file.size > maxFileSize * 1024 * 1024) {
-      return `File size must be less than ${maxFileSize}MB`;
+      const error = `File size must be less than ${maxFileSize}MB. Got: ${(file.size / 1024 / 1024).toFixed(2)}MB`;
+      console.error('File size validation failed:', error);
+      return error;
     }
+    
+    console.log(`File validation passed: ${file.name}`);
     return null;
   };
 
@@ -54,12 +66,16 @@ export const DocumentUploadZone: React.FC<DocumentUploadZoneProps> = ({
     });
 
     if (errors.length > 0) {
-      // TODO: Show error toast notifications
       console.error('File validation errors:', errors);
+      // Show alert for now - TODO: Replace with proper toast notifications
+      alert(`File validation errors:\n${errors.join('\n')}`);
     }
 
     if (validFiles.length > 0) {
+      console.log(`Calling onFilesSelected with ${validFiles.length} valid files:`, validFiles.map(f => f.name));
       onFilesSelected(validFiles);
+    } else if (errors.length > 0) {
+      console.log('No valid files to upload due to validation errors');
     }
   }, [maxFiles, maxFileSize, onFilesSelected]);
 
@@ -90,13 +106,26 @@ export const DocumentUploadZone: React.FC<DocumentUploadZoneProps> = ({
     e.stopPropagation();
     setIsDragOver(false);
 
-    if (disabled) return;
+    if (disabled) {
+      console.log('Upload zone is disabled, ignoring drop');
+      return;
+    }
+
+    if (!selectedGroupId) {
+      console.log('No group selected, ignoring drop');
+      alert('Please select a document group first before uploading files');
+      return;
+    }
 
     const files = e.dataTransfer.files;
+    console.log(`Files dropped: ${files.length} files`, Array.from(files).map(f => `${f.name} (${f.type})`));
+    
     if (files && files.length > 0) {
       handleFiles(files);
+    } else {
+      console.log('No files in drop event');
     }
-  }, [disabled, handleFiles]);
+  }, [disabled, selectedGroupId, handleFiles]);
 
   const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -108,10 +137,21 @@ export const DocumentUploadZone: React.FC<DocumentUploadZoneProps> = ({
   }, [handleFiles]);
 
   const handleClick = useCallback(() => {
-    if (!disabled && fileInputRef.current) {
+    if (disabled) {
+      console.log('Upload zone is disabled, ignoring click');
+      return;
+    }
+    
+    if (!selectedGroupId) {
+      console.log('No group selected, ignoring click');
+      alert('Please select a document group first before uploading files');
+      return;
+    }
+    
+    if (fileInputRef.current) {
       fileInputRef.current.click();
     }
-  }, [disabled]);
+  }, [disabled, selectedGroupId]);
 
   return (
     <div className="space-y-4">
@@ -135,7 +175,7 @@ export const DocumentUploadZone: React.FC<DocumentUploadZoneProps> = ({
           ref={fileInputRef}
           type="file"
           multiple
-          accept=".pdf"
+          accept=".pdf,.docx,.doc,.md,.markdown"
           onChange={handleFileInputChange}
           className="hidden"
           disabled={disabled || !selectedGroupId}
@@ -154,16 +194,16 @@ export const DocumentUploadZone: React.FC<DocumentUploadZoneProps> = ({
           
           <div className="space-y-2">
             <h3 className="text-lg font-medium text-text-primary">
-              {isDragOver ? "Drop files here" : "Upload PDF Documents"}
+              {isDragOver ? "Drop files here" : "Upload Documents"}
             </h3>
             <p className="text-sm text-text-secondary">
               {!selectedGroupId 
                 ? "Select a document group first"
-                : `Drag and drop PDF files here, or click to browse`
+                : `Drag and drop PDF, Word, or Markdown files here, or click to browse`
               }
             </p>
             <p className="text-xs text-text-tertiary">
-              Maximum {maxFiles} files, up to {maxFileSize}MB each
+              Maximum {maxFiles} files, up to {maxFileSize}MB each • Supported: PDF, DOCX, DOC, MD
             </p>
           </div>
         </div>
