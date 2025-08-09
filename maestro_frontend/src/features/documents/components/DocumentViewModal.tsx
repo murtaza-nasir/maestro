@@ -21,6 +21,7 @@ import type { DocumentViewResponse } from '../api';
 import { getDocumentContent } from '../api';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 
 interface DocumentViewModalProps {
   document: Document | null;
@@ -119,16 +120,16 @@ export const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex-1 overflow-hidden p-4">
+        <div className="flex-1 overflow-hidden p-4 flex flex-col">
           {isLoading ? (
-            <div className="flex items-center justify-center h-96">
+            <div className="flex items-center justify-center flex-1">
               <div className="text-center">
                 <Loader2 className="h-12 w-12 animate-spin mx-auto mb-4 text-blue-600" />
                 <p className="text-gray-600 text-lg">Loading document content...</p>
               </div>
             </div>
           ) : error ? (
-            <div className="flex items-center justify-center h-96">
+            <div className="flex items-center justify-center flex-1">
               <div className="text-center max-w-md">
                 <div className="bg-red-50 border border-red-200 rounded-lg p-6">
                   <p className="text-red-700 mb-4">{error}</p>
@@ -143,9 +144,9 @@ export const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 h-full">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 flex-1 overflow-hidden">
               {/* Metadata Sidebar */}
-              <div className="lg:col-span-1 bg-muted/30 rounded-lg p-4 space-y-3 overflow-y-auto max-h-full">
+              <div className="lg:col-span-1 bg-muted/30 rounded-lg p-4 space-y-3 overflow-y-auto">
                 <h3 className="text-base font-semibold text-foreground mb-2 border-b border-border pb-1">Document Information</h3>
                 
                 <div className="space-y-3">
@@ -264,16 +265,16 @@ export const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
                   )}
                 </div>
 
-                <div className="flex-1 border border-border rounded-lg bg-background overflow-hidden">
-                  <div className="h-full overflow-y-auto" style={{ maxHeight: 'calc(95vh - 350px)' }}>
-                    <div className="p-4">
-                    {documentContent?.content ? (
-                      <div className="prose prose-base max-w-none prose-headings:text-foreground prose-p:text-foreground prose-a:text-primary prose-strong:text-foreground prose-code:text-foreground prose-pre:bg-muted prose-blockquote:border-l-primary">
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          components={{
-                            // Custom link component to open external links in new tab
-                            a: ({ ...props }) => (
+                <div className="flex-1 border border-border rounded-lg bg-background overflow-y-auto">
+                  <div className="p-4">
+                  {documentContent?.content ? (
+                    <div className="prose prose-base max-w-none prose-headings:text-foreground prose-p:text-foreground prose-a:text-primary prose-strong:text-foreground prose-code:text-foreground prose-pre:bg-muted prose-blockquote:border-l-primary">
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        rehypePlugins={[rehypeRaw]}
+                        components={{
+                          // Custom link component to open external links in new tab
+                          a: ({ ...props }) => (
                               <a 
                                 {...props} 
                                 target="_blank" 
@@ -330,21 +331,20 @@ export const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
                             ),
                           }}
                         >
-                          {documentContent.content.replace(/<br\s*\/?>/gi, '\n').replace(/&nbsp;/g, ' ')}
+                          {documentContent.content}
                         </ReactMarkdown>
                       </div>
-                    ) : (
-                      <div className="text-center py-16">
-                        <FileText className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                        <p className="text-foreground text-lg font-medium mb-2">
-                          No content available for this document
-                        </p>
-                        <p className="text-muted-foreground">
-                          The document may still be processing or an error occurred during processing
-                        </p>
-                      </div>
-                    )}
+                  ) : (
+                    <div className="text-center py-16">
+                      <FileText className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-foreground text-lg font-medium mb-2">
+                        No content available for this document
+                      </p>
+                      <p className="text-muted-foreground">
+                        The document may still be processing or an error occurred during processing
+                      </p>
                     </div>
+                  )}
                   </div>
                 </div>
               </div>
