@@ -97,9 +97,22 @@ class BackgroundDocumentProcessor:
                     # Process the document
                     success = self._process_document_sync(job)
                     
-                    # Mark as completed or failed
+                    # Mark as completed or failed, with cleanup if failed
                     final_status = "completed" if success else "failed"
                     crud.update_document_status(db, document.id, final_status, 100)
+                    
+                    # If processing failed, clean up any orphaned entries
+                    if not success:
+                        print(f"[{job.doc_id}] Processing failed, performing cleanup...")
+                        try:
+                            from database.crud_documents_improved import cleanup_failed_document_improved
+                            cleanup_success = cleanup_failed_document_improved(db, document.id, document.user_id)
+                            if cleanup_success:
+                                print(f"[{job.doc_id}] Successfully cleaned up failed processing artifacts")
+                            else:
+                                print(f"[{job.doc_id}] Warning: Cleanup encountered some issues")
+                        except Exception as cleanup_error:
+                            print(f"[{job.doc_id}] Error during cleanup: {cleanup_error}")
                     
                     print(f"[{job.doc_id}] Document processing finished with status: {final_status}")
                     
@@ -112,6 +125,13 @@ class BackgroundDocumentProcessor:
                 self.is_processing = False
                 if self.current_job:
                     crud.update_document_status(db, self.current_job.doc_id, "failed", 0)
+                    # Also attempt cleanup for the failed job
+                    try:
+                        from database.crud_documents_improved import cleanup_failed_document_improved
+                        cleanup_failed_document_improved(db, self.current_job.doc_id, self.current_job.user_id)
+                        print(f"[{self.current_job.doc_id}] Cleaned up after unexpected error")
+                    except Exception as cleanup_error:
+                        print(f"[{self.current_job.doc_id}] Cleanup after error failed: {cleanup_error}")
                 self.current_job = None
             finally:
                 db.close()
@@ -376,9 +396,15 @@ class BackgroundDocumentProcessor:
                 json.dump(final_metadata, f, indent=2, ensure_ascii=False)
             print(f"[{doc_id}] Saved metadata to: {metadata_save_path}")
             
-            # Add to AI researcher database with our doc_id
+            # Add to AI researcher database with our doc_id (with error handling)
             ai_db = processor.database
-            ai_db.add_processed_document(doc_id, original_filename, final_metadata)
+            try:
+                ai_db.add_processed_document(doc_id, original_filename, final_metadata)
+                print(f"[{doc_id}] Added to AI researcher database")
+            except Exception as e:
+                print(f"[{doc_id}] Warning: Failed to add to AI database: {e}")
+                # Continue processing but note the failure
+                # This will be caught and cleaned up if vector store also fails
             
             # Step 4: Generate embeddings (70% progress)
             print(f"[{doc_id}] Generating embeddings...")

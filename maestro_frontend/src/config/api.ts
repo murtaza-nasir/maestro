@@ -195,5 +195,6 @@ export const buildApiUrl = (endpoint: string): string => {
   return `${API_CONFIG.BASE_URL}${endpoint}`
 }
 
+
 // Export default axios instance for backward compatibility
 export default apiClient

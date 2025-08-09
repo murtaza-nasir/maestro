@@ -90,8 +90,15 @@ class MetadataExtractor:
         
         # Extract configuration from the fast model
         api_key = fast_model_config.get('api_key')
-        base_url = fast_model_config.get('base_url', 'https://openrouter.ai/api/v1/')
+        base_url = fast_model_config.get('base_url')
         model = fast_model_config.get('model_name', 'openai/gpt-4o-mini')
+        
+        # If base_url is None/empty, get it from the provider this model uses
+        if not base_url:
+            provider_name = fast_model_config.get('provider', 'openrouter')
+            providers = ai_endpoints.get('providers', {})
+            provider_config = providers.get(provider_name, {})
+            base_url = provider_config.get('base_url', 'https://openrouter.ai/api/v1/')
         
         # If no fast model configuration found, fallback to environment variables
         if not api_key or not model:

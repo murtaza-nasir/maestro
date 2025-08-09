@@ -1,5 +1,20 @@
 """
-Document service that interfaces with the existing AI researcher document infrastructure.
+Document Service - Orchestrates Document Management Across Multiple Storage Systems
+
+This service acts as the central coordinator for document operations across:
+1. Main application database (maestro.db) - Document records and status
+2. AI researcher database (metadata.db) - Extracted metadata for fast queries
+3. ChromaDB vector store - Embeddings and chunks for semantic search
+4. File system - Original PDFs and processed markdown files
+
+Key responsibilities:
+- Coordinating document uploads and processing
+- Managing dual-database queries for efficient retrieval
+- Handling document deletion across all storage systems
+- Providing cached access to frequently accessed metadata
+- Supporting pagination, filtering, and search operations
+
+For architecture details, see: docs/DATABASE_ARCHITECTURE.md
 """
 import os
 import uuid
@@ -19,7 +34,20 @@ from database import crud, models
 from api.schemas import Document as DocumentSchema, DocumentGroup as DocumentGroupSchema
 
 class DocumentService:
-    """Service for managing documents using the existing AI researcher infrastructure."""
+    """
+    Service for managing documents using the existing AI researcher infrastructure.
+    
+    This service coordinates operations across multiple storage systems:
+    - Main DB: Basic document records and processing status
+    - AI DB: Rich metadata for filtering and search
+    - Vector Store: Embeddings for semantic search
+    - File System: Original and processed document files
+    
+    Performance optimizations:
+    - 5-minute metadata cache to reduce vector store queries
+    - Database-level filtering before pagination
+    - Batch operations for efficiency
+    """
     
     def __init__(self):
         # Paths to existing document infrastructure - use absolute paths to ensure consistency
@@ -753,53 +781,41 @@ class DocumentService:
             return False
     
     async def upload_document(self, file_content: bytes, filename: str, group_id: str, user_id: int, db: Session) -> Optional[Dict[str, Any]]:
-        """Upload a new document and process it through the existing pipeline."""
+        """Upload a new document using atomic creation with consistent ID generation."""
         try:
-            # Generate unique document ID using same format as existing vector store documents
-            doc_id = str(uuid.uuid4())[:8]
+            # Import the improved document creation function
+            from database.crud_documents_improved import create_document_atomically
             
-            # Save file to raw_pdfs directory
-            self.pdf_dir.mkdir(parents=True, exist_ok=True)
-            file_path = self.pdf_dir / f"{doc_id}_{filename}"
+            print(f"Starting atomic document creation for: {filename}")
             
-            with open(file_path, 'wb') as f:
-                f.write(file_content)
-            
-            # Get file size
-            file_size = len(file_content)
-            
-            # Create document record with 'queued' status
-            crud.create_document(
+            # Create document atomically with rollback capability
+            document = await create_document_atomically(
                 db=db,
-                doc_id=doc_id,
                 user_id=user_id,
                 original_filename=filename,
-                metadata={'status': 'uploaded', 'file_path': str(file_path)},
-                processing_status='queued',
-                upload_progress=100,  # Upload is complete
-                file_size=file_size,
-                file_path=str(file_path)
+                file_content=file_content,
+                group_id=group_id,
+                metadata={'status': 'uploaded', 'source': 'ui_upload'}
             )
             
-            # Add to group
-            crud.add_document_to_group(db, group_id=group_id, doc_id=doc_id, user_id=user_id)
-            
-            # The document is now in the database with status 'queued'.
-            # The background processor will pick it up from there.
-            
-            # Return document data
-            doc_data = {
-                'id': doc_id,
-                'original_filename': filename,
-                'user_id': user_id,
-                'created_at': datetime.now().isoformat(),
-                'processing_status': 'queued',
-                'upload_progress': 100,
-                'file_size': file_size,
-                'metadata_': {'status': 'uploaded', 'file_path': str(file_path)}
-            }
-            
-            return doc_data
+            if document:
+                # Return document data
+                doc_data = {
+                    'id': document.id,
+                    'original_filename': document.original_filename,
+                    'user_id': document.user_id,
+                    'created_at': document.created_at.isoformat(),
+                    'processing_status': document.processing_status,
+                    'upload_progress': document.upload_progress,
+                    'file_size': document.file_size,
+                    'metadata_': document.metadata_
+                }
+                
+                print(f"Successfully created document {document.id} atomically")
+                return doc_data
+            else:
+                print("Failed to create document atomically")
+                return None
             
         except Exception as e:
             print(f"Error uploading document: {e}")
@@ -877,6 +893,44 @@ class DocumentService:
                 
         except Exception as e:
             print(f"Error deleting document {doc_id} from vector store: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    async def delete_document_from_ai_db(self, doc_id: str) -> bool:
+        """Delete a document from the AI researcher database."""
+        try:
+            ai_db = self._get_ai_db()
+            return ai_db.delete_document(doc_id)
+        except Exception as e:
+            print(f"Error deleting document {doc_id} from AI researcher database: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    async def delete_document_completely(self, doc_id: str, user_id: int, db: Session) -> bool:
+        """
+        Delete a document completely and atomically from all storage systems.
+        Uses the DocumentConsistencyManager to ensure proper cleanup.
+        """
+        try:
+            # Import the improved deletion function
+            from database.crud_documents_improved import delete_document_atomically
+            
+            print(f"Starting atomic document deletion for: {doc_id}")
+            
+            # Delete document atomically from all systems
+            success = await delete_document_atomically(db, doc_id, user_id)
+            
+            if success:
+                print(f"Successfully deleted document {doc_id} from all systems")
+            else:
+                print(f"Document {doc_id} deletion completed with some issues")
+                
+            return success
+            
+        except Exception as e:
+            print(f"Error in atomic document deletion: {e}")
             import traceback
             traceback.print_exc()
             return False

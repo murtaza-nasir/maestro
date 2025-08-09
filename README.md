@@ -332,6 +332,47 @@ docker-compose logs backend
 
 > **Windows Users**: For detailed Windows setup instructions, troubleshooting, and CLI usage, see [WINDOWS_SETUP.md](./WINDOWS_SETUP.md).
 
+## Database Management Tools
+
+<details>
+  <summary><strong>Database Reset and Consistency Tools</strong></summary>
+  <br>
+  
+  MAESTRO uses a dual-database architecture that requires synchronized maintenance. The system includes powerful CLI tools for database management and consistency checking.
+
+  ### Quick Database Operations
+  ```bash
+  # Check database status and consistency
+  ./maestro-cli.sh reset-db --check
+  
+  # Get database statistics  
+  ./maestro-cli.sh reset-db --stats
+  
+  # Reset all databases (with backup)
+  ./maestro-cli.sh reset-db --backup
+  ```
+
+  ### Document Consistency Management
+  ```bash
+  # Check system-wide document consistency
+  python maestro_backend/cli_document_consistency.py system-status
+  
+  # Clean up orphaned documents
+  python maestro_backend/cli_document_consistency.py cleanup-all
+  
+  # Check specific user's documents
+  python maestro_backend/cli_document_consistency.py check-user <user_id>
+  ```
+
+  ### When to Use These Tools
+  - **Database Reset**: Complete fresh start, removes ALL data
+  - **Consistency Tools**: Targeted cleanup, preserves valid data  
+  - **Automatic Monitoring**: Built-in system runs every 60 minutes
+
+  > For detailed instructions and advanced usage, see [README_DATABASE_RESET.md](./README_DATABASE_RESET.md)
+
+</details>
+
 ## Technical Overview
 
 MAESTRO is built on a modern, decoupled architecture:

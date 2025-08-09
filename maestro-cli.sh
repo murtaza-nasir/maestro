@@ -100,6 +100,14 @@ Commands:
   search <username> <query> [--limit <num>]
     Search through documents for a specific user
 
+  reset-db [--backup] [--force] [--stats] [--check]
+    Reset ALL databases (main, AI, vector store) and document files
+    CRITICAL: All databases must be reset together to maintain data consistency
+    - --backup: Create timestamped backups before reset
+    - --force: Skip confirmation prompts (DANGEROUS!)
+    - --stats: Show database statistics only (don't reset)
+    - --check: Check data consistency across databases only
+
   help
     Show this help message
 
@@ -128,6 +136,12 @@ Examples:
 
   # Check status
   $0 status --user researcher
+
+  # Database management
+  $0 reset-db --stats                    # Show current database statistics
+  $0 reset-db --check                    # Check data consistency
+  $0 reset-db --backup                   # Reset with backup
+  $0 reset-db --force                    # Reset without confirmation
 
 For more detailed help on any command:
   $0 <command> --help
@@ -249,6 +263,122 @@ case "$1" in
         fi
         print_info "Searching documents for user '$1'..."
         run_direct_cli search "$@"
+        ;;
+    "reset-db")
+        shift
+        
+        # Parse reset-db specific arguments
+        BACKUP=false
+        FORCE=false
+        STATS=false
+        CHECK=false
+        
+        for arg in "$@"; do
+            case $arg in
+                --backup)
+                    BACKUP=true
+                    ;;
+                --force)
+                    FORCE=true
+                    ;;
+                --stats)
+                    STATS=true
+                    ;;
+                --check)
+                    CHECK=true
+                    ;;
+                --help)
+                    echo "Database Reset Command"
+                    echo "Usage: $0 reset-db [OPTIONS]"
+                    echo ""
+                    echo "CRITICAL: All databases must be reset together to maintain data consistency!"
+                    echo "This includes:"
+                    echo "  • Main application database (users, chats, documents)"
+                    echo "  • AI researcher database (extracted metadata)"
+                    echo "  • ChromaDB vector store (embeddings and chunks)"
+                    echo "  • All document files (PDFs, markdown, metadata)"
+                    echo ""
+                    echo "Options:"
+                    echo "  --backup  Create timestamped backups before reset"
+                    echo "  --force   Skip confirmation prompts (DANGEROUS!)"
+                    echo "  --stats   Show database statistics only (don't reset)"
+                    echo "  --check   Check data consistency across databases only"
+                    echo "  --help    Show this help message"
+                    echo ""
+                    echo "Examples:"
+                    echo "  $0 reset-db --stats     # Show current statistics"
+                    echo "  $0 reset-db --check     # Check data consistency"
+                    echo "  $0 reset-db --backup    # Reset with backup"
+                    echo "  $0 reset-db --force     # Reset without confirmation"
+                    exit 0
+                    ;;
+                *)
+                    print_error "Unknown option for reset-db: $arg"
+                    echo "Use '$0 reset-db --help' for usage information"
+                    exit 1
+                    ;;
+            esac
+        done
+        
+        print_warning "Database reset operates on ALL databases simultaneously!"
+        print_info "This ensures data consistency across all storage systems."
+        
+        # Copy the reset script to the container
+        print_info "Copying reset script to Docker container..."
+        docker cp reset_databases.py maestro-backend:/app/reset_databases.py 2>/dev/null || {
+            print_error "Failed to copy reset script to container. Is maestro-backend running?"
+            print_info "Try starting the backend first: docker compose up -d backend"
+            exit 1
+        }
+        
+        # Build the command based on arguments
+        CMD="python /app/reset_databases.py"
+        if [ "$BACKUP" = true ]; then
+            CMD="$CMD --backup"
+        fi
+        if [ "$FORCE" = true ]; then
+            CMD="$CMD --force"
+        fi
+        if [ "$STATS" = true ]; then
+            CMD="$CMD --stats"
+        fi
+        if [ "$CHECK" = true ]; then
+            CMD="$CMD --check"
+        fi
+        
+        # Execute the reset script inside the container
+        print_info "Executing database operations inside Docker container..."
+        
+        # Check if container is running
+        if docker ps --format '{{.Names}}' | grep -q '^maestro-backend$'; then
+            # Container is running, use exec
+            # Use -i for interactive input but handle TTY dynamically
+            if [ -t 0 ]; then
+                docker exec -it maestro-backend $CMD
+            else
+                docker exec -i maestro-backend $CMD
+            fi
+        else
+            # Container exists but not running, use run
+            print_warning "Backend container is not running. Starting temporary container..."
+            docker run --rm -it \
+                -v maestro-data:/app/ai_researcher/data \
+                -v ./maestro_backend/data:/app/data \
+                -w /app \
+                maestro-backend \
+                $CMD
+        fi
+        
+        # Clean up - remove the script from container if it's running
+        if docker ps --format '{{.Names}}' | grep -q '^maestro-backend$'; then
+            docker exec maestro-backend rm -f /app/reset_databases.py 2>/dev/null || true
+        fi
+        
+        if [ "$STATS" = false ] && [ "$CHECK" = false ]; then
+            print_success "Database reset completed successfully!"
+            print_info "Recommendation: Restart Docker containers for clean state:"
+            print_info "  docker compose down && docker compose up -d"
+        fi
         ;;
     *)
         print_error "Unknown command: $1"

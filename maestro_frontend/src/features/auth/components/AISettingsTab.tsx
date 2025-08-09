@@ -73,14 +73,19 @@ export const AISettingsTab: React.FC = () => {
   }
 
   useEffect(() => {
-    // Only fetch models once when component mounts and there's an enabled provider
-    if (draftSettings?.ai_endpoints) {
+    // Only fetch models in simple mode and when component mounts with an enabled provider
+    // Don't auto-fetch when switching to advanced mode to avoid authentication issues
+    if (draftSettings?.ai_endpoints && !draftSettings.ai_endpoints.advanced_mode) {
       const enabledProvider = Object.entries(draftSettings.ai_endpoints.providers).find(
         ([_, config]) => config.enabled
       )
       
       if (enabledProvider && getModelsForSimpleMode().length === 0) {
-        fetchAvailableModels(enabledProvider[0])
+        const providerConfig = draftSettings.ai_endpoints.providers[enabledProvider[0] as ProviderKey]
+        // Only fetch models if we have an API key configured (except for custom providers)
+        if (providerConfig?.api_key || enabledProvider[0] === 'custom') {
+          fetchAvailableModels(enabledProvider[0])
+        }
       }
     }
   }, [draftSettings?.ai_endpoints, fetchAvailableModels])
@@ -303,9 +308,12 @@ export const AISettingsTab: React.FC = () => {
       
       setDraftSettings({ ai_endpoints: newAiEndpoints })
       
-      // Fetch models for the new provider
+      // Only fetch models if we have an API key for this provider (or it's custom)
       setTimeout(() => {
-        fetchAvailableModels(value as ProviderKey)
+        const hasApiKey = updatedModel.api_key || value === 'custom'
+        if (hasApiKey) {
+          fetchAvailableModels(value as ProviderKey)
+        }
       }, 100)
       
       return

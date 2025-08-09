@@ -1,3 +1,26 @@
+"""
+AI Researcher Database Module
+
+This module manages the metadata database for processed documents.
+It's part of the dual-database architecture where:
+- This database (metadata.db) stores extracted document metadata for fast queries
+- Main database (maestro.db) stores document records and application data
+- Vector store (ChromaDB) stores embeddings and chunks
+
+The metadata stored here includes:
+- Document title, authors, publication year
+- Journal/source, DOI, keywords
+- Abstract and other extracted information
+
+This database is optimized for:
+- Fast filtering by metadata fields
+- Efficient pagination
+- Full-text search on metadata
+- Batch operations
+
+For full architecture details, see: docs/DATABASE_ARCHITECTURE.md
+"""
+
 import sqlite3
 import json # Import the json module
 import os
@@ -9,6 +32,17 @@ class Database:
     """
     Handles interaction with an SQLite database to track processed documents
     and their associated metadata.
+    
+    This is the AI researcher database that stores extracted metadata from processed PDFs.
+    It works in conjunction with:
+    - Main application database for document records
+    - ChromaDB vector store for embeddings
+    
+    Key features:
+    - Stores document metadata as JSON for flexible schema
+    - Supports complex filtering (author, year, journal)
+    - Optimized for pagination and search operations
+    - Tracks processing timestamps for each document
     """
     def __init__(self, db_path: str | Path = "data/processed/metadata.db"):
         self.db_path = Path(db_path)
@@ -413,6 +447,53 @@ class Database:
         # This is just a placeholder. A real implementation would likely involve
         # ALTER TABLE to add a status column and then UPDATE statements.
         print(f"Placeholder: Update status for doc_id {doc_id} to '{status}' (not implemented).")
+
+    def delete_document(self, doc_id: str) -> bool:
+        """
+        Delete a document from the database by doc_id.
+        
+        Args:
+            doc_id: The unique ID of the document to delete.
+            
+        Returns:
+            True if the document was deleted, False if not found or error.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("DELETE FROM processed_documents WHERE doc_id = ?", (doc_id,))
+            conn.commit()
+            deleted_count = cursor.rowcount
+            if deleted_count > 0:
+                print(f"Deleted document {doc_id} from AI researcher database")
+                return True
+            else:
+                print(f"Document {doc_id} not found in AI researcher database")
+                return False
+        except sqlite3.Error as e:
+            print(f"Error deleting document {doc_id} from AI researcher database: {e}")
+            return False
+        finally:
+            conn.close()
+            
+    def get_all_document_ids(self) -> list[str]:
+        """
+        Get all document IDs from the AI researcher database.
+        
+        Returns:
+            List of all document IDs in the database.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT doc_id FROM processed_documents")
+            results = cursor.fetchall()
+            return [row[0] for row in results]
+        except sqlite3.Error as e:
+            print(f"Error getting all document IDs: {e}")
+            return []
+        finally:
+            conn.close()
 
 
 # Example Usage (for testing purposes)

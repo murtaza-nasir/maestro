@@ -62,10 +62,10 @@ class ProviderConfig(BaseModel):
     base_url: Optional[str] = None
 
 class AdvancedModelConfig(BaseModel):
-    provider: str
+    provider: Optional[str] = None
     api_key: Optional[str] = None
-    base_url: str
-    model_name: str
+    base_url: Optional[str] = None
+    model_name: Optional[str] = None
 
 class AISettings(BaseModel):
     advanced_mode: Optional[bool] = False

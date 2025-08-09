@@ -382,18 +382,26 @@ async def delete_document(
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """
-    Delete a document by its ID (unified ID system - deletes from both database and vector store).
+    Delete a document by its ID (unified ID system - deletes from all storage systems).
     """
-    # Delete from database (this also handles vector store deletion via CRUD)
-    db_success = crud.delete_document(db, doc_id=doc_id, user_id=current_user.id)
-    
-    # If not found in database, try to delete from vector store directly (for legacy documents)
-    if not db_success:
-        vector_success = await document_service.delete_document_from_vector_store(doc_id, current_user.id)
-        if not vector_success:
-            raise HTTPException(status_code=404, detail="Document not found")
-    
-    return
+    # Use document service directly to avoid async issues
+    try:
+        # Delete from vector stores and AI researcher database
+        vector_success = await document_service.delete_document_completely(doc_id, current_user.id, db)
+        
+        # Delete from main database
+        db_success = crud.delete_document_simple_sync(db, doc_id=doc_id, user_id=current_user.id)
+        
+        # Return success if deleted from any system
+        if vector_success or db_success:
+            logger.info(f"Document {doc_id} deleted - Vector/AI DB: {vector_success}, Main DB: {db_success}")
+            return
+        else:
+            raise HTTPException(status_code=404, detail="Document not found in any storage system")
+            
+    except Exception as e:
+        logger.error(f"Error deleting document {doc_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete document")
 
 # Bulk operations endpoints
 @router.post("/documents/bulk-delete", status_code=204)
@@ -403,27 +411,28 @@ async def bulk_delete_documents(
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """
-    Delete multiple documents by their IDs.
+    Delete multiple documents by their IDs from all storage systems.
     """
     deleted_count = 0
     failed_deletions = []
     
     for doc_id in document_ids:
         try:
-            # Delete from database first
-            db_success = crud.delete_document(db, doc_id=doc_id, user_id=current_user.id)
+            # Delete from vector stores and AI researcher database
+            vector_success = await document_service.delete_document_completely(doc_id, current_user.id, db)
             
-            # If not found in database, try vector store
-            if not db_success:
-                vector_success = await document_service.delete_document_from_vector_store(doc_id, current_user.id)
-                if vector_success:
-                    deleted_count += 1
-                else:
-                    failed_deletions.append(doc_id)
-            else:
+            # Delete from main database
+            db_success = crud.delete_document_simple_sync(db, doc_id=doc_id, user_id=current_user.id)
+            
+            # Count as success if deleted from any system
+            if vector_success or db_success:
                 deleted_count += 1
+                logger.info(f"Document {doc_id} deleted - Vector/AI DB: {vector_success}, Main DB: {db_success}")
+            else:
+                failed_deletions.append(doc_id)
+                
         except Exception as e:
-            logger.debug(f"Error deleting document {doc_id}: {e}")
+            logger.error(f"Error deleting document {doc_id}: {e}")
             failed_deletions.append(doc_id)
     
     if failed_deletions:

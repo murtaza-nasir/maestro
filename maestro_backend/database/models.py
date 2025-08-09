@@ -1,3 +1,15 @@
+"""
+Database Models for Maestro Application
+
+This module defines the SQLAlchemy ORM models for the main application database.
+The application uses a dual-database architecture:
+1. This main database (maestro.db) - Application data, users, chats, document records
+2. AI researcher database (metadata.db) - Extracted document metadata for fast queries
+3. Vector store (ChromaDB) - Document embeddings and chunks for semantic search
+
+For detailed architecture documentation, see: docs/DATABASE_ARCHITECTURE.md
+"""
+
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON, Table, Boolean, Numeric
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -5,6 +17,8 @@ from datetime import datetime
 from database.database import Base
 
 # Association Table for Document and DocumentGroup
+# Enables many-to-many relationship between documents and groups
+# A document can belong to multiple groups, and a group can contain multiple documents
 document_group_association = Table('document_group_association', Base.metadata,
     Column('document_id', String, ForeignKey('documents.id'), primary_key=True),
     Column('document_group_id', String, ForeignKey('document_groups.id'), primary_key=True)
@@ -116,12 +130,27 @@ class MissionExecutionLog(Base):
     mission = relationship("Mission", back_populates="execution_logs")
 
 class Document(Base):
+    """
+    Document model represents uploaded documents in the system.
+    
+    This table stores basic document records and processing status.
+    The actual document content is processed and stored in:
+    - AI researcher database (metadata.db) for extracted metadata
+    - ChromaDB vector store for embeddings and chunks
+    - File system for original PDFs and converted markdown
+    
+    Processing workflow:
+    1. Document uploaded → status='pending'
+    2. Processing starts → status='processing'
+    3. Successfully processed → status='completed'
+    4. Processing failed → status='failed' with error in processing_error
+    """
     __tablename__ = "documents"
 
-    id = Column(String, primary_key=True, index=True)  # This will be the doc_id from the RAG pipeline
+    id = Column(String, primary_key=True, index=True)  # 8-character UUID from the RAG pipeline (e.g., "7fafabb4")
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     original_filename = Column(String, nullable=False)
-    metadata_ = Column(JSON, nullable=True)  # Store metadata extracted by the RAG pipeline
+    metadata_ = Column(JSON, nullable=True)  # Cached metadata from AI researcher database
     created_at = Column(DateTime(timezone=True))
     updated_at = Column(DateTime(timezone=True))
     
@@ -130,7 +159,7 @@ class Document(Base):
     upload_progress = Column(Integer, default=0)  # 0-100
     processing_error = Column(Text, nullable=True)  # Error messages during processing
     file_size = Column(Integer, nullable=True)  # File size in bytes
-    file_path = Column(String, nullable=True)  # Path to the original file
+    file_path = Column(String, nullable=True)  # Path to the original PDF file
 
     # Relationships
     user = relationship("User")

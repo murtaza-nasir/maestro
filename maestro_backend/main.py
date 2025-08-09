@@ -105,6 +105,14 @@ async def startup_event():
             logger.error("Failed to initialize AI research components")
     except Exception as e:
         logger.error(f"Error during AI component initialization: {e}", exc_info=True)
+    
+    # Start document consistency monitoring (runs in background)
+    try:
+        from services.document_consistency_monitor import start_consistency_monitoring
+        asyncio.create_task(start_consistency_monitoring())
+        logger.info("Started document consistency monitoring")
+    except Exception as e:
+        logger.error(f"Error starting consistency monitoring: {e}", exc_info=True)
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -112,6 +120,14 @@ async def shutdown_event():
     # Only log at ERROR level or higher based on LOG_LEVEL setting
     if hasattr(app.state, "thread_pool"):
         app.state.thread_pool.shutdown(wait=True)
+    
+    # Stop document consistency monitoring
+    try:
+        from services.document_consistency_monitor import stop_consistency_monitoring
+        stop_consistency_monitoring()
+        logger.info("Stopped document consistency monitoring")
+    except Exception as e:
+        logger.error(f"Error stopping consistency monitoring: {e}")
 
 @app.get("/")
 def read_root():

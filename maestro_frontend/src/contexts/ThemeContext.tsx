@@ -34,7 +34,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return classes;
   }, [theme, colorScheme]);
 
-  // Load settings on mount and when authentication changes
+  // Load settings on mount only if not already loaded
   useEffect(() => {
     const loadSettingsIfNeeded = async () => {
       // Only load if we don't have settings yet
@@ -44,7 +44,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
     
     loadSettingsIfNeeded();
-  }, [loadSettings, draftSettings]);
+  }, []); // Empty dependency array - only run on mount
 
   // Apply theme classes to document root
   useEffect(() => {

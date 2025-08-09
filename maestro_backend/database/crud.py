@@ -488,39 +488,60 @@ def get_user_documents(db: Session, user_id: int, skip: int = 0, limit: int = 10
         Document.created_at.desc()
     ).offset(skip).limit(limit).all()
 
+async def delete_document_async(db: Session, doc_id: str, user_id: int) -> bool:
+    """Delete a document atomically from all storage systems using improved consistency management."""
+    
+    # Get the document first to check if it exists
+    db_document = get_document(db, doc_id, user_id)
+    if not db_document:
+        logger.warning(f"Document {doc_id} not found in main database")
+        return False
+    
+    try:
+        # Use the improved atomic deletion function
+        from database.crud_documents_improved import delete_document_atomically
+        
+        success = await delete_document_atomically(db, doc_id, user_id)
+        
+        if success:
+            logger.info(f"Document {doc_id} successfully deleted from all systems")
+        else:
+            logger.warning(f"Document {doc_id} deletion completed with some issues")
+        
+        return success
+        
+    except Exception as e:
+        logger.error(f"Failed to delete document {doc_id} atomically: {e}")
+        return False
+
 def delete_document(db: Session, doc_id: str, user_id: int) -> bool:
-    """Delete a document from database and vector store."""
+    """Delete a document from database, vector store, and AI researcher database (sync wrapper)."""
+    import asyncio
+    
+    # Check if we're already in an event loop
+    try:
+        loop = asyncio.get_running_loop()
+        # We're in an async context, can't use asyncio.run()
+        logger.warning(f"delete_document called from async context, this may cause issues. Use delete_document_async instead.")
+        # Return a simplified sync deletion for now
+        return delete_document_simple_sync(db, doc_id, user_id)
+            
+    except RuntimeError:
+        # No event loop running, we can use asyncio.run()
+        return asyncio.run(delete_document_async(db, doc_id, user_id))
+
+def delete_document_simple_sync(db: Session, doc_id: str, user_id: int) -> bool:
+    """Simplified sync deletion - only deletes from main database."""
     db_document = get_document(db, doc_id, user_id)
     if db_document:
-        # Remove from vector store first
         try:
-            from services.document_service import document_service
-            # Get vector store and remove document chunks
-            vector_store = document_service._get_vector_store()
-            
-            # Remove from dense collection
-            dense_collection = vector_store.dense_collection
-            dense_results = dense_collection.get(where={"doc_id": doc_id})
-            if dense_results['ids']:
-                dense_collection.delete(ids=dense_results['ids'])
-                logger.info(f"Removed {len(dense_results['ids'])} chunks from dense collection for document {doc_id}")
-            
-            # Remove from sparse collection
-            sparse_collection = vector_store.sparse_collection
-            sparse_results = sparse_collection.get(where={"doc_id": doc_id})
-            if sparse_results['ids']:
-                sparse_collection.delete(ids=sparse_results['ids'])
-                logger.info(f"Removed {len(sparse_results['ids'])} chunks from sparse collection for document {doc_id}")
-                
+            db.delete(db_document)
+            db.commit()
+            logger.info(f"Deleted document {doc_id} from main database (sync mode)")
+            return True
         except Exception as e:
-            logger.warning(f"Failed to remove document {doc_id} from vector store: {e}")
-            # Continue with database deletion even if vector store cleanup fails
-        
-        # Remove from database
-        db.delete(db_document)
-        db.commit()
-        logger.info(f"Deleted document {doc_id} from database")
-        return True
+            logger.error(f"Failed to delete document {doc_id} from main database: {e}")
+            db.rollback()
     return False
 
 # DocumentGroup CRUD operations
