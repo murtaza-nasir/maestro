@@ -113,6 +113,25 @@ class VectorStoreManager:
             
         return self._local.client, self._local.dense_collection, self._local.sparse_collection
 
+    def refresh_client(self):
+        """
+        Refresh the thread-local ChromaDB client to pick up newly added documents.
+        Call this after adding new documents to ensure queries can access them.
+        """
+        print("Refreshing ChromaDB client to pick up new documents...")
+        
+        # Clear existing thread-local client
+        if hasattr(self._local, 'client'):
+            delattr(self._local, 'client')
+        if hasattr(self._local, 'dense_collection'):
+            delattr(self._local, 'dense_collection')
+        if hasattr(self._local, 'sparse_collection'):
+            delattr(self._local, 'sparse_collection')
+        
+        # Force recreation of client on next access
+        self._get_client()
+        print("ChromaDB client refreshed successfully")
+
     def _clean_metadata(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         """Removes None values and converts complex types to strings for ChromaDB compatibility."""
         cleaned = {}

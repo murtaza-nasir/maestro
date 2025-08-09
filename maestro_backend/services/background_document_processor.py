@@ -456,6 +456,10 @@ class BackgroundDocumentProcessor:
                 processor.vector_store.add_chunks(chunks_with_embeddings)
                 chunks_added_count = len(chunks)
                 print(f"[{doc_id}] Successfully added {chunks_added_count} chunks to vector store")
+                
+                # Refresh the vector store client to ensure new documents are accessible
+                print(f"[{doc_id}] Refreshing vector store client for immediate accessibility...")
+                processor.vector_store.refresh_client()
             else:
                 chunks_added_count = 0
                 print(f"[{doc_id}] Skipping embedding/storing: No embedder or vector store")

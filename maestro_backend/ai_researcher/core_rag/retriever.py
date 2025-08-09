@@ -91,8 +91,29 @@ class Retriever:
         # Removed erroneous lines here
 
         if not initial_results:
-            print("No results found in vector store.")
-            return []
+            print("No results found in vector store. Attempting to refresh client and retry...")
+            
+            # Try refreshing the vector store client and retry once
+            try:
+                self.vector_store.refresh_client()
+                initial_results = await asyncio.to_thread(
+                    self.vector_store.query,
+                    query_dense_embedding=query_dense,
+                    query_sparse_embedding_dict=query_sparse,
+                    n_results=initial_fetch_n,
+                    filter_metadata=filter_metadata,
+                    dense_weight=dense_weight,
+                    sparse_weight=sparse_weight
+                )
+                
+                if initial_results:
+                    print(f"After refresh: Retrieved {len(initial_results)} results from vector store.")
+                else:
+                    print("No results found in vector store even after refresh.")
+                    return []
+            except Exception as e:
+                print(f"Error during vector store retry after refresh: {e}")
+                return []
 
         print(f"Retrieved {len(initial_results)} initial results from vector store.")
 
