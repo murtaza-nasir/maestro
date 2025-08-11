@@ -243,6 +243,11 @@ MAESTRO is designed to be run as a containerized application using Docker.
     git clone https://github.com/murtaza-nasir/maestro.git
     cd maestro
     ```
+    
+    **Important for Windows Users:** Configure Git to use Unix-style line endings:
+    ```powershell
+    git config core.autocrlf input
+    ```
 
 2.  **Configure Your Environment**
     Run the interactive setup script for a guided configuration:
@@ -264,6 +269,8 @@ MAESTRO is designed to be run as a containerized application using Docker.
     # Alternative: Manual Docker Compose
     docker compose up --build -d
     ```
+    
+    **Note:** If you encounter issues with shell scripts not executing properly, the Docker build process will automatically convert line endings for you.
 
 #### Access MAESTRO
 Once the containers are running, access the web interface at the address you configured (e.g., `http://localhost:3030`). The first-time login credentials are `admin` / `adminpass123`. It is highly recommended that you change this password immediately.

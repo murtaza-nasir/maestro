@@ -27,6 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpango1.0-dev \
     libcairo2-dev \
     pandoc \
+    dos2unix \
     && rm -rf /var/lib/apt/lists/*
 
 # Use Python 3.10 as default
@@ -41,6 +42,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the application code
 COPY . /app/
+
+# Fix line endings for shell scripts (for Windows users)
+RUN find /app -type f -name "*.sh" -exec dos2unix {} \;
 
 # Make the startup script executable
 RUN chmod +x /app/start.sh
