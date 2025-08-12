@@ -40,7 +40,13 @@ export const useWebSocket = (url: string, onMessage?: (data: any) => void) => {
     }
 
     try {
-      const wsUrl = `${import.meta.env.VITE_API_WS_URL || 'ws://localhost:8001'}${url}?token=${encodeURIComponent(accessToken)}`;
+      // Build WebSocket URL using nginx proxy (same origin)
+      let wsBaseUrl = import.meta.env.VITE_API_WS_URL;
+      if (!wsBaseUrl) {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsBaseUrl = `${protocol}//${window.location.host}`;
+      }
+      const wsUrl = `${wsBaseUrl}${url}?token=${encodeURIComponent(accessToken)}`;
       
       ws.current = new WebSocket(wsUrl);
 

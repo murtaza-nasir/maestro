@@ -1,4 +1,20 @@
 services:
+  # Nginx reverse proxy - single entry point for the application
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    image: maestro-nginx
+    container_name: maestro-nginx
+    ports:
+      - "${MAESTRO_PORT:-80}:80"
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - maestro-network
+    restart: unless-stopped
+
   backend:
     build:
       context: ./maestro_backend
@@ -11,8 +27,9 @@ services:
       - ./maestro_datalab_cache:/root/.cache/datalab
       - ./reports:/app/reports
       - ./maestro_backend/data:/app/data
-    ports:
-      - "${BACKEND_HOST}:${BACKEND_PORT}:${BACKEND_INTERNAL_PORT}"
+    # Backend is now only accessible through nginx, not directly exposed
+    # ports:
+    #   - "${BACKEND_HOST}:${BACKEND_PORT}:${BACKEND_INTERNAL_PORT}"
     working_dir: /app
     environment:
       - MAX_WORKER_THREADS=${MAX_WORKER_THREADS}
@@ -23,6 +40,10 @@ services:
       - FRONTEND_PORT=${FRONTEND_PORT}
       - BACKEND_HOST=${BACKEND_HOST}
       - BACKEND_PORT=${BACKEND_PORT}
+      # CORS configuration for reverse proxy support
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-*}
+      # Allow all origins in development mode when using nginx proxy
+      - ALLOW_CORS_WILDCARD=${ALLOW_CORS_WILDCARD:-true}
     networks:
       - maestro-network
     # GPU support - uncomment the following lines if you have a GPU and nvidia-container-toolkit installed
@@ -38,14 +59,12 @@ services:
     build:
       context: ./maestro_frontend
       dockerfile: Dockerfile
-      args:
-        # API URLs dynamically constructed from host/port values
-        - VITE_API_HTTP_URL=${API_PROTOCOL}://${BACKEND_HOST}:${BACKEND_PORT}
-        - VITE_API_WS_URL=${WS_PROTOCOL}://${BACKEND_HOST}:${BACKEND_PORT}
+      # No build args needed - using relative URLs through nginx proxy
     image: maestro-frontend
     container_name: maestro-frontend
-    ports:
-      - "${FRONTEND_HOST}:${FRONTEND_PORT}:${FRONTEND_INTERNAL_PORT}"
+    # Frontend is now only accessible through nginx, not directly exposed
+    # ports:
+    #   - "${FRONTEND_HOST}:${FRONTEND_PORT}:${FRONTEND_INTERNAL_PORT}"
     depends_on:
       - backend
     networks:

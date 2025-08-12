@@ -2,9 +2,9 @@ import axios from 'axios'
 
 // API configuration
 export const API_CONFIG = {
-  // Use environment variable or default to localhost for development
-  BASE_URL: import.meta.env.VITE_API_HTTP_URL || 'http://localhost:8001',
-  WS_URL: import.meta.env.VITE_API_WS_URL || 'ws://localhost:8001',
+  // Use relative URLs when behind nginx proxy, fallback to env vars for direct access
+  BASE_URL: import.meta.env.VITE_API_HTTP_URL || '',  // Empty string means same origin
+  WS_URL: import.meta.env.VITE_API_WS_URL || `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`,
   
   // API endpoints
   ENDPOINTS: {

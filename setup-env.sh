@@ -44,87 +44,67 @@ else
     SED_INPLACE=(-i)
 fi
 
-# Auto-detect machine IP address
-detect_machine_ip() {
-    # Try to get the primary network interface IP
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        # macOS-specific IP detection
-        local ip=$(route get default | grep gateway | awk '{print $2}' | head -1)
-        if [ -z "$ip" ]; then
+# Simple setup mode
+echo ""
+echo "Choose setup mode:"
+echo "1) Simple (localhost only) - Recommended for most users"
+echo "2) Network (access from other devices)"
+echo "3) Custom domain (for reverse proxy setups)"
+read -p "Choice (1-3, default: 1): " setup_mode
+setup_mode=${setup_mode:-1}
+
+case $setup_mode in
+    2)
+        # Auto-detect machine IP for network access
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS-specific IP detection
             ip=$(ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1' | head -1)
-        fi
-    else
-        # Linux IP detection
-        local ip=$(ip route get 8.8.8.8 2>/dev/null | grep -oP 'src \K\S+')
-        if [ -z "$ip" ]; then
-            # Fallback: try hostname -I
+        else
+            # Linux IP detection
             ip=$(hostname -I 2>/dev/null | awk '{print $1}')
         fi
-        if [ -z "$ip" ]; then
-            # Fallback: try ip addr show
-            ip=$(ip addr show | grep 'inet ' | grep -v 127.0.0.1 | head -n1 | awk '{print $2}' | cut -d/ -f1)
+        
+        if [ -n "$ip" ]; then
+            echo "🔍 Auto-detected IP: $ip"
+            read -p "Use this IP? (Y/n): " use_detected
+            if [[ $use_detected =~ ^[Nn]$ ]]; then
+                read -p "Enter IP address: " ip
+            fi
+        else
+            read -p "Enter IP address: " ip
         fi
-    fi
-    echo "$ip"
-}
+        
+        # Add the IP to CORS allowed origins
+        sed "${SED_INPLACE[@]}" "s/CORS_ALLOWED_ORIGINS=\*/CORS_ALLOWED_ORIGINS=http:\/\/$ip,http:\/\/localhost/" .env
+        echo "✅ Configured for network access from: $ip"
+        ;;
+    3)
+        read -p "Enter your domain (e.g., researcher.local or app.example.com): " domain
+        read -p "Using HTTPS? (y/N): " use_https
+        
+        if [[ $use_https =~ ^[Yy]$ ]]; then
+            protocol="https"
+        else
+            protocol="http"
+        fi
+        
+        # Set CORS for the custom domain
+        sed "${SED_INPLACE[@]}" "s/CORS_ALLOWED_ORIGINS=\*/CORS_ALLOWED_ORIGINS=$protocol:\/\/$domain/" .env
+        sed "${SED_INPLACE[@]}" "s/ALLOW_CORS_WILDCARD=true/ALLOW_CORS_WILDCARD=false/" .env
+        echo "✅ Configured for custom domain: $protocol://$domain"
+        ;;
+    *)
+        # Simple localhost setup - no changes needed
+        echo "✅ Using simple localhost configuration"
+        echo "   The application will be accessible at: http://localhost"
+        ;;
+esac
 
-DETECTED_IP=$(detect_machine_ip)
-
-if [ -n "$DETECTED_IP" ]; then
-    echo "🔍 Auto-detected machine IP: $DETECTED_IP"
-    echo ""
-    echo "Choose IP configuration:"
-    echo "1) Use detected IP ($DETECTED_IP) - for network access"
-    echo "2) Use localhost (127.0.0.1) - for local development only"
-    echo "3) Enter custom IP"
-    read -p "Choice (1-3, default: 1): " ip_choice
-    ip_choice=${ip_choice:-1}
-
-    case $ip_choice in
-        2)
-            backend_host="127.0.0.1"
-            frontend_host="127.0.0.1"
-            echo "✅ Using localhost for local development"
-            ;;
-        3)
-            read -p "Backend host: " backend_host
-            read -p "Frontend host: " frontend_host
-            ;;
-        *)
-            backend_host="$DETECTED_IP"
-            frontend_host="$DETECTED_IP"
-            echo "✅ Using detected IP: $DETECTED_IP"
-            ;;
-    esac
-else
-    # Fallback to manual input if auto-detection fails
-    echo "⚠️  Could not auto-detect IP address"
-    read -p "Backend host (default: 127.0.0.1): " backend_host
-    backend_host=${backend_host:-127.0.0.1}
-    frontend_host="$backend_host"
-fi
-
-# Update .env file - need to handle both possible starting values
-sed "${SED_INPLACE[@]}" "s/BACKEND_HOST=127\.0\.0\.1/BACKEND_HOST=$backend_host/" .env
-sed "${SED_INPLACE[@]}" "s/BACKEND_HOST=192\.168\.68\.85/BACKEND_HOST=$backend_host/" .env
-sed "${SED_INPLACE[@]}" "s/FRONTEND_HOST=127\.0\.0\.1/FRONTEND_HOST=$frontend_host/" .env
-sed "${SED_INPLACE[@]}" "s/FRONTEND_HOST=192\.168\.68\.85/FRONTEND_HOST=$frontend_host/" .env
-
-# Protocol selection
+# Port configuration
 echo ""
-echo "Select protocol:"
-echo "1) HTTP/WS (development)"
-echo "2) HTTPS/WSS (production)"
-read -p "Choice (1-2, default: 1): " protocol_choice
-protocol_choice=${protocol_choice:-1}
-
-if [ "$protocol_choice" = "2" ]; then
-    sed "${SED_INPLACE[@]}" "s/API_PROTOCOL=http/API_PROTOCOL=https/" .env
-    sed "${SED_INPLACE[@]}" "s/WS_PROTOCOL=ws/WS_PROTOCOL=wss/" .env
-    echo "✅ Set to HTTPS/WSS for production"
-else
-    echo "✅ Set to HTTP/WS for development"
-fi
+read -p "Port for MAESTRO (default: 80): " maestro_port
+maestro_port=${maestro_port:-80}
+sed "${SED_INPLACE[@]}" "s/MAESTRO_PORT=80/MAESTRO_PORT=$maestro_port/" .env
 
 # Timezone
 read -p "Timezone (default: America/Chicago): " timezone
@@ -135,14 +115,29 @@ sed "${SED_INPLACE[@]}" "s|VITE_SERVER_TIMEZONE=America/Chicago|VITE_SERVER_TIME
 echo ""
 echo "🎉 Setup complete!"
 echo ""
-echo "Your .env file has been created with the following configuration:"
-echo "  Backend: $backend_host"
-echo "  Frontend: $frontend_host"
-echo "  Protocol: $([ "$protocol_choice" = "2" ] && echo "HTTPS/WSS" || echo "HTTP/WS")"
-echo "  Timezone: $timezone"
+echo "Your .env file has been created."
 echo ""
-echo "You can now start MAESTRO with:"
+echo "Access MAESTRO at:"
+if [ "$maestro_port" = "80" ]; then
+    case $setup_mode in
+        2) echo "  http://$ip" ;;
+        3) echo "  $protocol://$domain" ;;
+        *) echo "  http://localhost" ;;
+    esac
+else
+    case $setup_mode in
+        2) echo "  http://$ip:$maestro_port" ;;
+        3) echo "  $protocol://$domain:$maestro_port" ;;
+        *) echo "  http://localhost:$maestro_port" ;;
+    esac
+fi
+echo ""
+echo "Default login:"
+echo "  Username: admin"
+echo "  Password: adminpass123"
+echo ""
+echo "Start MAESTRO with:"
 echo "  docker compose up -d"
 echo ""
-echo "To modify additional settings, edit the .env file:"
+echo "To modify settings later:"
 echo "  nano .env"

@@ -37,8 +37,12 @@ class MissionWebSocketService {
       this.missionId = missionId
       this.isConnecting = true
 
-      // Get WebSocket URL from environment variable
-      const wsBaseUrl = import.meta.env.VITE_API_WS_URL || 'ws://localhost:8001'
+      // Get WebSocket URL using nginx proxy (same origin)
+      let wsBaseUrl = import.meta.env.VITE_API_WS_URL;
+      if (!wsBaseUrl) {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsBaseUrl = `${protocol}//${window.location.host}`;
+      }
       
       // Only log in development mode
       if (import.meta.env.DEV) {

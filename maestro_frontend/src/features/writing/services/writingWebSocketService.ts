@@ -47,13 +47,13 @@ export class WritingWebSocketService {
         return;
       }
 
-      // Build WebSocket URL using environment variables
+      // Build WebSocket URL using nginx proxy (same origin)
       let wsBaseUrl = import.meta.env.VITE_API_WS_URL;
       
-      // If no WebSocket URL is set, derive it from the API base URL
+      // If no WebSocket URL is set, use relative URL (same origin through nginx proxy)
       if (!wsBaseUrl) {
-        const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001';
-        wsBaseUrl = apiBaseUrl.replace(/^http/, 'ws');
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsBaseUrl = `${protocol}//${window.location.host}`;
       }
       
       const wsUrl = `${wsBaseUrl}/ws/${sessionId}?token=${encodeURIComponent(accessToken)}`;

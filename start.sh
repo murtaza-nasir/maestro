@@ -48,11 +48,25 @@ sleep 5
 if docker compose ps | grep -q "Up"; then
     echo "✅ Maestro is running!"
     echo ""
-    echo "📍 Access points:"
-    echo "   Frontend: http://${FRONTEND_HOST}:${FRONTEND_PORT}"
-    echo "   Backend API: http://${BACKEND_HOST}:${BACKEND_PORT}"
+    echo "📍 Access MAESTRO at:"
+    # Use the new nginx proxy port if available, fallback to old config for backward compatibility
+    if [ -n "${MAESTRO_PORT}" ]; then
+        if [ "${MAESTRO_PORT}" = "80" ]; then
+            echo "   http://localhost"
+        else
+            echo "   http://localhost:${MAESTRO_PORT}"
+        fi
+    else
+        # Backward compatibility
+        echo "   Frontend: http://${FRONTEND_HOST:-localhost}:${FRONTEND_PORT:-3030}"
+        echo "   Backend API: http://${BACKEND_HOST:-localhost}:${BACKEND_PORT:-8001}"
+    fi
     echo ""
     echo "📊 GPU Status: ${GPU_AVAILABLE}"
+    echo ""
+    echo "Default login:"
+    echo "   Username: admin"
+    echo "   Password: adminpass123"
 else
     echo "❌ Failed to start services. Check logs with: docker compose logs"
     exit 1

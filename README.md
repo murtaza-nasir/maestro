@@ -211,6 +211,20 @@ MAESTRO is designed to be run as a containerized application using Docker.
     - **macOS**: CPU mode (optimized for Apple Silicon and Intel)
     - **Windows**: GPU support via WSL2
 
+## Quick Start
+
+**The simplest way to get started:**
+
+```bash
+git clone https://github.com/murtaza-nasir/maestro.git
+cd maestro
+./setup-env.sh    # Linux/macOS
+# or setup-env.ps1 # Windows PowerShell
+docker compose up -d
+```
+
+Access MAESTRO at **http://localhost** (default credentials: `admin` / `adminpass123`)
+
 ### Installation
 
 #### Linux/macOS
@@ -221,20 +235,22 @@ MAESTRO is designed to be run as a containerized application using Docker.
     ```
 
 2.  **Configure Your Environment**
-    Run the interactive setup script for a guided configuration:
+    Run the interactive setup script:
     ```bash
     ./setup-env.sh
     ```
-    This will help you set up network settings, API keys, and other essential parameters by creating a `.env` file for you.
+    Choose from three simple options:
+    - **Simple** (localhost only) - Recommended for most users
+    - **Network** (access from other devices on your network)
+    - **Custom domain** (for reverse proxy setups like researcher.local)
 
-3.  **Build and Run**
-    Use the automatic start script for optimal platform detection:
+3.  **Start MAESTRO**
     ```bash
-    # Recommended: Automatic GPU detection and optimal configuration
+    # Recommended: Automatic GPU detection
     ./start.sh
     
-    # Alternative: Manual Docker Compose
-    docker compose up --build -d
+    # Or manually:
+    docker compose up -d
     ```
 
 #### Windows
@@ -250,7 +266,7 @@ MAESTRO is designed to be run as a containerized application using Docker.
     ```
 
 2.  **Configure Your Environment**
-    Run the interactive setup script for a guided configuration:
+    Run the interactive setup script:
     ```powershell
     # Using PowerShell (recommended)
     .\setup-env.ps1
@@ -258,22 +274,58 @@ MAESTRO is designed to be run as a containerized application using Docker.
     # Or using Command Prompt
     setup-env.bat
     ```
-    This will help you set up network settings, API keys, and other essential parameters by creating a `.env` file for you.
+    Choose from three simple options:
+    - **Simple** (localhost only) - Recommended for most users
+    - **Network** (access from other devices on your network)  
+    - **Custom domain** (for reverse proxy setups)
 
-3.  **Build and Run**
-    Use the automatic start script for optimal platform detection:
+3.  **Start MAESTRO**
     ```powershell
-    # Recommended: Automatic GPU detection and optimal configuration
+    # Recommended: Automatic GPU detection
     .\start.sh
     
-    # Alternative: Manual Docker Compose
-    docker compose up --build -d
+    # Or manually:
+    docker compose up -d
     ```
-    
-    **Note:** If you encounter issues with shell scripts not executing properly, the Docker build process will automatically convert line endings for you.
 
 #### Access MAESTRO
-Once the containers are running, access the web interface at the address you configured (e.g., `http://localhost:3030`). The first-time login credentials are `admin` / `adminpass123`. It is highly recommended that you change this password immediately.
+Once the containers are running, access the web interface at the address shown by the setup script (default: `http://localhost`). 
+
+**Default Login:**
+- Username: `admin`
+- Password: `adminpass123`
+
+**Important:** Change the default password immediately after your first login via Settings → Profile.
+
+## Architecture & Networking
+
+MAESTRO now uses a **unified reverse proxy architecture** to eliminate CORS issues:
+
+- **Single Entry Point**: Everything accessible through one port (default: 80)
+- **No CORS Problems**: Frontend and backend served from the same origin
+- **Simple Configuration**: One host, one port to configure
+- **Production Ready**: nginx handles static files and API routing efficiently
+
+### Network Access Options
+
+1. **Localhost Only** (Default): Access from the same computer
+2. **Network Access**: Access from other devices on your network  
+3. **Custom Domain**: Use with reverse proxies (e.g., researcher.local)
+
+### Troubleshooting
+
+**Can't access from another device?**
+- Re-run setup script with "Network" option
+- Check firewall settings
+- Ensure Docker containers are running: `docker compose ps`
+
+**Still seeing CORS errors?**
+- Old configurations may conflict. Try: `docker compose down && docker compose up --build -d`
+- Check that you're accessing through the correct port
+
+**Migration from older setups:**
+- Your existing `.env` file will continue to work
+- For cleaner setup, delete `.env` and re-run setup script
 
 ### GPU Support and Performance Optimization
 

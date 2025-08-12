@@ -13,13 +13,8 @@ RUN npm install
 # Copy source code
 COPY . .
 
-# Set build-time environment variables
-ARG VITE_API_WS_URL
-ARG VITE_API_HTTP_URL
-ENV VITE_API_WS_URL=$VITE_API_WS_URL
-ENV VITE_API_HTTP_URL=$VITE_API_HTTP_URL
-
 # Build the application
+# No need for build-time API URLs anymore - using relative URLs
 RUN npm run build
 
 # Production stage with simple static server

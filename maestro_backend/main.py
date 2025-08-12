@@ -24,30 +24,55 @@ app = FastAPI(
 # Configure CORS with environment variables
 def get_cors_origins():
     """Get CORS allowed origins from environment variables."""
-    # Get configurable host and port values
-    frontend_host = os.getenv("FRONTEND_HOST", "192.168.68.85")
-    frontend_port = os.getenv("FRONTEND_PORT", "3030")
-    backend_host = os.getenv("BACKEND_HOST", "192.168.68.85")
+    # Check if we should allow all origins (development mode with nginx proxy)
+    allow_wildcard = os.getenv("ALLOW_CORS_WILDCARD", "false").lower() == "true"
+    if allow_wildcard:
+        logger.info("CORS: Allowing all origins (wildcard mode)")
+        return ["*"]
     
-    # Build default origins using configurable values
+    # Build default origins for backward compatibility
     default_origins = [
+        "http://localhost",
+        "http://localhost:80",
         "http://localhost:3000",
         "http://localhost:3030",
         "http://localhost:5173",
-        f"http://{frontend_host}:{frontend_port}",
-        f"http://{backend_host}"
+        "http://localhost:8001",
+        "http://127.0.0.1",
+        "http://127.0.0.1:80",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3030",
+        "http://127.0.0.1:8001"
     ]
     
     # Get additional origins from environment variable
     cors_origins_env = os.getenv("CORS_ALLOWED_ORIGINS", "")
-    if cors_origins_env:
+    if cors_origins_env == "*":
+        logger.info("CORS: Allowing all origins via CORS_ALLOWED_ORIGINS=*")
+        return ["*"]
+    elif cors_origins_env:
         # Split by comma and strip whitespace
         additional_origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
         # Combine with defaults, removing duplicates
         all_origins = list(set(default_origins + additional_origins))
+        logger.info(f"CORS allowed origins configured: {all_origins}")
         return all_origins
     
-    return default_origins
+    # Also add origins based on old environment variables for backward compatibility
+    frontend_host = os.getenv("FRONTEND_HOST")
+    backend_host = os.getenv("BACKEND_HOST")
+    if frontend_host or backend_host:
+        if frontend_host:
+            frontend_port = os.getenv("FRONTEND_PORT", "3030")
+            default_origins.append(f"http://{frontend_host}:{frontend_port}")
+            default_origins.append(f"http://{frontend_host}")
+        if backend_host:
+            backend_port = os.getenv("BACKEND_PORT", "8001")
+            default_origins.append(f"http://{backend_host}:{backend_port}")
+            default_origins.append(f"http://{backend_host}")
+    
+    logger.info(f"CORS allowed origins (defaults): {list(set(default_origins))}")
+    return list(set(default_origins))
 
 app.add_middleware(
     CORSMiddleware,
