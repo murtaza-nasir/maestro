@@ -23,6 +23,12 @@ from ai_researcher.agentic_layer.utils.json_utils import (
     extract_non_schema_fields,
     filter_null_values_from_list
 )
+from ai_researcher.agentic_layer.utils.json_format_helper import (
+    get_json_schema_format,
+    get_json_object_format,
+    enhance_messages_for_json_object,
+    should_retry_with_json_object
+)
 
 logger = logging.getLogger(__name__)
 
@@ -255,14 +261,12 @@ Provide ONLY a single JSON object conforming EXACTLY to the ReflectionOutput sch
         if self.system_prompt:
             messages.insert(0, {"role": "system", "content": self.system_prompt})
 
-        # Define the expected response format using the *updated* Pydantic schema
-        response_format_pydantic = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "reflection_output", # Descriptive name
-                "schema": ReflectionOutput.model_json_schema() # Use the updated schema
-            }
-        }
+        # Try json_schema format first, with fallback to json_object
+        response_format_pydantic = get_json_schema_format(
+            pydantic_model=ReflectionOutput,
+            schema_name="reflection_output"
+        )
+        use_json_object = False
 
         # Add retry logic similar to other agents
         max_retries = 3
@@ -273,14 +277,22 @@ Provide ONLY a single JSON object conforming EXACTLY to the ReflectionOutput sch
             try:
                 logger.info(f"ReflectionAgent attempt {attempt + 1}/{max_retries} for section {section_id}")
                 
+                # Prepare messages based on format type
+                current_messages = messages
+                if use_json_object:
+                    current_messages = enhance_messages_for_json_object(
+                        messages=messages,
+                        pydantic_model=ReflectionOutput
+                    )
+                
                 # Use the dispatch method - assuming it returns (response_object, details_dict)
                 response, model_call_details = await self.model_dispatcher.dispatch( # <-- Add await
-                    messages=messages,
+                    messages=current_messages,
                     response_format=response_format_pydantic,
-                model=self.model_name,
-                agent_mode="reflection", # <-- Pass agent_mode
-                log_queue=log_queue, # Pass log_queue for UI updates
-                update_callback=update_callback # Pass update_callback for UI updates
+                    model=self.model_name,
+                    agent_mode="reflection", # <-- Pass agent_mode
+                    log_queue=log_queue, # Pass log_queue for UI updates
+                    update_callback=update_callback # Pass update_callback for UI updates
                 )
 
                 if response and response.choices and response.choices[0].message.content:
@@ -358,6 +370,14 @@ Provide ONLY a single JSON object conforming EXACTLY to the ReflectionOutput sch
                         continue
                     
             except Exception as e:
+                # Check if we should retry with json_object format
+                if not use_json_object and should_retry_with_json_object(e):
+                    logger.info(f"Retrying with json_object format due to: {str(e)[:200]}")
+                    response_format_pydantic = get_json_object_format()
+                    use_json_object = True
+                    # Don't increment attempt counter, retry with new format
+                    continue
+                
                 logger.error(f"Attempt {attempt + 1}/{max_retries}: Error during ReflectionAgent execution for section {section_id}: {e}", exc_info=True)
                 # If this was the last attempt, return None
                 if attempt == max_retries - 1:

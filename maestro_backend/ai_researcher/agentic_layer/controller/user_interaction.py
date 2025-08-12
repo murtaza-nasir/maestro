@@ -6,6 +6,12 @@ import json
 from ai_researcher.config import THOUGHT_PAD_CONTEXT_LIMIT
 from ai_researcher.agentic_layer.context_manager import ExecutionLogEntry
 from ai_researcher.agentic_layer.schemas.analysis import RequestAnalysisOutput
+from ai_researcher.agentic_layer.utils.json_format_helper import (
+    get_json_schema_format,
+    get_json_object_format,
+    enhance_messages_for_json_object,
+    should_retry_with_json_object
+)
 
 logger = logging.getLogger(__name__)
 
@@ -151,14 +157,11 @@ Output ONLY a single JSON object conforming EXACTLY to the RequestAnalysisOutput
             {"role": "system", "content": "Consider these active goals when analyzing the request: " + json.dumps({"active_goals": goal_texts})},
             {"role": "user", "content": analysis_prompt}
         ]
-        # Add the 'name' field required by some providers (like Azure via OpenRouter)
-        response_format = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "request_analysis_output",
-                "schema": RequestAnalysisOutput.model_json_schema()  # Nest the schema under the 'schema' key
-            }
-        }
+        # Start with json_schema format, with fallback to json_object
+        response_format = get_json_schema_format(
+            pydantic_model=RequestAnalysisOutput,
+            schema_name="request_analysis_output"
+        )
         analysis_result: Optional[RequestAnalysisOutput] = None
         model_details = None
 
