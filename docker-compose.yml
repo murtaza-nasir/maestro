@@ -32,14 +32,9 @@ services:
     #   - "${BACKEND_HOST}:${BACKEND_PORT}:${BACKEND_INTERNAL_PORT}"
     working_dir: /app
     environment:
-      - MAX_WORKER_THREADS=${MAX_WORKER_THREADS}
-      - TZ=${TZ}
-      - LOG_LEVEL=${LOG_LEVEL}
-      # Network configuration from .env
-      - FRONTEND_HOST=${FRONTEND_HOST}
-      - FRONTEND_PORT=${FRONTEND_PORT}
-      - BACKEND_HOST=${BACKEND_HOST}
-      - BACKEND_PORT=${BACKEND_PORT}
+      - MAX_WORKER_THREADS=${MAX_WORKER_THREADS:-10}
+      - TZ=${TZ:-UTC}
+      - LOG_LEVEL=${LOG_LEVEL:-ERROR}
       # CORS configuration for reverse proxy support
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-*}
       # Allow all origins in development mode when using nginx proxy
@@ -52,7 +47,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ['${BACKEND_GPU_DEVICE}']  
+              device_ids: ['${BACKEND_GPU_DEVICE:-0}']  
               capabilities: [gpu]
 
   frontend:
@@ -70,16 +65,10 @@ services:
     networks:
       - maestro-network
     environment:
-      # API URLs dynamically constructed from host/port values
-      - VITE_API_BASE_URL=${API_PROTOCOL}://${BACKEND_HOST}:${BACKEND_PORT}
-      - VITE_API_HTTP_URL=${API_PROTOCOL}://${BACKEND_HOST}:${BACKEND_PORT}
-      - VITE_API_WS_URL=${WS_PROTOCOL}://${BACKEND_HOST}:${BACKEND_PORT}
-      - VITE_SERVER_TIMEZONE=${VITE_SERVER_TIMEZONE}
-      - TZ=${TZ}
-      - LOG_LEVEL=${LOG_LEVEL}
-      # Frontend configuration from .env
-      - FRONTEND_HOST=${FRONTEND_HOST}
-      - FRONTEND_PORT=${FRONTEND_PORT}
+      # API URLs (optional - using relative URLs through nginx proxy by default)
+      - VITE_SERVER_TIMEZONE=${VITE_SERVER_TIMEZONE:-UTC}
+      - TZ=${TZ:-UTC}
+      - LOG_LEVEL=${LOG_LEVEL:-ERROR}
 
   doc-processor:
     build:
@@ -100,17 +89,14 @@ services:
     networks:
       - maestro-network
     environment:
-      - TZ=${TZ}
-      - LOG_LEVEL=${LOG_LEVEL}
-      # Backend configuration from .env
-      - BACKEND_HOST=${BACKEND_HOST}
-      - BACKEND_PORT=${BACKEND_PORT}
+      - TZ=${TZ:-UTC}
+      - LOG_LEVEL=${LOG_LEVEL:-ERROR}
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ['${DOC_PROCESSOR_GPU_DEVICE}']  
+              device_ids: ['${DOC_PROCESSOR_GPU_DEVICE:-0}']  
               capabilities: [gpu]
 
   # CLI service for document ingestion and management
@@ -134,13 +120,13 @@ services:
     networks:
       - maestro-network
     environment:
-      - TZ=${TZ}
-      - LOG_LEVEL=${LOG_LEVEL}
-      # Performance settings from .env
-      - TRANSFORMERS_VERBOSITY=${TRANSFORMERS_VERBOSITY}
-      - TOKENIZERS_PARALLELISM=${TOKENIZERS_PARALLELISM}
-      - TF_CPP_MIN_LOG_LEVEL=${TF_CPP_MIN_LOG_LEVEL}
-      - PYTHONWARNINGS=${PYTHONWARNINGS}
+      - TZ=${TZ:-UTC}
+      - LOG_LEVEL=${LOG_LEVEL:-ERROR}
+      # Performance settings from .env (optional, with defaults)
+      - TRANSFORMERS_VERBOSITY=${TRANSFORMERS_VERBOSITY:-error}
+      - TOKENIZERS_PARALLELISM=${TOKENIZERS_PARALLELISM:-false}
+      - TF_CPP_MIN_LOG_LEVEL=${TF_CPP_MIN_LOG_LEVEL:-3}
+      - PYTHONWARNINGS=${PYTHONWARNINGS:-ignore}
     profiles:
       - cli  # This service only runs when explicitly requested
     # GPU support for CLI operations (embedding, etc.)
@@ -149,7 +135,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ['${CLI_GPU_DEVICE}']  
+              device_ids: ['${CLI_GPU_DEVICE:-0}']  
               capabilities: [gpu]
 
   # Optional: Add a service for local LLM if needed
