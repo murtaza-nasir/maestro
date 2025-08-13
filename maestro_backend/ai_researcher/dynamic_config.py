@@ -88,6 +88,33 @@ def get_max_concurrent_requests(mission_id: Optional[str] = None) -> int:
 def get_skip_final_replanning(mission_id: Optional[str] = None) -> bool:
     return get_setting_with_fallback("skip_final_replanning", False, bool, mission_id)
 
+# --- Advanced Research Loop Configuration ---
+def get_max_research_cycles_per_section(mission_id: Optional[str] = None) -> int:
+    return get_setting_with_fallback("max_research_cycles_per_section", 2, int, mission_id)
+
+def get_max_total_iterations(mission_id: Optional[str] = None) -> int:
+    return get_setting_with_fallback("max_total_iterations", 40, int, mission_id)
+
+def get_max_total_depth(mission_id: Optional[str] = None) -> int:
+    return get_setting_with_fallback("max_total_depth", 2, int, mission_id)
+
+# --- Note Assignment Configuration ---
+def get_min_notes_per_section_assignment(mission_id: Optional[str] = None) -> int:
+    return get_setting_with_fallback("min_notes_per_section_assignment", 5, int, mission_id)
+
+def get_max_notes_per_section_assignment(mission_id: Optional[str] = None) -> int:
+    return get_setting_with_fallback("max_notes_per_section_assignment", 40, int, mission_id)
+
+# --- Content Processing Limits ---
+def get_max_planning_context_chars(mission_id: Optional[str] = None) -> int:
+    return get_setting_with_fallback("max_planning_context_chars", 250000, int, mission_id)
+
+def get_writing_previous_content_preview_chars(mission_id: Optional[str] = None) -> int:
+    return get_setting_with_fallback("writing_previous_content_preview_chars", 30000, int, mission_id)
+
+def get_research_note_content_limit(mission_id: Optional[str] = None) -> int:
+    return get_setting_with_fallback("research_note_content_limit", 32000, int, mission_id)
+
 # --- Search Provider Settings ---
 def get_web_search_provider(mission_id: Optional[str] = None) -> str:
     """Get the web search provider from user settings or environment."""

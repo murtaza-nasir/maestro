@@ -77,6 +77,11 @@ Critically analyze the provided `formatted_history` against these principles, wi
 - `initial_exploration_web_results`: int (2-5)
 - `main_research_doc_results`: int (2-7)
 - `main_research_web_results`: int (2-5)
+- `max_research_cycles_per_section`: int (1-4) - How many refinement cycles per section
+- `max_total_iterations`: int (20-60) - Overall iteration limit
+- `max_total_depth`: int (1-4) - Outline complexity
+- `min_notes_per_section_assignment`: int (3-10) - Minimum coverage per section
+- `max_notes_per_section_assignment`: int (20-60) - Maximum to prevent overload
 
 ---
 ### **Examples of Requests and Resulting Parameters**
@@ -96,7 +101,12 @@ Critically analyze the provided `formatted_history` against these principles, wi
         "initial_exploration_doc_results": 2,
         "initial_exploration_web_results": 5,
         "main_research_doc_results": 2,
-        "main_research_web_results": 4
+        "main_research_web_results": 4,
+        "max_research_cycles_per_section": 1,
+        "max_total_iterations": 20,
+        "max_total_depth": 1,
+        "min_notes_per_section_assignment": 3,
+        "max_notes_per_section_assignment": 20
     }}
     ```
 
@@ -116,7 +126,12 @@ Critically analyze the provided `formatted_history` against these principles, wi
         "initial_exploration_doc_results": 2,
         "initial_exploration_web_results": 5,
         "main_research_doc_results": 7,
-        "main_research_web_results": 5
+        "main_research_web_results": 5,
+        "max_research_cycles_per_section": 2,
+        "max_total_iterations": 40,
+        "max_total_depth": 3,
+        "min_notes_per_section_assignment": 5,
+        "max_notes_per_section_assignment": 40
     }}
     ```
 
@@ -136,7 +151,12 @@ Critically analyze the provided `formatted_history` against these principles, wi
         "initial_exploration_doc_results": 2,
         "initial_exploration_web_results": 5,
         "main_research_doc_results": 2,
-        "main_research_web_results": 10
+        "main_research_web_results": 10,
+        "max_research_cycles_per_section": 3,
+        "max_total_iterations": 50,
+        "max_total_depth": 2,
+        "min_notes_per_section_assignment": 8,
+        "max_notes_per_section_assignment": 50
     }}
     ```
 
@@ -156,7 +176,12 @@ Critically analyze the provided `formatted_history` against these principles, wi
         "initial_exploration_doc_results": 5,
         "initial_exploration_web_results": 4,
         "main_research_doc_results": 7,
-        "main_research_web_results": 5
+        "main_research_web_results": 5,
+        "max_research_cycles_per_section": 4,
+        "max_total_iterations": 60,
+        "max_total_depth": 4,
+        "min_notes_per_section_assignment": 10,
+        "max_notes_per_section_assignment": 60
     }}
     ```
 
@@ -176,7 +201,12 @@ Critically analyze the provided `formatted_history` against these principles, wi
         "initial_exploration_doc_results": 2,
         "initial_exploration_web_results": 5,
         "main_research_doc_results": 4,
-        "main_research_web_results": 7
+        "main_research_web_results": 7,
+        "max_research_cycles_per_section": 2,
+        "max_total_iterations": 45,
+        "max_total_depth": 3,
+        "min_notes_per_section_assignment": 6,
+        "max_notes_per_section_assignment": 45
     }}
     ```
     
@@ -260,7 +290,11 @@ async def apply_auto_optimization(
             get_initial_exploration_doc_results, get_initial_exploration_web_results,
             get_main_research_doc_results, get_main_research_web_results,
             get_thought_pad_context_limit, get_max_notes_for_assignment_reranking,
-            get_max_concurrent_requests, get_skip_final_replanning
+            get_max_concurrent_requests, get_skip_final_replanning,
+            get_max_research_cycles_per_section, get_max_total_iterations,
+            get_max_total_depth, get_min_notes_per_section_assignment,
+            get_max_notes_per_section_assignment, get_max_planning_context_chars,
+            get_writing_previous_content_preview_chars, get_research_note_content_limit
         )
         
         effective_settings = {
@@ -275,7 +309,16 @@ async def apply_auto_optimization(
             "thought_pad_context_limit": get_thought_pad_context_limit(mission_id),
             "max_notes_for_assignment_reranking": get_max_notes_for_assignment_reranking(mission_id),
             "max_concurrent_requests": get_max_concurrent_requests(mission_id),
-            "skip_final_replanning": get_skip_final_replanning(mission_id)
+            "skip_final_replanning": get_skip_final_replanning(mission_id),
+            # Advanced parameters now properly imported
+            "max_research_cycles_per_section": get_max_research_cycles_per_section(mission_id),
+            "max_total_iterations": get_max_total_iterations(mission_id),
+            "max_total_depth": get_max_total_depth(mission_id),
+            "min_notes_per_section_assignment": get_min_notes_per_section_assignment(mission_id),
+            "max_notes_per_section_assignment": get_max_notes_per_section_assignment(mission_id),
+            "max_planning_context_chars": get_max_planning_context_chars(mission_id),
+            "writing_previous_content_preview_chars": get_writing_previous_content_preview_chars(mission_id),
+            "research_note_content_limit": get_research_note_content_limit(mission_id)
         }
         
         # Create comprehensive log message

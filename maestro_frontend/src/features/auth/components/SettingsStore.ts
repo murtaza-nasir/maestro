@@ -52,6 +52,15 @@ export interface ResearchParameters {
   max_concurrent_requests: number
   skip_final_replanning: boolean
   auto_optimize_params: boolean
+  // Advanced parameters (newly exposed)
+  max_research_cycles_per_section?: number
+  max_total_iterations?: number
+  max_total_depth?: number
+  min_notes_per_section_assignment?: number
+  max_notes_per_section_assignment?: number
+  max_planning_context_chars?: number
+  writing_previous_content_preview_chars?: number
+  research_note_content_limit?: number
 }
 
 interface AppearanceSettings {

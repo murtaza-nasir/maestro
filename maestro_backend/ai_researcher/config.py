@@ -37,7 +37,11 @@ try:
         get_max_concurrent_requests, get_skip_final_replanning,
         get_initial_exploration_doc_results, get_initial_exploration_web_results,
         get_main_research_doc_results, get_main_research_web_results,
-        get_max_notes_for_assignment_reranking
+        get_max_notes_for_assignment_reranking, get_max_research_cycles_per_section,
+        get_max_total_iterations, get_max_total_depth,
+        get_min_notes_per_section_assignment, get_max_notes_per_section_assignment,
+        get_max_planning_context_chars, get_writing_previous_content_preview_chars,
+        get_research_note_content_limit
     )
     DYNAMIC_CONFIG_AVAILABLE = True
 except ImportError:
@@ -337,12 +341,12 @@ print(f"Web Cache Expiration: {WEB_CACHE_EXPIRATION_DAYS} days")
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./ai_researcher/data/vector_store/chroma.db") # Example path
 
 # --- Research Loop Configuration ---
-MAX_TOTAL_ITERATIONS = int(os.getenv("MAX_TOTAL_ITERATIONS", 40)) # Overall limit for research/reflection iterations
+MAX_TOTAL_ITERATIONS = get_max_total_iterations() if DYNAMIC_CONFIG_AVAILABLE else int(os.getenv("MAX_TOTAL_ITERATIONS", 40)) # Overall limit for research/reflection iterations
 # Renamed for clarity: Max number of times ResearchAgent is called per section per round.
 # E.g., 1 means one initial research call. 2 means initial call + one refinement call if reflection yields questions.
-MAX_RESEARCH_CYCLES_PER_SECTION = int(os.getenv("MAX_RESEARCH_CYCLES_PER_SECTION", 2)) # Default is 2
+MAX_RESEARCH_CYCLES_PER_SECTION = get_max_research_cycles_per_section() if DYNAMIC_CONFIG_AVAILABLE else int(os.getenv("MAX_RESEARCH_CYCLES_PER_SECTION", 2)) # Default is 2
 MAX_DEPTH_PASS1 = int(os.getenv("MAX_DEPTH_PASS1", 1)) # Max outline depth processed in Pass 1 (Less relevant now?)
-MAX_TOTAL_DEPTH = int(os.getenv("MAX_TOTAL_DEPTH", 2)) # Max outline depth allowed after Inter-Pass revision
+MAX_TOTAL_DEPTH = get_max_total_depth() if DYNAMIC_CONFIG_AVAILABLE else int(os.getenv("MAX_TOTAL_DEPTH", 2)) # Max outline depth allowed after Inter-Pass revision
 
 # --- Advanced Workflow Configuration ---
 INITIAL_RESEARCH_MAX_DEPTH = get_initial_research_max_depth() # 3 Max depth for initial question tree
@@ -350,16 +354,16 @@ INITIAL_RESEARCH_MAX_QUESTIONS = get_initial_research_max_questions() # 50 Max t
 STRUCTURED_RESEARCH_ROUNDS = get_structured_research_rounds() # def 2: Number of structured research rounds (Set to 1 for single pass)
 WRITING_PASSES = get_writing_passes() # Default 3: Number of writing passes (initial + revisions)
 # Max characters for notes context passed to PlanningAgent in one go
-MAX_PLANNING_CONTEXT_CHARS = int(os.getenv("MAX_PLANNING_CONTEXT_CHARS", 250000))
+MAX_PLANNING_CONTEXT_CHARS = get_max_planning_context_chars() if DYNAMIC_CONFIG_AVAILABLE else int(os.getenv("MAX_PLANNING_CONTEXT_CHARS", 250000))
 # Max characters for previewing previously written content passed to WritingAgent
-WRITING_PREVIOUS_CONTENT_PREVIEW_CHARS = int(os.getenv("WRITING_PREVIOUS_CONTENT_PREVIEW_CHARS", 30000)) # Max characters for previewing previously written content (each section)
+WRITING_PREVIOUS_CONTENT_PREVIEW_CHARS = get_writing_previous_content_preview_chars() if DYNAMIC_CONFIG_AVAILABLE else int(os.getenv("WRITING_PREVIOUS_CONTENT_PREVIEW_CHARS", 30000)) # Max characters for previewing previously written content (each section)
 # Number of recent thoughts to provide as context to agents
 THOUGHT_PAD_CONTEXT_LIMIT = get_thought_pad_context_limit() # Default to 5 recent thoughts
 # Toggle to skip final outline refinement and note reassignment after structured research
 SKIP_FINAL_REPLANNING = get_skip_final_replanning() # Default to False
 
 # --- Research Note Generation ---
-RESEARCH_NOTE_CONTENT_LIMIT = int(os.getenv("RESEARCH_NOTE_CONTENT_LIMIT", 32000)) # Default 32000: Max characters of source content to feed into note generation prompt
+RESEARCH_NOTE_CONTENT_LIMIT = get_research_note_content_limit() if DYNAMIC_CONFIG_AVAILABLE else int(os.getenv("RESEARCH_NOTE_CONTENT_LIMIT", 32000)) # Default 32000: Max characters of source content to feed into note generation prompt
 
 # --- Embedding Configuration ---
 EMBEDDING_BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", 8)) # Default 8: Batch size for embedding operations (reduced for memory safety)
@@ -377,8 +381,8 @@ MAIN_RESEARCH_DOC_RESULTS = get_main_research_doc_results() # default 10: Number
 MAIN_RESEARCH_WEB_RESULTS = get_main_research_web_results() # default 5: Number of web results for main research cycles
 
 # Note Assignment Configuration
-MIN_NOTES_PER_SECTION_ASSIGNMENT = int(os.getenv("MIN_NOTES_PER_SECTION_ASSIGNMENT", 5)) # Minimum notes per section
-MAX_NOTES_PER_SECTION_ASSIGNMENT = int(os.getenv("MAX_NOTES_PER_SECTION_ASSIGNMENT", 40)) # Maximum notes per section
+MIN_NOTES_PER_SECTION_ASSIGNMENT = get_min_notes_per_section_assignment() if DYNAMIC_CONFIG_AVAILABLE else int(os.getenv("MIN_NOTES_PER_SECTION_ASSIGNMENT", 5)) # Minimum notes per section
+MAX_NOTES_PER_SECTION_ASSIGNMENT = get_max_notes_per_section_assignment() if DYNAMIC_CONFIG_AVAILABLE else int(os.getenv("MAX_NOTES_PER_SECTION_ASSIGNMENT", 40)) # Maximum notes per section
 # Max notes to pass to NoteAssignmentAgent after reranking (to manage context window)
 MAX_NOTES_FOR_ASSIGNMENT_RERANKING: int = get_max_notes_for_assignment_reranking() # Default 100
 

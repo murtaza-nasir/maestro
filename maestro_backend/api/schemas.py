@@ -94,6 +94,15 @@ class ResearchParameters(BaseModel):
     max_concurrent_requests: int
     skip_final_replanning: bool
     auto_optimize_params: bool
+    # Advanced parameters (newly exposed)
+    max_research_cycles_per_section: Optional[int] = None
+    max_total_iterations: Optional[int] = None
+    max_total_depth: Optional[int] = None
+    min_notes_per_section_assignment: Optional[int] = None
+    max_notes_per_section_assignment: Optional[int] = None
+    max_planning_context_chars: Optional[int] = None
+    writing_previous_content_preview_chars: Optional[int] = None
+    research_note_content_limit: Optional[int] = None
 
 class GlobalUserSettings(BaseModel):
     ai_endpoints: Optional[AISettings] = None
@@ -288,6 +297,20 @@ class MissionSettings(BaseModel):
     # Options
     skip_final_replanning: Optional[bool] = Field(None, description="Toggle to skip final outline refinement")
     auto_optimize_params: Optional[bool] = Field(None, description="Enable AI to dynamically optimize research params")
+    
+    # Advanced Research Loop Configuration
+    max_research_cycles_per_section: Optional[int] = Field(None, description="Max times ResearchAgent is called per section per round")
+    max_total_iterations: Optional[int] = Field(None, description="Overall limit for research/reflection iterations")
+    max_total_depth: Optional[int] = Field(None, description="Max outline depth allowed after inter-pass revision")
+    
+    # Note Assignment Limits
+    min_notes_per_section_assignment: Optional[int] = Field(None, description="Minimum notes assigned to each section")
+    max_notes_per_section_assignment: Optional[int] = Field(None, description="Maximum notes per section")
+    
+    # Content Processing Limits
+    max_planning_context_chars: Optional[int] = Field(None, description="Max characters for notes context passed to PlanningAgent")
+    writing_previous_content_preview_chars: Optional[int] = Field(None, description="Max characters for previewing previously written content")
+    research_note_content_limit: Optional[int] = Field(None, description="Max characters of source content for note generation")
 
 class MissionSettingsResponse(BaseModel):
     mission_id: str
