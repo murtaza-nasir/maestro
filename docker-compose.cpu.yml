@@ -1,0 +1,141 @@
+services:
+  # Nginx reverse proxy - single entry point for the application
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    image: maestro-nginx
+    container_name: maestro-nginx
+    ports:
+      - "${MAESTRO_PORT:-80}:80"
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - maestro-network
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./maestro_backend
+      dockerfile: Dockerfile
+    image: maestro-backend
+    container_name: maestro-backend
+    volumes:
+      - maestro-data:/app/ai_researcher/data
+      - ./maestro_model_cache:/root/.cache/huggingface
+      - ./maestro_datalab_cache:/root/.cache/datalab
+      - ./reports:/app/reports
+      - ./maestro_backend/data:/app/data
+    working_dir: /app
+    environment:
+      - MAX_WORKER_THREADS=${MAX_WORKER_THREADS:-10}
+      - TZ=${TZ:-UTC}
+      - LOG_LEVEL=${LOG_LEVEL:-ERROR}
+      # Force CPU mode
+      - FORCE_CPU_MODE=true
+      - PREFERRED_DEVICE_TYPE=cpu
+      # CORS configuration for reverse proxy support
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-*}
+      # Allow all origins in development mode when using nginx proxy
+      - ALLOW_CORS_WILDCARD=${ALLOW_CORS_WILDCARD:-true}
+    networks:
+      - maestro-network
+    # No GPU configuration for CPU-only mode
+
+  frontend:
+    build:
+      context: ./maestro_frontend
+      dockerfile: Dockerfile
+    image: maestro-frontend
+    container_name: maestro-frontend
+    depends_on:
+      - backend
+    networks:
+      - maestro-network
+    environment:
+      # API URLs (optional - using relative URLs through nginx proxy by default)
+      - VITE_SERVER_TIMEZONE=${VITE_SERVER_TIMEZONE:-UTC}
+      - TZ=${TZ:-UTC}
+      - LOG_LEVEL=${LOG_LEVEL:-ERROR}
+
+  doc-processor:
+    build:
+      context: ./maestro_backend
+      dockerfile: Dockerfile
+    image: maestro-doc-processor
+    container_name: maestro-doc-processor
+    command: ["python", "-u", "services/background_document_processor.py"]
+    working_dir: /app
+    volumes:
+      - maestro-data:/app/ai_researcher/data
+      - ./maestro_model_cache:/root/.cache/huggingface
+      - ./maestro_datalab_cache:/root/.cache/datalab
+      - ./reports:/app/reports
+      - ./maestro_backend/data:/app/data
+    depends_on:
+      - backend
+    networks:
+      - maestro-network
+    environment:
+      - TZ=${TZ:-UTC}
+      - LOG_LEVEL=${LOG_LEVEL:-ERROR}
+      # Force CPU mode
+      - FORCE_CPU_MODE=true
+      - PREFERRED_DEVICE_TYPE=cpu
+    # No GPU configuration for CPU-only mode
+
+  cli:
+    build:
+      context: ./maestro_backend
+      dockerfile: Dockerfile
+    image: maestro-cli
+    container_name: maestro-cli
+    command: ["bash"]
+    stdin_open: true
+    tty: true
+    working_dir: /app
+    volumes:
+      - maestro-data:/app/ai_researcher/data
+      - ./maestro_model_cache:/root/.cache/huggingface
+      - ./maestro_datalab_cache:/root/.cache/datalab
+      - ./reports:/app/reports
+      - ./maestro_backend/data:/app/data
+    depends_on:
+      - backend
+    networks:
+      - maestro-network
+    environment:
+      - TZ=${TZ:-UTC}
+      - LOG_LEVEL=${LOG_LEVEL:-ERROR}
+      # Force CPU mode
+      - FORCE_CPU_MODE=true
+      - PREFERRED_DEVICE_TYPE=cpu
+    # No GPU configuration for CPU-only mode
+
+  # Optional local LLM service (uncomment if using)
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: maestro-ollama
+  #   ports:
+  #     - "${LOCAL_LLM_HOST:-127.0.0.1}:${LOCAL_LLM_PORT:-5000}:${LOCAL_LLM_INTERNAL_PORT:-11434}"
+  #   volumes:
+  #     - ollama-data:/root/.ollama
+  #   networks:
+  #     - maestro-network
+  #   restart: unless-stopped
+
+volumes:
+  maestro-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./maestro_data
+  # Uncomment if using local LLM
+  # ollama-data:
+  #   driver: local
+
+networks:
+  maestro-network:
+    driver: bridge

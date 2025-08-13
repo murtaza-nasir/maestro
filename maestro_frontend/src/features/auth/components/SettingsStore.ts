@@ -36,6 +36,8 @@ interface SearchSettings {
   linkup_api_key: string | null
   searxng_base_url: string | null
   searxng_categories: string | null
+  max_results?: number
+  search_depth?: 'standard' | 'advanced'
 }
 
 export interface ResearchParameters {
@@ -61,6 +63,11 @@ export interface ResearchParameters {
   max_planning_context_chars?: number
   writing_previous_content_preview_chars?: number
   research_note_content_limit?: number
+  // Writing mode search parameters
+  writing_search_max_iterations?: number
+  writing_search_max_queries?: number
+  writing_deep_search_iterations?: number
+  writing_deep_search_queries?: number
 }
 
 interface AppearanceSettings {
@@ -225,7 +232,9 @@ const defaultSettings: UserSettings = {
     tavily_api_key: null,
     linkup_api_key: null,
     searxng_base_url: null,
-    searxng_categories: null
+    searxng_categories: null,
+    max_results: 5,
+    search_depth: 'standard'
   },
   research_parameters: {
     initial_research_max_depth: 2,
@@ -236,7 +245,7 @@ const defaultSettings: UserSettings = {
     initial_exploration_doc_results: 5,
     initial_exploration_web_results: 3,
     main_research_doc_results: 5,
-    main_research_web_results: 3,
+    main_research_web_results: 5,
     max_notes_for_assignment_reranking: 80,
     max_concurrent_requests: 5,
     skip_final_replanning: true,

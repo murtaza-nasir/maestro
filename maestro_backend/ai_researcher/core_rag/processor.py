@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 import shutil # Import shutil at the top
 import logging
+import sys
 
 import torch
 import pymupdf # PyMuPDF
@@ -13,6 +14,9 @@ import pymupdf4llm # For fallback or specific markdown conversion if needed late
 from marker.converters.pdf import PdfConverter
 from marker.models import create_model_dict
 from marker.config.parser import ConfigParser
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from hardware_detection import hardware_detector
 
 import sqlite3 # Needed for Database integration (error handling)
 # json is imported above
@@ -60,9 +64,27 @@ class DocumentProcessor:
         self.metadata_dir.mkdir(parents=True, exist_ok=True)
         db_path.parent.mkdir(parents=True, exist_ok=True) # Ensure DB directory exists too
 
-        # Force device to cuda:4 if available, otherwise fallback as before
-        self.device = device or ("cuda:4" if torch.cuda.is_available() and torch.cuda.device_count() > 4 else ("cuda" if torch.cuda.is_available() else "cpu"))
+        # Use hardware detector for device selection
+        if device:
+            self.device = device
+        else:
+            # Get device from hardware detector, prefer GPU 4 if available for backward compatibility
+            device_info = hardware_detector.detect_hardware()
+            if device_info["device_type"] == "cuda" and device_info["device_count"] > 4:
+                self.device = "cuda:4"
+            else:
+                torch_device = hardware_detector.get_torch_device()
+                self.device = str(torch_device)
+        
+        # Log hardware detection results
+        hardware_detector.log_device_info()
         print(f"DocumentProcessor using device: {self.device}")
+        
+        # Set CPU optimizations if needed
+        device_info = hardware_detector.detect_hardware()
+        if device_info["device_type"] == "cpu":
+            torch.set_num_threads(hardware_detector.get_num_workers())
+            print(f"Set PyTorch threads to {hardware_detector.get_num_workers()} for CPU processing")
 
         # Initialize Marker components
         self.marker_models = create_model_dict(device=self.device)
@@ -89,10 +111,14 @@ class DocumentProcessor:
     def _init_marker_configs(self):
         """Initialize different marker configurations for table handling."""
         # Base configuration options
+        device_info = hardware_detector.detect_hardware()
+        # Adjust batch multiplier based on hardware
+        batch_multiplier = 1 if device_info["device_type"] == "cpu" else 2
+        
         base_options = {
             "output_format": "markdown",
             "device": self.device,
-            "batch_multiplier": 2,
+            "batch_multiplier": batch_multiplier,
         }
         
         # Configuration with table recognition enabled

@@ -19,6 +19,7 @@ class DocumentSearchInput(BaseModel):
 class WebSearchInput(BaseModel):
     """Input schema for performing a web search."""
     query: str = Field(..., description="The web search query.")
+    max_results: Optional[int] = Field(None, description="Maximum number of search results to return (uses user settings if not specified)")
 
 class AddSectionInput(BaseModel):
     """Input schema for adding a new section to the document."""
@@ -60,7 +61,7 @@ async def document_search(query: str, document_group_id: str, max_results: int =
     results = await agent_controller.retriever.retrieve(query, n_results=max_results, filter_metadata=filter_metadata)
     return {"status": "success", "results": results}
 
-async def web_search(query: str, agent_controller=None, **kwargs) -> dict:
+async def web_search(query: str, max_results: Optional[int] = None, agent_controller=None, **kwargs) -> dict:
     """
     Performs a web search to find external, up-to-date information.
     """
@@ -70,7 +71,13 @@ async def web_search(query: str, agent_controller=None, **kwargs) -> dict:
     # The "real" web_search tool is likely in the main controller's registry.
     # We are calling it from here.
     web_search_tool = agent_controller.tool_registry.get_tool('web_search')
-    result = await web_search_tool.implementation(query=query)
+    
+    # Build parameters to pass to the web search tool
+    search_params = {"query": query}
+    if max_results is not None:
+        search_params["max_results"] = max_results
+    
+    result = await web_search_tool.implementation(**search_params)
     return result
 
 

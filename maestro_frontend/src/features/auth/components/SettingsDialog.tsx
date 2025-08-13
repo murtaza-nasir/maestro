@@ -55,24 +55,26 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onOpenChan
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl h-[85vh] flex flex-col overflow-hidden">
-        <DialogHeader className="px-6 pt-6 pb-4 flex-shrink-0">
-          <DialogTitle className="text-gray-900 dark:text-gray-100">Settings</DialogTitle>
+        <DialogHeader className="px-6 pt-6 pb-4 flex-shrink-0 border-b border-border">
+          <DialogTitle className="text-foreground">Settings</DialogTitle>
         </DialogHeader>
 
-        <div className="px-6 flex-1 flex flex-col min-h-0">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {error && (
-            <Card className="mb-4 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 flex-shrink-0">
-              <CardContent className="p-4">
-                <div className="flex items-center">
-                  <AlertCircle className="h-5 w-5 text-red-500 mr-2" />
-                  <span className="text-red-700 dark:text-red-300">{error}</span>
-                </div>
-              </CardContent>
-            </Card>
+            <div className="px-6 pt-4">
+              <Card className="bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800">
+                <CardContent className="p-4">
+                  <div className="flex items-center">
+                    <AlertCircle className="h-5 w-5 text-red-500 mr-2" />
+                    <span className="text-red-700 dark:text-red-300">{error}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           )}
 
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex-1 flex flex-col min-h-0">
-            <TabsList className={`grid w-full ${user?.is_admin ? 'grid-cols-6' : 'grid-cols-5'} h-10 flex-shrink-0`}>
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex-1 flex flex-col min-h-0 px-6 pt-4">
+            <TabsList className={`grid w-full ${user?.is_admin ? 'grid-cols-6' : 'grid-cols-5'} h-10 flex-shrink-0 mb-4`}>
               <TabsTrigger value="profile" className="text-sm">
                 <User className="w-4 h-4 mr-2" />
                 Profile
@@ -101,28 +103,28 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onOpenChan
               )}
             </TabsList>
 
-            <div className="flex-1 mt-4 min-h-0">
-              <TabsContent value="profile" className="h-full overflow-y-auto data-[state=active]:flex data-[state=active]:flex-col">
+            <div className="flex-1 min-h-0 overflow-hidden rounded-b-lg">
+              <TabsContent value="profile" className="h-full overflow-y-auto settings-scrollbar data-[state=active]:flex data-[state=active]:flex-col pr-2 pb-4">
                 <ProfileSettingsTab />
               </TabsContent>
 
-              <TabsContent value="appearance" className="h-full overflow-y-auto data-[state=active]:flex data-[state=active]:flex-col">
+              <TabsContent value="appearance" className="h-full overflow-y-auto settings-scrollbar data-[state=active]:flex data-[state=active]:flex-col pr-2 pb-4">
                 <AppearanceSettingsTab />
               </TabsContent>
 
-              <TabsContent value="ai" className="h-full overflow-y-auto data-[state=active]:flex data-[state=active]:flex-col">
+              <TabsContent value="ai" className="h-full overflow-y-auto settings-scrollbar data-[state=active]:flex data-[state=active]:flex-col pr-2 pb-4">
                 <AISettingsTab />
               </TabsContent>
 
-              <TabsContent value="search" className="h-full overflow-y-auto data-[state=active]:flex data-[state=active]:flex-col">
+              <TabsContent value="search" className="h-full overflow-y-auto settings-scrollbar data-[state=active]:flex data-[state=active]:flex-col pr-2 pb-4">
                 <SearchSettingsTab />
               </TabsContent>
 
-              <TabsContent value="research" className="h-full overflow-y-auto data-[state=active]:flex data-[state=active]:flex-col">
+              <TabsContent value="research" className="h-full overflow-y-auto settings-scrollbar data-[state=active]:flex data-[state=active]:flex-col pr-2 pb-4">
                 <ResearchSettingsTab />
               </TabsContent>
               {user?.is_admin && (
-                <TabsContent value="admin" className="h-full overflow-y-auto data-[state=active]:flex data-[state=active]:flex-col">
+                <TabsContent value="admin" className="h-full overflow-y-auto settings-scrollbar data-[state=active]:flex data-[state=active]:flex-col pr-2 pb-4">
                   <AdminSettingsTab />
                 </TabsContent>
               )}
@@ -130,9 +132,16 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onOpenChan
           </Tabs>
         </div>
 
-        <DialogFooter className="px-6 pb-6 pt-4 flex-shrink-0 justify-end border-t dark:border-gray-700">
-          <Button onClick={handleSave} disabled={isLoading}>
-            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save & Close'}
+        <DialogFooter className="px-6 pt-4 pb-6 flex-shrink-0 flex items-center justify-end border-t bg-background/95 backdrop-blur-sm mt-4">
+          <Button onClick={handleSave} disabled={isLoading} className="min-w-[120px]">
+            {isLoading ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Saving...
+              </>
+            ) : (
+              'Save & Close'
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

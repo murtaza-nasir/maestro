@@ -4,6 +4,9 @@ from typing import List, Dict, Any, Optional, Tuple
 import torch
 from FlagEmbedding import FlagReranker
 from tqdm import tqdm
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from hardware_detection import hardware_detector
 
 class TextReranker:
     """
@@ -19,27 +22,40 @@ class TextReranker:
         import os
         from ai_researcher import config
         
-        # If a specific device is provided, use it
+        # Use hardware detector for device selection
         if device:
             self.device = device
-        # If running in Docker, use Docker's CUDA settings
-        elif config.is_running_in_docker():
-            # In Docker, CUDA_VISIBLE_DEVICES is managed by Docker
-            # We'll use the first available GPU (usually 0 in the container's view)
-            self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
-        # Otherwise use the configured CUDA device
         else:
-            cuda_device = config.CUDA_DEVICE
-            self.device = f"cuda:{cuda_device}" if torch.cuda.is_available() and torch.cuda.device_count() > int(cuda_device) else ("cuda" if torch.cuda.is_available() else "cpu")
+            # Get device from hardware detector
+            torch_device = hardware_detector.get_torch_device()
+            self.device = str(torch_device)
+            
+            # Adjust batch size based on hardware
+            optimal_batch = hardware_detector.get_optimal_batch_size(batch_size)
+            if optimal_batch != batch_size:
+                print(f"Adjusting batch size from {batch_size} to {optimal_batch} based on hardware")
+                batch_size = optimal_batch
         self.model_name = model_name
         self.batch_size = batch_size
 
+        # Log hardware detection results
+        hardware_detector.log_device_info()
+        
         print(f"Initializing TextReranker with model {self.model_name} on device {self.device}")
         try:
+            # Determine FP16 usage based on device type
+            device_info = hardware_detector.detect_hardware()
+            use_fp16 = device_info["device_type"] in ["cuda", "rocm", "mps"]
+            
             # Initialize the FlagReranker model
-            # use_fp16=True is recommended on GPU
-            self.model = FlagReranker(self.model_name, use_fp16=(self.device == "cuda"))
-            print("Reranker model loaded successfully.")
+            self.model = FlagReranker(self.model_name, use_fp16=use_fp16)
+            print(f"Reranker model loaded successfully (FP16: {use_fp16})")
+            
+            # Set CPU optimizations if needed
+            if device_info["device_type"] == "cpu":
+                torch.set_num_threads(hardware_detector.get_num_workers())
+                print(f"Set PyTorch threads to {hardware_detector.get_num_workers()} for CPU processing")
+        
         except Exception as e:
             print(f"Error loading reranker model {self.model_name}: {e}")
             self.model = None # Indicate failure

@@ -1639,7 +1639,9 @@ If no relevant sub-questions are identified, return an empty list for "sub_quest
                     web_query = web_query[:400]
                     logger.info(f"Truncated web search query: '{web_query}'")
 
-                web_args = {"query": web_query, "max_results": n_web_results} # Use potentially truncated query
+                # Don't override max_results - let WebSearchTool use user's settings
+                web_args = {"query": web_query} # Use potentially truncated query
+                # Note: max_results will be determined by user's search settings in WebSearchTool
                 # Pass the enhanced query to _execute_single_search for logging context
                 search_tasks.append(self._execute_single_search(
                     "web_search", # Use the generic tool name

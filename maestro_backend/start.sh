@@ -21,4 +21,4 @@ fi
 echo "🌐 Starting FastAPI server..."
 # Convert LOG_LEVEL to lowercase for uvicorn
 UVICORN_LOG_LEVEL=$(echo "${LOG_LEVEL:-error}" | tr '[:upper:]' '[:lower:]')
-exec uvicorn main:app --host 0.0.0.0 --port 8000 --reload --log-level $UVICORN_LOG_LEVEL 
+exec uvicorn main:app --host 0.0.0.0 --port 8000 --reload --log-level $UVICORN_LOG_LEVEL --timeout-keep-alive 600 

@@ -125,6 +125,13 @@ class SimplifiedWritingAgent:
         context_info = context_info or {}
         session_id = context_info.get("session_id")  # Extract session_id for stats tracking
         
+        # Extract search configuration from context_info
+        search_config = context_info.get("search_config", {})
+        use_deep_search = search_config.get("deep_search", False)
+        max_search_iterations = search_config.get("max_iterations", 3 if use_deep_search else 1)
+        max_decomposed_queries = search_config.get("max_decomposed_queries", 10 if use_deep_search else 3)
+        max_search_results = search_config.get("max_results", 5)  # Get max_results from config
+        
         logger.info(f"SimplifiedWritingAgent.run called with prompt: {prompt[:100]}...")
         logger.info(f"Available tools - Web search: {context_info.get('use_web_search', False)}, Document group: {context_info.get('document_group_id')}")
         
@@ -152,21 +159,30 @@ class SimplifiedWritingAgent:
             
             if router_decision in ["search", "both"] and context_info.get("use_web_search"):
                 if status_callback:
-                    await status_callback("searching_web", "Searching the web for relevant information...")
+                    search_mode = "deep web search" if use_deep_search else "web search"
+                    await status_callback("searching_web", f"Performing {search_mode} for relevant information...")
                 
-                logger.info("Performing iterative web search...")
-                web_results, web_sources = await self._perform_iterative_web_search(prompt, chat_history, session_id, status_callback)
+                logger.info(f"Performing iterative web search (deep={use_deep_search}, max_iterations={max_search_iterations})...")
+                web_results, web_sources = await self._perform_iterative_web_search(
+                    prompt, chat_history, session_id, status_callback, 
+                    max_attempts=max_search_iterations,
+                    max_decomposed_queries=max_decomposed_queries,
+                    max_search_results=max_search_results
+                )
                 external_context += web_results
                 sources.extend(web_sources)
                 tools_used["web_search"] = True
             
             if router_decision in ["search", "documents", "both"] and context_info.get("document_group_id"):
                 if status_callback:
-                    await status_callback("searching_documents", "Searching your document collection...")
+                    search_mode = "deep document search" if use_deep_search else "document search"
+                    await status_callback("searching_documents", f"Performing {search_mode} in your collection...")
                 
-                logger.info(f"Performing iterative document search in group: {context_info['document_group_id']}")
+                logger.info(f"Performing iterative document search in group: {context_info['document_group_id']} (deep={use_deep_search})")
                 doc_results, doc_sources = await self._perform_iterative_document_search(
-                    prompt, context_info["document_group_id"], chat_history, session_id, status_callback
+                    prompt, context_info["document_group_id"], chat_history, session_id, status_callback,
+                    max_attempts=max_search_iterations,
+                    max_decomposed_queries=max_decomposed_queries
                 )
                 external_context += doc_results
                 sources.extend(doc_sources)
@@ -253,6 +269,12 @@ class SimplifiedWritingAgent:
             f"- Role: {user_profile_info.get('job_title', 'N/A')}\n"
             f"Current Time: {current_time}\n"
         )
+        
+        # Debug: Log input lengths
+        prompt_length = len(prompt)
+        history_length = len(chat_history)
+        context_length = len(user_context)
+        logger.info(f"Router input lengths - Prompt: {prompt_length}, History: {history_length}, Context: {context_length}")
         available_tools = []
         if context_info.get("use_web_search"):
             available_tools.append("web search")
@@ -266,25 +288,37 @@ class SimplifiedWritingAgent:
         tools_text = " and ".join(available_tools)
         
         # Refined router prompt for more accurate tool decisions
+        # Keep it concise for thinking models that may have stricter constraints
         system_prompt = (
-            "You are a decision-making agent. Your ONLY job is to determine if a user's request requires external information. "
-            f"The available tools are: {tools_text}. "
-            "Based on the user's request and chat history, you must decide which tool to use. "
-            "Your response MUST be a single word from the following options: 'search', 'documents', 'both', 'none'.\n\n"
-            "--- Rules ---\n"
-            "- Use 'search' for requests needing current information, facts, or web research.\n"
-            "- Use 'documents' for requests about content within provided documents.\n"
-            "- Use 'both' if both are needed.\n"
-            "- Use 'none' for conversational follow-ups, formatting changes, or if no external data is needed (e.g., 'make this shorter', 'change the tone').\n\n"
-            "Respond with ONLY one word."
+            "Output ONLY one word: 'search', 'documents', 'both', or 'none'.\n"
+            f"Available tools: {tools_text}.\n"
+            "search = web info needed\n"
+            "documents = document search needed\n"
+            "both = both needed\n"
+            "none = no external data needed\n"
+            "ONE WORD ONLY."
         )
+        
+        # Truncate chat history if too long for router (keep last 500 chars)
+        truncated_history = chat_history[-500:] if len(chat_history) > 500 else chat_history
+        
+        user_message = f"Request: {prompt[:200]}" if len(prompt) > 200 else f"Request: {prompt}"
+        if truncated_history:
+            user_message = f"Recent context: {truncated_history}\n{user_message}"
         
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"User Context:\n{user_context}\n\nChat History:\n{chat_history}\n\nUser Request: {prompt}"}
+            {"role": "user", "content": user_message}
         ]
         
+        # Debug: Log message sizes
+        system_size = len(system_prompt)
+        user_size = len(user_message)
+        logger.info(f"Router message sizes - System: {system_size}, User: {user_size}, Total: {system_size + user_size}")
+        
         try:
+            # Note: response_format may not be supported by all models, so we don't use it
+            # Instead, we rely on clear instructions and post-processing
             response, model_details = await self.model_dispatcher.dispatch(messages=messages, agent_mode="query_strategy")
             
             # Track LLM call for stats
@@ -292,11 +326,46 @@ class SimplifiedWritingAgent:
             if session_id and model_details:
                 await self.stats_tracker.track_llm_call(session_id, model_details)
             
+            # Log usage information for debugging
+            if response and hasattr(response, 'usage'):
+                logger.info(f"Router token usage: {response.usage}")
+            
             if response and response.choices:
-                raw_content = response.choices[0].message.content
-                logger.info(f"Router raw response: {raw_content}")
+                # Log the complete response object for debugging
+                logger.info(f"Router COMPLETE response object: {response}")
                 
-                # Clean up the response to get a single word
+                # Log all message attributes
+                message = response.choices[0].message
+                logger.info(f"Router message attributes: {dir(message)}")
+                logger.info(f"Router message content type: {type(message.content)}")
+                logger.info(f"Router message content: {message.content}")
+                
+                # Check for reasoning_content or other attributes (for thinking models)
+                if hasattr(message, 'reasoning_content'):
+                    logger.info(f"Router reasoning_content: {message.reasoning_content}")
+                if hasattr(message, 'thinking'):
+                    logger.info(f"Router thinking: {message.thinking}")
+                
+                raw_content = response.choices[0].message.content
+                logger.info(f"Router raw response: '{raw_content}' (length: {len(raw_content) if raw_content else 0})")
+                logger.info(f"Router model used: {model_details.get('model_name', 'unknown')} from {model_details.get('provider', 'unknown')}")
+                
+                # Handle None or empty responses (common with thinking models hitting token limits)
+                if not raw_content or raw_content == "":
+                    logger.warning(f"Router returned empty/None response (model: {model_details.get('model_name', 'unknown')}). "
+                                 f"This is common with thinking models. Defaulting to 'none'")
+                    return "none"
+                
+                # For thinking models, they might add reasoning before the answer
+                # Try to extract the last word if it's one of our keywords
+                words_in_response = raw_content.lower().split()
+                for word in reversed(words_in_response):
+                    clean_word = "".join(c for c in word if c.isalpha())
+                    if clean_word in ["search", "documents", "both", "none"]:
+                        logger.info(f"Found decision word '{clean_word}' in response")
+                        return clean_word
+                
+                # Fallback: Clean up the entire response to get a single word
                 decision = "".join(c for c in raw_content.lower().strip() if c.isalpha())
 
                 # Check for exact keywords
@@ -310,11 +379,21 @@ class SimplifiedWritingAgent:
                     return "none"
                 else:
                     # If the model generated a long response, it likely ignored instructions.
-                    # In this case, it's safer to assume no tools are needed.
-                    logger.warning(f"Unclear or verbose router decision: '{raw_content}'. Defaulting to 'none'.")
+                    # This is common with thinking models that add reasoning.
+                    logger.warning(f"Unclear or verbose router decision: '{raw_content[:100]}...' (total length: {len(raw_content)}). Defaulting to 'none'.")
+                    
+                    # One more attempt: check if any of our keywords appear anywhere
+                    lower_content = raw_content.lower()
+                    if "both" in lower_content and "search" in lower_content and "document" in lower_content:
+                        return "both"
+                    elif "search" in lower_content and "document" not in lower_content:
+                        return "search"
+                    elif "document" in lower_content and "search" not in lower_content:
+                        return "documents"
+                    
                     return "none"
             
-            logger.warning("No response from router, defaulting to 'none'")
+            logger.warning(f"No response from router (response={response}, model_details={model_details}), defaulting to 'none'")
             return "none"
             
         except Exception as e:
@@ -329,7 +408,9 @@ class SimplifiedWritingAgent:
                 # Raise the error so it gets caught by the main run method
                 raise e
             else:
-                logger.error(f"Unexpected error in router: {e}", exc_info=True)
+                logger.error(f"Unexpected error in router: {type(e).__name__}: {e}", exc_info=True)
+                # Log the messages that caused the error for debugging
+                logger.debug(f"Failed router messages: {messages}")
                 return "none"
 
     async def _enrich_search_query(self, raw_query: str, chat_history: str, context_type: str = "web") -> str:
@@ -411,7 +492,7 @@ class SimplifiedWritingAgent:
             logger.error(f"Error during query enrichment: {e}", exc_info=True)
             return raw_query
 
-    async def _perform_web_search(self, query: str, chat_history: str = "", session_id: str = None) -> tuple[str, List[Dict[str, Any]]]:
+    async def _perform_web_search(self, query: str, chat_history: str = "", session_id: str = None, max_search_results: int = 5) -> tuple[str, List[Dict[str, Any]]]:
         """
         Performs web search with query enrichment and returns formatted results with source metadata.
         Returns: (formatted_results, sources_list)
@@ -428,7 +509,7 @@ class SimplifiedWritingAgent:
             
             # Perform the search with enriched query
             logger.info(f"Executing web search for enriched query: {enriched_query}")
-            result = await web_search_tool.execute(query=enriched_query, max_results=3)
+            result = await web_search_tool.execute(query=enriched_query, max_results=max_search_results)
             
             # Track web search for stats
             if session_id:
@@ -692,7 +773,7 @@ class SimplifiedWritingAgent:
                 "refined_query_suggestion": query
             }
 
-    async def _decompose_complex_query(self, query: str, chat_history: str = "", search_type: str = "web") -> List[str]:
+    async def _decompose_complex_query(self, query: str, chat_history: str = "", search_type: str = "web", max_queries: int = 10) -> List[str]:
         """
         Breaks down complex queries into separate, focused search queries for better results.
         
@@ -700,6 +781,7 @@ class SimplifiedWritingAgent:
             query: The original complex query
             chat_history: Context from recent conversation
             search_type: Type of search ("web" or "document")
+            max_queries: Maximum number of queries to generate
             
         Returns:
             List of focused search queries
@@ -716,12 +798,14 @@ class SimplifiedWritingAgent:
                 f"You are a query decomposition specialist. Your job is to analyze complex queries and break them down into "
                 f"separate, focused search queries that will yield better results when searched individually.\n\n"
                 f"CRITICAL: You MUST respond with ONLY a valid JSON array, nothing else.\n\n"
+                f"IMPORTANT: Generate UP TO {max_queries} focused queries. If the query is simple, generate fewer queries.\n\n"
                 f"Rules for decomposition:\n"
                 f"1. Identify distinct topics, locations, or concepts in the query\n"
                 f"2. Create separate focused queries for each distinct aspect\n"
                 f"3. Each query should be self-contained and specific\n"
                 f"4. Avoid combining multiple locations or topics in a single query\n"
-                f"5. Preserve the user's intent and context\n\n"
+                f"5. Preserve the user's intent and context\n"
+                f"6. Generate between 1 and {max_queries} queries based on complexity\n\n"
                 f"Examples:\n"
                 f'Input: "fun activities in New York and restaurants in Paris"\n'
                 f'Output: ["fun activities and attractions in New York City", "best restaurants and dining in Paris France"]\n\n'
@@ -758,6 +842,10 @@ class SimplifiedWritingAgent:
                             # Validate each query is a string
                             valid_queries = [q for q in decomposed_queries if isinstance(q, str) and q.strip()]
                             if valid_queries:
+                                # Limit to max_queries
+                                if len(valid_queries) > max_queries:
+                                    valid_queries = valid_queries[:max_queries]
+                                    logger.info(f"Truncated to {max_queries} queries from {len(decomposed_queries)}")
                                 logger.info(f"Successfully decomposed query into {len(valid_queries)} focused searches: {valid_queries}")
                                 return valid_queries
                     else:
@@ -766,6 +854,10 @@ class SimplifiedWritingAgent:
                         if isinstance(decomposed_queries, list) and len(decomposed_queries) > 0:
                             valid_queries = [q for q in decomposed_queries if isinstance(q, str) and q.strip()]
                             if valid_queries:
+                                # Limit to max_queries
+                                if len(valid_queries) > max_queries:
+                                    valid_queries = valid_queries[:max_queries]
+                                    logger.info(f"Truncated to {max_queries} queries from {len(decomposed_queries)}")
                                 logger.info(f"Successfully decomposed query into {len(valid_queries)} focused searches: {valid_queries}")
                                 return valid_queries
                 except json.JSONDecodeError as e:
@@ -838,7 +930,7 @@ class SimplifiedWritingAgent:
         # No decomposition possible
         return [query]
 
-    async def _perform_iterative_web_search(self, query: str, chat_history: str = "", session_id: str = None, status_callback: Optional[callable] = None, max_attempts: int = 3) -> tuple[str, List[Dict[str, Any]]]:
+    async def _perform_iterative_web_search(self, query: str, chat_history: str = "", session_id: str = None, status_callback: Optional[callable] = None, max_attempts: int = 3, max_decomposed_queries: int = 10, max_search_results: int = 5) -> tuple[str, List[Dict[str, Any]]]:
         """
         Performs iterative web search with advanced reasoning - decomposes complex queries 
         into focused searches and performs quality-driven iteration.
@@ -848,8 +940,13 @@ class SimplifiedWritingAgent:
         if status_callback:
             await status_callback("analyzing_query", "Breaking down your request into focused searches...")
         
-        decomposed_queries = await self._decompose_complex_query(query, chat_history, "web")
+        decomposed_queries = await self._decompose_complex_query(query, chat_history, "web", max_queries=max_decomposed_queries)
         logger.info(f"Decomposed into {len(decomposed_queries)} focused web searches")
+        
+        # Notify user about the decomposition
+        if status_callback and len(decomposed_queries) > 1:
+            queries_preview = [q[:50] + "..." if len(q) > 50 else q for q in decomposed_queries[:3]]
+            await status_callback("search_plan", f"Planning {len(decomposed_queries)} focused searches: {', '.join(queries_preview)}")
         
         all_results = ""
         all_sources = []
@@ -858,14 +955,17 @@ class SimplifiedWritingAgent:
         # Step 2: Execute each focused search with iterative improvement
         for i, focused_query in enumerate(decomposed_queries, 1):
             if status_callback:
-                search_msg = f"Web search {i}/{len(decomposed_queries)}: {focused_query[:50]}..."
+                # More detailed search progress
+                search_msg = f"Search {i} of {len(decomposed_queries)}: {focused_query[:80]}..."
+                if max_attempts > 1:
+                    search_msg += f" (up to {max_attempts} quality iterations)"
                 await status_callback("searching_web", search_msg)
             
             logger.info(f"Executing focused web search {i}/{len(decomposed_queries)}: {focused_query}")
             
             # Perform iterative search for this focused query
             focused_results, focused_sources = await self._perform_focused_iterative_web_search(
-                focused_query, query, chat_history, session_id, seen_urls, max_attempts
+                focused_query, query, chat_history, session_id, seen_urls, max_attempts, status_callback, max_search_results
             )
             
             # Filter out duplicate URLs and update seen_urls
@@ -902,7 +1002,7 @@ class SimplifiedWritingAgent:
         
         return all_results, all_sources
 
-    async def _perform_focused_iterative_web_search(self, focused_query: str, original_query: str, chat_history: str = "", session_id: str = None, global_seen_urls: set = None, max_attempts: int = 3) -> tuple[str, List[Dict[str, Any]]]:
+    async def _perform_focused_iterative_web_search(self, focused_query: str, original_query: str, chat_history: str = "", session_id: str = None, global_seen_urls: set = None, max_attempts: int = 3, status_callback: Optional[callable] = None, max_search_results: int = 5) -> tuple[str, List[Dict[str, Any]]]:
         """
         Performs iterative search for a single focused query with quality assessment.
         Integrates with existing query enrichment for optimal results.
@@ -917,6 +1017,15 @@ class SimplifiedWritingAgent:
             try:
                 logger.info(f"Focused web search attempt {attempt + 1}/{max_attempts} with query: {current_query}")
                 
+                # Send detailed status update if we're doing multiple attempts
+                if max_attempts > 1 and status_callback:
+                    if attempt == 0:
+                        quality_msg = f"Performing initial search..."
+                    else:
+                        quality_msg = f"Refining search quality (iteration {attempt + 1} of {max_attempts})"
+                    
+                    await status_callback("search_quality_iteration", quality_msg)
+                
                 # Use existing query enrichment method for better search terms
                 enriched_query = await self._enrich_search_query(current_query, chat_history, "web")
                 
@@ -927,7 +1036,7 @@ class SimplifiedWritingAgent:
                     
                     web_search_tool = WebSearchTool()
                     logger.info(f"Executing focused web search for enriched query: {enriched_query}")
-                    result = await web_search_tool.execute(query=enriched_query, max_results=3)
+                    result = await web_search_tool.execute(query=enriched_query, max_results=max_search_results)
                     
                     # Track web search for stats
                     if session_id:
@@ -982,6 +1091,13 @@ class SimplifiedWritingAgent:
                 
                 logger.info(f"Focused web search attempt {attempt + 1} quality score: {assessment['quality_score']}/10")
                 
+                # Send quality assessment feedback
+                if max_attempts > 1 and status_callback:
+                    quality_msg = f"Search quality: {assessment['quality_score']}/10"
+                    if not assessment['is_sufficient'] and attempt < max_attempts - 1:
+                        quality_msg += " - Refining search..."
+                    await status_callback("search_quality_score", quality_msg)
+                
                 # Add results to focused content
                 if attempt > 0:
                     focused_results += f"\n\n--- Attempt {attempt + 1} ---"
@@ -1011,7 +1127,7 @@ class SimplifiedWritingAgent:
         
         return focused_results, focused_sources
 
-    async def _perform_iterative_document_search(self, query: str, document_group_id: str, chat_history: str = "", session_id: str = None, status_callback: Optional[callable] = None, max_attempts: int = 3) -> tuple[str, List[Dict[str, Any]]]:
+    async def _perform_iterative_document_search(self, query: str, document_group_id: str, chat_history: str = "", session_id: str = None, status_callback: Optional[callable] = None, max_attempts: int = 3, max_decomposed_queries: int = 10) -> tuple[str, List[Dict[str, Any]]]:
         """
         Performs iterative document search with advanced reasoning - decomposes complex queries 
         into focused searches and performs quality-driven iteration.
@@ -1021,7 +1137,7 @@ class SimplifiedWritingAgent:
         if status_callback:
             await status_callback("analyzing_query", "Breaking down your request for focused document searches...")
         
-        decomposed_queries = await self._decompose_complex_query(query, chat_history, "document")
+        decomposed_queries = await self._decompose_complex_query(query, chat_history, "document", max_queries=max_decomposed_queries)
         logger.info(f"Decomposed into {len(decomposed_queries)} focused document searches")
         
         all_results = ""
@@ -1038,7 +1154,7 @@ class SimplifiedWritingAgent:
             
             # Perform iterative search for this focused query
             focused_results, focused_sources = await self._perform_focused_iterative_document_search(
-                focused_query, query, document_group_id, chat_history, session_id, seen_doc_ids, max_attempts
+                focused_query, query, document_group_id, chat_history, session_id, seen_doc_ids, max_attempts, status_callback
             )
             
             # Add results with clear separation
@@ -1057,7 +1173,7 @@ class SimplifiedWritingAgent:
         
         return all_results, all_sources
 
-    async def _perform_focused_iterative_document_search(self, focused_query: str, original_query: str, document_group_id: str, chat_history: str = "", session_id: str = None, global_seen_docs: set = None, max_attempts: int = 3) -> tuple[str, List[Dict[str, Any]]]:
+    async def _perform_focused_iterative_document_search(self, focused_query: str, original_query: str, document_group_id: str, chat_history: str = "", session_id: str = None, global_seen_docs: set = None, max_attempts: int = 3, status_callback: Optional[callable] = None) -> tuple[str, List[Dict[str, Any]]]:
         """
         Performs iterative document search for a single focused query with quality assessment.
         Integrates with existing query enrichment for optimal results.
@@ -1071,6 +1187,15 @@ class SimplifiedWritingAgent:
         for attempt in range(max_attempts):
             try:
                 logger.info(f"Focused document search attempt {attempt + 1}/{max_attempts} with query: {current_query}")
+                
+                # Send detailed status update if we're doing multiple attempts
+                if max_attempts > 1 and status_callback:
+                    await status_callback("search_quality_iteration", {
+                        "message": f"Refining document search quality (attempt {attempt + 1}/{max_attempts})",
+                        "attempt": attempt + 1,
+                        "max_attempts": max_attempts,
+                        "query": current_query[:100]
+                    })
                 
                 # Use existing query enrichment method for better search terms
                 enriched_query = await self._enrich_search_query(current_query, chat_history, "document")
@@ -1094,6 +1219,13 @@ class SimplifiedWritingAgent:
                     assessment = await self._assess_content_quality(original_query, search_results, "document")
                     
                     logger.info(f"Focused document search attempt {attempt + 1} quality score: {assessment['quality_score']}/10, new docs: {len(filtered_sources)}")
+                    
+                    # Send quality assessment feedback for documents
+                    if max_attempts > 1 and status_callback and attempt < max_attempts - 1:
+                        if assessment['is_sufficient']:
+                            await status_callback("searching_documents", f"Document search quality: {assessment['quality_score']}/10 - Sufficient")
+                        else:
+                            await status_callback("searching_documents", f"Document search quality: {assessment['quality_score']}/10 - Refining...")
                     
                     # Add results to focused content
                     if search_results and "No document search results found" not in search_results:

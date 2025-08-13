@@ -135,13 +135,15 @@ except ImportError:
         return get_setting_with_fallback("main_research_doc_results", 5, int)
 
     def get_main_research_web_results() -> int:
-        return get_setting_with_fallback("main_research_web_results", 2, int)
+        return get_setting_with_fallback("main_research_web_results", 5, int)
 
     def get_max_notes_for_assignment_reranking() -> int:
         return get_setting_with_fallback("max_notes_for_assignment_reranking", 80, int)
 
-# --- GPU Configuration ---
+# --- Hardware Configuration ---
 CUDA_DEVICE = os.getenv("CUDA_DEVICE", "0")  # Default to GPU 0 if not specified
+FORCE_CPU_MODE = os.getenv("FORCE_CPU_MODE", "false").lower() == "true"  # Force CPU mode for all operations
+PREFERRED_DEVICE_TYPE = os.getenv("PREFERRED_DEVICE_TYPE", "auto").lower()  # auto, cuda, rocm, mps, cpu
 
 # Check if running in Docker
 def is_running_in_docker():
@@ -159,15 +161,27 @@ def is_running_in_docker():
     
     return False
 
-# In Docker, CUDA_VISIBLE_DEVICES is typically set by Docker itself
-# For non-Docker environments, we'll set it from our config
+# Hardware configuration for non-Docker environments
 if not is_running_in_docker():
-    os.environ['CUDA_VISIBLE_DEVICES'] = CUDA_DEVICE
-    print(f"Setting CUDA_VISIBLE_DEVICES to {CUDA_DEVICE}")
+    # Only set CUDA_VISIBLE_DEVICES if not forcing CPU mode
+    if not FORCE_CPU_MODE and PREFERRED_DEVICE_TYPE != "cpu":
+        os.environ['CUDA_VISIBLE_DEVICES'] = CUDA_DEVICE
+        print(f"Setting CUDA_VISIBLE_DEVICES to {CUDA_DEVICE}")
+    elif FORCE_CPU_MODE:
+        # Disable GPU visibility when forcing CPU mode
+        os.environ['CUDA_VISIBLE_DEVICES'] = ""
+        print("CPU mode forced - CUDA_VISIBLE_DEVICES disabled")
+    
+    # Print device preference
+    if PREFERRED_DEVICE_TYPE != "auto":
+        print(f"Preferred device type: {PREFERRED_DEVICE_TYPE}")
 else:
     # In Docker, just print the current CUDA_VISIBLE_DEVICES value
     docker_cuda_devices = os.getenv("CUDA_VISIBLE_DEVICES", "Not set")
-    print(f"Running in Docker. CUDA_VISIBLE_DEVICES is {docker_cuda_devices} (managed by Docker)")
+    if FORCE_CPU_MODE:
+        print(f"Running in Docker with CPU mode forced")
+    else:
+        print(f"Running in Docker. CUDA_VISIBLE_DEVICES is {docker_cuda_devices} (managed by Docker)")
 
 # --- LLM Provider Configuration ---
 # Set the desired LLM provider for fast and mid models: "openrouter" or "local"
@@ -244,6 +258,7 @@ AGENT_ROLE_MAX_TOKENS = {
     "messenger": int(os.getenv("MESSENGER_MAX_TOKENS", 2000)),
     "note_assignment": int(os.getenv("NOTE_ASSIGNMENT_MAX_TOKENS", 8192)), # Added role with higher limit
     "verifier": int(os.getenv("VERIFIER_MAX_TOKENS", 1000)), # Added verifier max tokens
+    "query_strategy": int(os.getenv("QUERY_STRATEGY_MAX_TOKENS", 2000)), # Increased for thinking models that need reasoning tokens
     "default": int(os.getenv("DEFAULT_MAX_TOKENS", 2048)) # Default max tokens if role not specified
 }
 
@@ -256,9 +271,9 @@ AGENT_ROLE_TEMPERATURE = {
     "reflection": 0.4, # Focused for analysis
     "writing_reflection": 0.4, # Focused for editing suggestions
     "note_assignment": 0.2, # Very focused for assignment logic
+    "query_strategy": 0.1, # Very deterministic for simple routing decisions
     "messenger": 0.7, # More conversational for chat
     "query_preparation": 0.3, # Focused for query generation
-    "query_strategy": 0.3, # Focused for strategy selection
     "verifier": 0.1 # Very focused for verification
 }
 

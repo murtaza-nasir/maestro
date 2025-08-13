@@ -34,7 +34,18 @@ export const Combobox: React.FC<ComboboxProps> = ({
   const updateDropdownPosition = () => {
     if (containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect()
-      const dropdownHeight = 300 // Approximate max height (60 * 4 + padding)
+      // Calculate actual dropdown height based on number of items
+      // Each item is ~30px, search is ~48px, padding is ~16px
+      const itemHeight = 30
+      const searchHeight = 48
+      const padding = 16
+      const maxVisibleItems = 8 // Max items to show before scrolling
+      const actualItems = Math.min(filteredOptions.length || options.length, maxVisibleItems)
+      const dropdownHeight = Math.min(
+        searchHeight + (actualItems * itemHeight) + padding,
+        300 // Max height cap
+      )
+      
       const viewportHeight = window.innerHeight
       const spaceBelow = viewportHeight - rect.bottom
       const spaceAbove = rect.top
@@ -184,9 +195,10 @@ export const Combobox: React.FC<ComboboxProps> = ({
         <Card className="fixed z-[9999] p-0 shadow-lg border" style={{
           width: dropdownPosition.width,
           top: dropdownPosition.top,
-          left: dropdownPosition.left
+          left: dropdownPosition.left,
+          maxHeight: '320px' // Limit max height
         }}>
-          <div className="p-2">
+          <div className="p-2 border-b">
             <Input
               ref={inputRef}
               value={searchTerm}
@@ -196,12 +208,17 @@ export const Combobox: React.FC<ComboboxProps> = ({
               }}
               onKeyDown={handleKeyDown}
               placeholder="Search models..."
-              className="w-full"
+              className="w-full h-8"
             />
           </div>
-          <div className="max-h-60 overflow-y-auto">
+          <div className="overflow-y-auto" style={{
+            maxHeight: '260px',
+            minHeight: filteredOptions.length === 0 ? '40px' : 
+                      filteredOptions.length === 1 ? '40px' : 
+                      filteredOptions.length === 2 ? '80px' : '120px'
+          }}>
             {filteredOptions.length === 0 ? (
-              <div className="p-2 text-sm text-muted-foreground">
+              <div className="p-2 text-sm text-muted-foreground text-center">
                 No models found
               </div>
             ) : (
@@ -209,7 +226,8 @@ export const Combobox: React.FC<ComboboxProps> = ({
                 <div
                   key={option}
                   className={`
-                    px-2 py-1.5 text-sm cursor-pointer flex items-center justify-between
+                    px-3 py-2 text-sm cursor-pointer flex items-center justify-between
+                    transition-colors duration-100
                     ${index === highlightedIndex ? 'bg-accent' : ''}
                     ${option === value ? 'bg-accent/50' : ''}
                     hover:bg-accent
@@ -220,8 +238,8 @@ export const Combobox: React.FC<ComboboxProps> = ({
                   }}
                   onMouseEnter={() => setHighlightedIndex(index)}
                 >
-                  <span>{option}</span>
-                  {option === value && <Check className="h-4 w-4" />}
+                  <span className="truncate pr-2">{option}</span>
+                  {option === value && <Check className="h-3 w-3 flex-shrink-0" />}
                 </div>
               ))
             )}

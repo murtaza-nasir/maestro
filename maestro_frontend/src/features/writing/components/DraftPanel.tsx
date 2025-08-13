@@ -401,7 +401,7 @@ export const DraftPanel: React.FC = () => {
   }, [saveCurrentChanges]);
 
   return (
-    <div className={`h-full flex flex-col bg-background text-text-primary ${theme}`}>
+    <div className="h-full flex flex-col bg-background text-text-primary">
       {/* Header */}
       <div className="p-4 border-b border-border bg-header-background">
         {/* Draft Info */}

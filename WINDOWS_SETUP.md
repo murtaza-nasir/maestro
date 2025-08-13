@@ -293,7 +293,7 @@ For additional help:
 
 1. Check the main [README.md](README.md) for general information
 2. Review [DOCKER.md](DOCKER.md) for Docker-specific details
-3. Check [SETUP_GUIDE.md](SETUP_GUIDE.md) for general setup instructions
+3. Check [USER_GUIDE.md](USER_GUIDE.md) for detailed configuration instructions
 4. Open an issue on GitHub for bugs or feature requests
 
 ## Windows-Specific Notes

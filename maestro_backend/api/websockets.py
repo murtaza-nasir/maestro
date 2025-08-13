@@ -481,22 +481,41 @@ async def websocket_writing_updates(websocket: WebSocket, session_id: str):
         }))
         
         # Keep connection alive and handle incoming messages
+        # Also send periodic heartbeats to prevent client timeout
+        import time
+        last_heartbeat = time.time()
+        heartbeat_interval = 30  # Send heartbeat every 30 seconds
+        
         while True:
             try:
-                data = await websocket.receive_text()
-                message = json.loads(data)
+                # Check if we need to send a heartbeat
+                current_time = time.time()
+                if current_time - last_heartbeat > heartbeat_interval:
+                    await websocket.send_text(json.dumps({
+                        "type": "heartbeat",
+                        "timestamp": current_time
+                    }))
+                    last_heartbeat = current_time
                 
-                if message.get("type") == "ping":
-                    await websocket.send_text(json.dumps({
-                        "type": "pong",
-                        "timestamp": message.get("timestamp")
-                    }))
-                elif message.get("type") == "agent_status":
-                    # Handle agent status updates
-                    await websocket.send_text(json.dumps({
-                        "type": "agent_status",
-                        "status": message.get("status", "idle")
-                    }))
+                # Non-blocking receive with timeout
+                try:
+                    data = await asyncio.wait_for(websocket.receive_text(), timeout=1.0)
+                    message = json.loads(data)
+                    
+                    if message.get("type") == "ping":
+                        await websocket.send_text(json.dumps({
+                            "type": "pong",
+                            "timestamp": message.get("timestamp")
+                        }))
+                    elif message.get("type") == "agent_status":
+                        # Handle agent status updates
+                        await websocket.send_text(json.dumps({
+                            "type": "agent_status",
+                            "status": message.get("status", "idle")
+                        }))
+                except asyncio.TimeoutError:
+                    # No message received, continue to check heartbeat
+                    continue
                     
             except WebSocketDisconnect:
                 break

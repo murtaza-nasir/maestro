@@ -3,10 +3,12 @@ import logging
 import queue
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional, Callable
+from datetime import datetime
 
 # Import dynamic config to access user-specific provider settings
 from ai_researcher.dynamic_config import (
-    get_web_search_provider, get_tavily_api_key, get_linkup_api_key, get_searxng_base_url, get_searxng_categories
+    get_web_search_provider, get_tavily_api_key, get_linkup_api_key, get_searxng_base_url, get_searxng_categories,
+    get_search_max_results, get_search_depth
 )
 
 logger = logging.getLogger(__name__)
@@ -39,7 +41,12 @@ except ImportError:
 # Define the input schema (Renamed for generality)
 class WebSearchInput(BaseModel):
     query: str = Field(..., description="The search query for the web search engine.")
-    max_results: int = Field(5, description="Maximum number of search results desired.") # Default to 5
+    max_results: Optional[int] = Field(None, description="Maximum number of search results desired.") # Will use user settings if not specified
+    from_date: Optional[str] = Field(None, description="Start date for filtering results (YYYY-MM-DD format)")
+    to_date: Optional[str] = Field(None, description="End date for filtering results (YYYY-MM-DD format)")
+    include_domains: Optional[List[str]] = Field(None, description="List of domains to specifically include")
+    exclude_domains: Optional[List[str]] = Field(None, description="List of domains to specifically exclude")
+    depth: Optional[str] = Field(None, description="Search depth: 'standard' or 'advanced' (affects API costs)")
 
 class WebSearchTool:
     """
@@ -99,7 +106,12 @@ class WebSearchTool:
     async def execute(
         self,
         query: str,
-        max_results: int = 5,
+        max_results: Optional[int] = None,
+        from_date: Optional[str] = None,
+        to_date: Optional[str] = None,
+        include_domains: Optional[List[str]] = None,
+        exclude_domains: Optional[List[str]] = None,
+        depth: Optional[str] = None,
         update_callback: Optional[Callable] = None,
         log_queue: Optional[queue.Queue] = None,
         mission_id: Optional[str] = None
@@ -111,7 +123,12 @@ class WebSearchTool:
 
         Args:
             query: The search query string.
-            max_results: Maximum number of results desired.
+            max_results: Maximum number of results desired (uses user settings if not specified).
+            from_date: Optional start date for filtering results.
+            to_date: Optional end date for filtering results.
+            include_domains: Optional list of domains to include.
+            exclude_domains: Optional list of domains to exclude.
+            depth: Optional search depth ('standard' or 'advanced').
             update_callback: Optional callback function for sending updates.
             log_queue: Optional queue for logging.
             mission_id: Optional mission ID for tracking web search calls.
@@ -144,21 +161,51 @@ class WebSearchTool:
             
             return {"error": user_friendly_error}
 
-        logger.info(f"Executing {self.provider.capitalize()} search for '{query}' with max_results={max_results}")
+        # Get default values from user settings if not provided
+        if max_results is None:
+            max_results = get_search_max_results(mission_id)
+        
+        if depth is None:
+            depth = get_search_depth(mission_id)
+        
+        # Validate max_results
+        max_results = max(1, min(20, max_results))  # Ensure between 1 and 20
+        
+        logger.info(f"Executing {self.provider.capitalize()} search for '{query}' with max_results={max_results}, depth={depth}")
         formatted_results = []
         error_msg = None
 
-        # Add academic paper suffix for better results
-        search_query = query + " academic paper"
+        # Only add academic suffix if it's not already in the query
+        search_query = query
+        if "academic" not in query.lower() and "paper" not in query.lower():
+            search_query = query + " academic paper"
 
         try:
             if self.provider == "tavily":
+                # Map depth values for Tavily
+                tavily_depth = "basic" if depth == "standard" else "advanced"
+                
+                # Build Tavily search parameters
+                search_params = {
+                    "query": search_query,
+                    "search_depth": tavily_depth,
+                    "max_results": max_results
+                }
+                
+                # Add optional date filters
+                if from_date:
+                    search_params["start_date"] = from_date
+                if to_date:
+                    search_params["end_date"] = to_date
+                    
+                # Add domain filters
+                if include_domains:
+                    search_params["include_domains"] = include_domains
+                if exclude_domains:
+                    search_params["exclude_domains"] = exclude_domains
+                
                 # Tavily client's search method (synchronous)
-                response = self.client.search(
-                    query=search_query,
-                    search_depth="advanced",
-                    max_results=max_results
-                )
+                response = self.client.search(**search_params)
                 search_results = response.get('results', [])
                 for result in search_results:
                     formatted_results.append({
@@ -168,14 +215,40 @@ class WebSearchTool:
                     })
 
             elif self.provider == "linkup":
-                # Linkup client's search method (assuming synchronous)
-                response = self.client.search(
-                    query=search_query,
-                    depth="standard", # As per example
-                    output_type="searchResults", # To get structured results
-                    include_images=False,
-                    # Linkup might not have a direct 'max_results', handle post-fetch
-                )
+                # Map depth values for LinkUp
+                linkup_depth = "standard" if depth == "standard" else "deep"
+                
+                # Build LinkUp search parameters for Python client
+                search_params = {
+                    "query": search_query,  # Python client uses 'query'
+                    "depth": linkup_depth,
+                    "output_type": "searchResults",  # Python client uses underscore
+                    "include_images": False
+                }
+                
+                # Add optional date filters - need to convert string to date objects
+                if from_date:
+                    try:
+                        from datetime import datetime as dt
+                        search_params["from_date"] = dt.strptime(from_date, '%Y-%m-%d').date()
+                    except ValueError:
+                        logger.warning(f"Invalid from_date format: {from_date}")
+                        
+                if to_date:
+                    try:
+                        from datetime import datetime as dt
+                        search_params["to_date"] = dt.strptime(to_date, '%Y-%m-%d').date()
+                    except ValueError:
+                        logger.warning(f"Invalid to_date format: {to_date}")
+                    
+                # Add domain filters (Python client uses underscore)
+                if include_domains:
+                    search_params["include_domains"] = include_domains
+                if exclude_domains:
+                    search_params["exclude_domains"] = exclude_domains
+                
+                # Linkup client's search method
+                response = self.client.search(**search_params)
 
                 # Adapt parsing based on actual Linkup response structure
                 if LinkupSearchResults and isinstance(response, LinkupSearchResults): # Check for the specific type

@@ -297,6 +297,8 @@ Once the containers are running, access the web interface at the address shown b
 
 **Important:** Change the default password immediately after your first login via Settings → Profile.
 
+For detailed instructions on configuring MAESTRO's settings and using all features, see the [USER_GUIDE.md](./USER_GUIDE.md).
+
 ## Architecture & Networking
 
 MAESTRO now uses a **unified reverse proxy architecture** to eliminate CORS issues:
@@ -322,6 +324,12 @@ MAESTRO now uses a **unified reverse proxy architecture** to eliminate CORS issu
 **Still seeing CORS errors?**
 - Old configurations may conflict. Try: `docker compose down && docker compose up --build -d`
 - Check that you're accessing through the correct port
+
+**Getting 504 Gateway Timeout errors?**
+- If running behind a reverse proxy (nginx, Apache, etc.), you need to increase timeout settings
+- Default proxy timeout (60s) is too short for AI operations
+- See [Reverse Proxy Configuration](./DOCKER.md#reverse-proxy-timeout-issues) for detailed instructions
+- The app handles timeouts gracefully, but proper configuration improves user experience
 
 **Migration from older setups:**
 - Your existing `.env` file will continue to work
@@ -477,15 +485,15 @@ MAESTRO supports the following SearXNG categories, which you can configure in th
 
 You can select multiple categories to refine your search results based on your research needs.
 
-For advanced users and administrators, a powerful **Command Line Interface (CLI)** is available for bulk document ingestion, user management, and other administrative tasks.
+For advanced users and administrators, a powerful **Command Line Interface (CLI)** is available for bulk document ingestion, user management, and other administrative tasks. See [CLI_GUIDE.md](./CLI_GUIDE.md) for complete documentation.
 
-#### CLI Usage
+#### Quick CLI Examples
 
 **Linux/macOS:**
 ```bash
 ./maestro-cli.sh help
 ./maestro-cli.sh create-user researcher mypass123
-./maestro-cli.sh ingest researcher ./pdfs
+./maestro-cli.sh ingest researcher ./documents
 ```
 
 **Windows:**
@@ -493,15 +501,20 @@ For advanced users and administrators, a powerful **Command Line Interface (CLI)
 # Using PowerShell (recommended)
 .\maestro-cli.ps1 help
 .\maestro-cli.ps1 create-user researcher mypass123
-.\maestro-cli.ps1 ingest researcher ./pdfs
+.\maestro-cli.ps1 ingest researcher .\documents
 
 # Or using Command Prompt
 maestro-cli.bat help
 maestro-cli.bat create-user researcher mypass123
-maestro-cli.bat ingest researcher ./pdfs
+maestro-cli.bat ingest researcher .\documents
 ```
 
-For more details, see [DOCKER.md](./DOCKER.md) and [WINDOWS_SETUP.md](./WINDOWS_SETUP.md).
+## Documentation
+
+- [USER_GUIDE.md](./USER_GUIDE.md) - Detailed guide for configuring and using MAESTRO's features
+- [CLI_GUIDE.md](./CLI_GUIDE.md) - Comprehensive command-line interface documentation
+- [DOCKER.md](./DOCKER.md) - Complete Docker setup and deployment instructions
+- [WINDOWS_SETUP.md](./WINDOWS_SETUP.md) - Windows-specific installation guide
 
 ## License
 

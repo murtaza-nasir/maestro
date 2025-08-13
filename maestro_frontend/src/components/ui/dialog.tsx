@@ -60,7 +60,7 @@ const DialogContent: React.FC<DialogContentProps> = ({ children, className = '' 
 
   return (
     <div 
-      className={`relative bg-white dark:bg-gray-900 rounded-lg shadow-xl transform transition-all sm:my-8 sm:w-full ${className}`}
+      className={`relative bg-background rounded-lg shadow-xl transform transition-all sm:my-8 sm:w-full ${className}`}
       role="dialog"
       aria-modal="true"
     >

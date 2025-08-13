@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from sqlalchemy.orm import Session
 from typing import Dict, Any, Optional
 import httpx
+from urllib.parse import urljoin
 
 from database import crud
 from database.database import get_db
@@ -10,6 +11,28 @@ from api import schemas
 from database.models import User
 
 router = APIRouter()
+
+def normalize_base_url(url: str) -> str:
+    """Normalize a base URL by adding http:// if missing and ensuring trailing slash."""
+    if not url:
+        return url
+    
+    # Strip whitespace
+    url = url.strip()
+    
+    # Add http:// if no protocol is specified
+    if not url.startswith(('http://', 'https://')):
+        # If it looks like a local IP or localhost, use http, otherwise https
+        if any(x in url for x in ['localhost', '127.0.0.1', '192.168.', '10.', '172.']):
+            url = f'http://{url}'
+        else:
+            url = f'https://{url}'
+    
+    # Ensure trailing slash for base URLs
+    if not url.endswith('/'):
+        url = f'{url}/'
+    
+    return url
 
 class SettingsUpdate(schemas.BaseModel):
     settings: schemas.GlobalUserSettings
@@ -206,6 +229,10 @@ async def test_ai_connection(
         api_key = connection_config.get("api_key")
         base_url = connection_config.get("base_url", "https://openrouter.ai/api/v1/")
         
+        # Normalize base URL
+        if base_url:
+            base_url = normalize_base_url(base_url)
+        
         # Validate base URL format
         if not base_url:
             raise HTTPException(status_code=400, detail="Base URL is required")
@@ -213,7 +240,7 @@ async def test_ai_connection(
         if not (base_url.startswith("http://") or base_url.startswith("https://")):
             raise HTTPException(status_code=400, detail="Base URL must start with 'http://' or 'https://'")
         
-        # For OpenRouter and OpenAI, API key is required
+        # For OpenRouter and OpenAI, API key is required (but not for custom)
         if provider in ["openrouter", "openai"] and not api_key:
             raise HTTPException(status_code=400, detail="API key is required for this provider")
         
@@ -222,10 +249,10 @@ async def test_ai_connection(
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
         
-        # Test connection
+        # Test connection - use urljoin to properly handle path concatenation
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{base_url}models",
+                urljoin(base_url, "models"),
                 headers=headers
             )
             response.raise_for_status()
@@ -299,7 +326,7 @@ async def get_available_models(
         if api_key:
             provider_config["api_key"] = api_key
         if base_url:
-            provider_config["base_url"] = base_url
+            provider_config["base_url"] = normalize_base_url(base_url)
         
         # For advanced mode, check if we have API key from advanced_models
         if not provider_config.get("api_key"):
@@ -312,13 +339,17 @@ async def get_available_models(
                         provider_config["base_url"] = model_config.get("base_url", "")
                     break
         
-        # For OpenRouter and OpenAI, API key is required
+        # For OpenRouter and OpenAI, API key is required (but not for custom)
         if target_provider in ["openrouter", "openai"] and not provider_config.get("api_key"):
             raise HTTPException(status_code=400, detail=f"No API key configured for provider: {target_provider}")
         
         # Fetch models from provider
         final_base_url = provider_config.get("base_url", "https://openrouter.ai/api/v1/")
         final_api_key = provider_config.get("api_key")
+        
+        # Normalize base URL
+        if final_base_url:
+            final_base_url = normalize_base_url(final_base_url)
         
         # Validate base URL format
         if not final_base_url:
@@ -334,7 +365,7 @@ async def get_available_models(
         
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{final_base_url}models",
+                urljoin(final_base_url, "models"),
                 headers=headers
             )
             response.raise_for_status()

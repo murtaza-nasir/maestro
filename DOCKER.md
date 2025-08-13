@@ -218,163 +218,29 @@ With persistent caching enabled:
 
 ## Command Line Interface (CLI)
 
-MAESTRO includes a powerful CLI for bulk document ingestion and management with live feedback. The CLI provides direct document processing with real-time progress updates, bypassing the background queue system.
+MAESTRO includes a powerful CLI for bulk document ingestion and management. For complete CLI documentation, see [CLI_GUIDE.md](./CLI_GUIDE.md).
 
-### Easy CLI Access with Helper Script
-
-For convenience, use the provided `maestro-cli.sh` helper script:
+### Quick CLI Examples
 
 ```bash
-# Make the script executable (first time only)
-chmod +x maestro-cli.sh
-
-# Show available commands
+# Linux/macOS
 ./maestro-cli.sh help
+./maestro-cli.sh create-user researcher mypass123
+./maestro-cli.sh ingest researcher ./documents
 
-# Example commands
-./maestro-cli.sh create-user researcher mypass123 --full-name "Research User"
-./maestro-cli.sh create-group researcher "AI Papers" --description "Machine Learning Research"
-./maestro-cli.sh ingest researcher ./pdfs --group GROUP_ID
-./maestro-cli.sh status --user researcher
+# Windows PowerShell
+.\maestro-cli.ps1 help
+.\maestro-cli.ps1 create-user researcher mypass123
+.\maestro-cli.ps1 ingest researcher .\documents
 ```
 
-### CLI Features
+The CLI provides direct document processing with real-time progress updates, supporting PDF, Word, and Markdown files. See the [CLI Guide](./CLI_GUIDE.md) for:
+- Complete command reference
+- User and group management
+- Document ingestion options
+- Database management tools
+- Troubleshooting tips
 
-The MAESTRO CLI provides:
-- **Real-time progress**: See each processing step with timestamps
-- **Immediate results**: Documents are processed synchronously, no background queue
-- **Live feedback**: Detailed status updates for each document
-- **GPU control**: Specify which GPU device to use for processing
-- **Flexible organization**: Documents added to user library, can be organized into groups later
-- **Auto-cleanup**: Option to delete source PDFs after successful processing
-
-### Direct CLI Access
-
-You can also run CLI commands directly with Docker Compose:
-
-```bash
-# General CLI command format
-docker compose --profile cli run --rm cli python cli_ingest.py [command] [options]
-```
-
-### User Management
-
-#### Create a New User
-
-```bash
-docker compose --profile cli run --rm cli python cli_ingest.py create-user myusername mypassword --full-name "My Full Name"
-```
-
-Create an admin user:
-```bash
-docker compose --profile cli run --rm cli python cli_ingest.py create-user admin adminpass --admin --full-name "Administrator"
-```
-
-#### List All Users
-
-```bash
-docker compose --profile cli run --rm cli python cli_ingest.py list-users
-```
-
-### Document Group Management
-
-#### Create a Document Group
-
-```bash
-docker compose --profile cli run --rm cli python cli_ingest.py create-group myusername "Research Papers" --description "Collection of research papers"
-```
-
-#### List Document Groups
-
-List groups for a specific user:
-```bash
-docker compose --profile cli run --rm cli python cli_ingest.py list-groups --user myusername
-```
-
-List all groups (admin view):
-```bash
-docker compose --profile cli run --rm cli python cli_ingest.py list-groups
-```
-
-### Document Ingestion
-
-#### Bulk Ingest PDF Documents
-
-Place your PDF files in the `./pdfs` directory, then run:
-
-```bash
-docker compose --profile cli run --rm cli python cli_ingest.py ingest myusername GROUP_ID /app/pdfs
-```
-
-Where:
-- `myusername` is the username of the document owner
-- `GROUP_ID` is the ID of the document group (get this from `list-groups`)
-- `/app/pdfs` is the path inside the container (maps to `./pdfs` on your host)
-
-Example with options:
-```bash
-docker compose --profile cli run --rm cli python cli_ingest.py ingest myusername abc123-def456 /app/pdfs --batch-size 10 --force-reembed
-```
-
-#### Check Processing Status
-
-Check status for a specific user:
-```bash
-docker compose --profile cli run --rm cli python cli_ingest.py status --user myusername
-```
-
-Check status for a specific group:
-```bash
-docker compose --profile cli run --rm cli python cli_ingest.py status --user myusername --group GROUP_ID
-```
-
-Check status for all documents (admin):
-```bash
-docker compose --profile cli run --rm cli python cli_ingest.py status
-```
-
-### Document Search
-
-Search documents for a specific user:
-```bash
-docker compose --profile cli run --rm cli python cli_ingest.py search myusername "machine learning" --limit 5
-```
-
-### CLI Help
-
-Get help for any command:
-```bash
-docker compose --profile cli run --rm cli python cli_ingest.py --help
-docker compose --profile cli run --rm cli python cli_ingest.py ingest --help
-docker compose --profile cli run --rm cli python cli_ingest.py create-user --help
-```
-
-## Complete CLI Workflow Example
-
-Here's a complete example of setting up a user and ingesting documents:
-
-```bash
-# 1. Create a user
-docker compose --profile cli run --rm cli python cli_ingest.py create-user researcher mypassword --full-name "Research User"
-
-# 2. Create a document group
-docker compose --profile cli run --rm cli python cli_ingest.py create-group researcher "AI Papers" --description "Artificial Intelligence Research Papers"
-
-# 3. List groups to get the group ID
-docker compose --profile cli run --rm cli python cli_ingest.py list-groups --user researcher
-
-# 4. Copy PDFs to the pdfs directory
-cp /path/to/your/papers/*.pdf ./pdfs/
-
-# 5. Ingest documents (replace GROUP_ID with actual ID from step 3)
-docker compose --profile cli run --rm cli python cli_ingest.py ingest researcher GROUP_ID /app/pdfs
-
-# 6. Check processing status
-docker compose --profile cli run --rm cli python cli_ingest.py status --user researcher
-
-# 7. Search documents once processing is complete
-docker compose --profile cli run --rm cli python cli_ingest.py search researcher "neural networks"
-```
 
 ## Using the Web Interface
 
@@ -455,6 +321,68 @@ If CLI commands fail:
    ```bash
    ls -la ./pdfs
    ```
+
+### Reverse Proxy Timeout Issues
+
+If you're running MAESTRO behind a reverse proxy (like nginx, Apache, or a cloud load balancer) and experiencing 504 Gateway Timeout errors during long operations (searches, document processing, etc.), you need to increase the timeout settings in your reverse proxy configuration.
+
+#### For nginx:
+
+Add these settings to your nginx server block or location block:
+
+```nginx
+# Increase timeout settings for long-running operations
+proxy_connect_timeout 600s;
+proxy_send_timeout 600s;
+proxy_read_timeout 600s;
+send_timeout 600s;
+
+# WebSocket support for real-time updates
+proxy_http_version 1.1;
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection "upgrade";
+
+# Recommended buffer settings
+proxy_buffering on;
+proxy_buffer_size 4k;
+proxy_buffers 8 4k;
+proxy_busy_buffers_size 8k;
+
+# Optional: Increase max body size for large document uploads
+client_max_body_size 100M;
+```
+
+#### For Apache:
+
+Add these settings to your VirtualHost or ProxyPass configuration:
+
+```apache
+# Increase timeout for long operations
+ProxyTimeout 600
+Timeout 600
+
+# For WebSocket support
+RewriteEngine On
+RewriteCond %{HTTP:Upgrade} websocket [NC]
+RewriteCond %{HTTP:Connection} upgrade [NC]
+RewriteRule ^/?(.*) "ws://localhost:8000/$1" [P,L]
+```
+
+#### For nginx Proxy Manager (GUI):
+
+If using nginx Proxy Manager:
+1. Go to your proxy host settings
+2. Click on "Advanced" tab
+3. Add the custom nginx configuration from above
+4. Save and test
+
+#### For Cloud Load Balancers:
+
+- **AWS ALB/ELB**: Set idle timeout to 600 seconds in the load balancer attributes
+- **Google Cloud Load Balancer**: Configure backend service timeout to 600 seconds
+- **Azure Application Gateway**: Set request timeout to 600 seconds in backend settings
+
+**Note**: The default timeout for most reverse proxies is 60 seconds, which is too short for MAESTRO's AI-powered operations that can take several minutes to complete. The application handles these timeouts gracefully, but increasing the limits provides a better user experience.
 
 ## Advanced Configuration
 

@@ -409,6 +409,7 @@ cookies.txt
 htmlcov/
 .pytest_cache/
 .tox/
+pdfs/
 
 # =============================================================================
 # STREAMLIT & EVALUATION

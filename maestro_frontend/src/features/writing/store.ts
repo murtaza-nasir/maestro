@@ -75,8 +75,8 @@ interface WritingState {
   saveDraftChanges: (content: string, title?: string) => Promise<void>
   
   // Enhanced chat
-  sendMessage: (message: string, options?: { documentGroupId?: string | null; useWebSearch?: boolean }) => Promise<void>
-  regenerateMessage: (messageId: string, options?: { documentGroupId?: string | null; useWebSearch?: boolean }) => Promise<void>
+  sendMessage: (message: string, options?: { documentGroupId?: string | null; useWebSearch?: boolean; deepSearch?: boolean; maxIterations?: number; maxQueries?: number }) => Promise<void>
+  regenerateMessage: (messageId: string, options?: { documentGroupId?: string | null; useWebSearch?: boolean; deepSearch?: boolean; maxIterations?: number; maxQueries?: number }) => Promise<void>
   removeMessage: (messageId: string) => void;
   
   // WebSocket management
@@ -643,7 +643,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
   },
 
   // Enhanced chat
-  sendMessage: async (message: string, options?: { documentGroupId?: string | null; useWebSearch?: boolean }) => {
+  sendMessage: async (message: string, options?: { documentGroupId?: string | null; useWebSearch?: boolean; deepSearch?: boolean; maxIterations?: number; maxQueries?: number }) => {
     const state = get()
     let session = state.currentSession
 
@@ -755,7 +755,10 @@ export const useWritingStore = create<WritingState>((set, get) => ({
         draft_id: currentDraft.id,
         operation_mode: 'balanced',
         document_group_id: options?.documentGroupId,
-        use_web_search: options?.useWebSearch
+        use_web_search: options?.useWebSearch,
+        deep_search: options?.deepSearch,
+        max_search_iterations: options?.maxIterations,
+        max_decomposed_queries: options?.maxQueries
       })
       
       console.log('Received response from writing API:', response)
@@ -772,36 +775,101 @@ export const useWritingStore = create<WritingState>((set, get) => ({
       console.log('Adding assistant message to UI:', assistantMessage)
       state.addMessage(assistantMessage)
       
-      // Clear loading state
+      // Clear loading state and reset agent status
       if (loadingId) {
         state.setSessionLoading(loadingId, false)
+        // Reset agent status to idle after successful response
+        state.setAgentStatus(loadingId, 'idle')
       }
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to send message:', error)
       
-      // Add error message
-      const errorMessage: WritingMessageWithSources = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: 'Sorry, I encountered an error while processing your message. Please try again.',
-        timestamp: ensureDate(new Date()),
-        sources: []
+      // Check if it's a 504 Gateway Timeout
+      if (error?.response?.status === 504) {
+        console.log('Received 504 Gateway Timeout - checking if response was processed...')
+        
+        // Wait a moment for the backend to finish processing
+        await new Promise(resolve => setTimeout(resolve, 2000))
+        
+        // Try to reload messages to see if the response was actually saved
+        try {
+          const chatId = state.currentSession?.chat_id || state.activeChat?.id
+          if (chatId) {
+            const { apiClient } = await import('../../config/api')
+            const messagesResponse = await apiClient.get(`/api/chats/${chatId}/messages`)
+            const messages = messagesResponse.data
+            
+            // Check if we have a new assistant message after our user message
+            const lastAssistantMessage = messages
+              .filter((msg: any) => msg.role === 'assistant')
+              .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+            
+            if (lastAssistantMessage && !state.getCurrentMessages().find(m => m.content === lastAssistantMessage.content)) {
+              // We found a new assistant message that wasn't in our UI - add it
+              const assistantMessage: WritingMessageWithSources = {
+                id: lastAssistantMessage.id || (Date.now() + 1).toString(),
+                role: 'assistant',
+                content: lastAssistantMessage.content,
+                timestamp: ensureDate(new Date(lastAssistantMessage.created_at)),
+                sources: lastAssistantMessage.sources || []
+              }
+              
+              console.log('Found completed response despite 504 timeout, adding to UI')
+              state.addMessage(assistantMessage)
+              
+              // Clear loading state - request completed successfully
+              if (loadingId) {
+                state.setSessionLoading(loadingId, false)
+                // Reset agent status to idle after successful response
+                state.setAgentStatus(loadingId, 'idle')
+              }
+              return // Exit without showing error
+            }
+          }
+        } catch (refreshError) {
+          console.error('Failed to check for completed response:', refreshError)
+        }
+        
+        // If we couldn't find a completed response, show timeout-specific error
+        const errorMessage: WritingMessageWithSources = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: 'The request timed out due to proxy limits, but may still be processing. Please refresh the page in a moment to see if the response completed.',
+          timestamp: ensureDate(new Date()),
+          sources: []
+        }
+        
+        state.addMessage(errorMessage)
+        set({ 
+          error: 'Request timed out - please check your proxy timeout settings'
+        })
+      } else {
+        // Handle other errors normally
+        const errorMessage: WritingMessageWithSources = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: 'Sorry, I encountered an error while processing your message. Please try again.',
+          timestamp: ensureDate(new Date()),
+          sources: []
+        }
+        
+        state.addMessage(errorMessage)
+        set({ 
+          error: error instanceof Error ? error.message : 'Failed to send message'
+        })
       }
       
-      state.addMessage(errorMessage)
-      set({ 
-        error: error instanceof Error ? error.message : 'Failed to send message'
-      })
-      
-      // Clear loading state
+      // Clear loading state and reset agent status
       if (loadingId) {
         state.setSessionLoading(loadingId, false)
+        // Reset agent status to idle on error
+        state.setAgentStatus(loadingId, 'idle')
       }
     }
   },
 
-  regenerateMessage: async (messageId: string, options?: { documentGroupId?: string | null; useWebSearch?: boolean }) => {
+  regenerateMessage: async (messageId: string, options?: { documentGroupId?: string | null; useWebSearch?: boolean; deepSearch?: boolean; maxIterations?: number; maxQueries?: number }) => {
     const state = get()
     const messages = state.getCurrentMessages()
     const messageIndex = messages.findIndex(m => m.id === messageId)
@@ -873,7 +941,10 @@ export const useWritingStore = create<WritingState>((set, get) => ({
         draft_id: currentDraft!.id,
         operation_mode: 'balanced',
         document_group_id: options?.documentGroupId,
-        use_web_search: options?.useWebSearch
+        use_web_search: options?.useWebSearch,
+        deep_search: options?.deepSearch,
+        max_search_iterations: options?.maxIterations,
+        max_decomposed_queries: options?.maxQueries
       })
 
       // Add the new assistant response
@@ -887,31 +958,98 @@ export const useWritingStore = create<WritingState>((set, get) => ({
 
       state.addMessage(assistantMessage)
       
-      // Clear loading state
+      // Clear loading state and reset agent status
       if (loadingId) {
         state.setSessionLoading(loadingId, false)
+        // Reset agent status to idle after successful response
+        state.setAgentStatus(loadingId, 'idle')
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to regenerate message:', error)
 
-      const errorMessage: WritingMessageWithSources = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: 'Sorry, I encountered an error while regenerating the response. Please try again.',
-        timestamp: ensureDate(new Date()),
-        sources: []
-      }
+      // Check if it's a 504 Gateway Timeout
+      if (error?.response?.status === 504) {
+        console.log('Received 504 Gateway Timeout during regeneration - checking if response was processed...')
+        
+        // Wait a moment for the backend to finish processing
+        await new Promise(resolve => setTimeout(resolve, 2000))
+        
+        // Try to reload messages to see if the regeneration completed
+        try {
+          const chatId = state.currentSession?.chat_id || state.activeChat?.id
+          if (chatId) {
+            const { apiClient } = await import('../../config/api')
+            const messagesResponse = await apiClient.get(`/api/chats/${chatId}/messages`)
+            const messages = messagesResponse.data
+            
+            // Check if we have a new assistant message
+            const lastAssistantMessage = messages
+              .filter((msg: any) => msg.role === 'assistant')
+              .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+            
+            if (lastAssistantMessage && !state.getCurrentMessages().find(m => m.content === lastAssistantMessage.content)) {
+              // We found a new assistant message that wasn't in our UI - add it
+              const assistantMessage: WritingMessageWithSources = {
+                id: lastAssistantMessage.id || (Date.now() + 1).toString(),
+                role: 'assistant',
+                content: lastAssistantMessage.content,
+                timestamp: ensureDate(new Date(lastAssistantMessage.created_at)),
+                sources: lastAssistantMessage.sources || []
+              }
+              
+              console.log('Found completed regeneration despite 504 timeout, adding to UI')
+              state.addMessage(assistantMessage)
+              
+              // Clear loading state - regeneration completed successfully
+              const loadingId = state.currentSession?.id || state.activeChat?.id
+              if (loadingId) {
+                state.setSessionLoading(loadingId, false)
+                // Reset agent status to idle after successful response
+                state.setAgentStatus(loadingId, 'idle')
+              }
+              return // Exit without showing error
+            }
+          }
+        } catch (refreshError) {
+          console.error('Failed to check for completed regeneration:', refreshError)
+        }
+        
+        // If we couldn't find a completed response, show timeout-specific error
+        const errorMessage: WritingMessageWithSources = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: 'The regeneration request timed out due to proxy limits, but may still be processing. Please refresh the page in a moment.',
+          timestamp: ensureDate(new Date()),
+          sources: []
+        }
+        
+        state.addMessage(errorMessage)
+        set({
+          error: 'Regeneration timed out - please check your proxy timeout settings'
+        })
+      } else {
+        // Handle other errors normally
+        const errorMessage: WritingMessageWithSources = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: 'Sorry, I encountered an error while regenerating the response. Please try again.',
+          timestamp: ensureDate(new Date()),
+          sources: []
+        }
 
-      state.addMessage(errorMessage)
-      set({
-        error: error instanceof Error ? error.message : 'Failed to regenerate message'
-      })
+        state.addMessage(errorMessage)
+        set({
+          error: error instanceof Error ? error.message : 'Failed to regenerate message'
+        })
+      }
       
-      // Clear loading state
+      // Clear loading state and reset agent status
       const loadingId = state.currentSession?.id || state.activeChat?.id
       if (loadingId) {
         state.setSessionLoading(loadingId, false)
+        // Reset agent status to idle on error
+        state.setAgentStatus(loadingId, 'idle')
       }
     }
   },
@@ -942,11 +1080,15 @@ export const useWritingStore = create<WritingState>((set, get) => ({
             
           case 'agent_status':
             if (message.status) {
-              state.setAgentStatus(sessionId, message.status)
-              // Handle detailed status messages
+              // If we have details, combine them with the status for a more informative message
+              let statusText = message.status
               if (message.details) {
+                statusText = message.details  // Use details as the full message
                 console.log(`Agent status: ${message.status} - ${message.details}`)
+              } else {
+                console.log(`Agent status: ${message.status}`)
               }
+              state.setAgentStatus(sessionId, statusText)
               
               // Reset to idle after completion to ensure spinner disappears
               if (message.status === 'complete') {

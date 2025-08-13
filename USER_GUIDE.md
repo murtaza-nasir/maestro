@@ -1,6 +1,6 @@
-# MAESTRO Setup & Configuration Guide
+# MAESTRO User Guide
 
-This guide provides a detailed walkthrough of the setup and configuration options available in the MAESTRO web interface.
+This guide provides a detailed walkthrough of the configuration options and features available in the MAESTRO web interface.
 
 ## First-Time Login
 

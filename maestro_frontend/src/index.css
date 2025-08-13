@@ -431,24 +431,47 @@
   }
 }
 
-/* Scrollbar styles - Fixed visibility issue */
+/* Scrollbar styles - Improved for better visibility */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: hsl(var(--background-alt));
+  background: transparent;
+  border-radius: 5px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: hsl(var(--border));
-  border-radius: 4px;
-  border: 1px solid hsl(var(--background));
+  background: hsl(var(--border) / 0.5);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--muted-foreground));
+  background: hsl(var(--muted-foreground) / 0.5);
+  background-clip: padding-box;
+}
+
+/* Custom scrollbar for settings dialog */
+.settings-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.settings-scrollbar::-webkit-scrollbar-track {
+  background: hsl(var(--background));
+  border-radius: 4px;
+  margin: 4px 0;
+}
+
+.settings-scrollbar::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 4px;
+}
+
+.settings-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.7);
 }
 
 /* Color Scheme Variants */

@@ -79,6 +79,8 @@ class SearchSettings(BaseModel):
     linkup_api_key: Optional[str] = None
     searxng_base_url: Optional[str] = None
     searxng_categories: Optional[str] = None
+    max_results: Optional[int] = None
+    search_depth: Optional[str] = None
 
 class ResearchParameters(BaseModel):
     initial_research_max_depth: int
@@ -634,6 +636,9 @@ class EnhancedWritingChatRequest(BaseModel):
     operation_mode: Optional[str] = None  # 'research_heavy', 'writing_focused', 'balanced'
     document_group_id: Optional[str] = None
     use_web_search: Optional[bool] = None
+    deep_search: Optional[bool] = False  # Enable deep search with multiple iterations
+    max_search_iterations: Optional[int] = None  # Override default max iterations
+    max_decomposed_queries: Optional[int] = None  # Override max number of decomposed queries
 
 class WritingSessionSettingsUpdate(BaseModel):
     settings: WritingSessionSettings

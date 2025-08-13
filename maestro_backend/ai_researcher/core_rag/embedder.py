@@ -9,6 +9,9 @@ import threading
 import time
 import asyncio
 import logging
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from hardware_detection import hardware_detector
 
 logger = logging.getLogger(__name__)
 
@@ -48,18 +51,19 @@ class TextEmbedder:
         if enable_memory_management is None:
             enable_memory_management = config.EMBEDDING_MEMORY_MANAGEMENT
         
-        # If a specific device is provided, use it
+        # Use hardware detector for device selection
         if device:
             self.device = device
-        # If running in Docker, use Docker's CUDA settings
-        elif config.is_running_in_docker():
-            # In Docker, CUDA_VISIBLE_DEVICES is managed by Docker
-            # We'll use the first available GPU (usually 0 in the container's view)
-            self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
-        # Otherwise use the configured CUDA device
         else:
-            cuda_device = config.CUDA_DEVICE
-            self.device = f"cuda:{cuda_device}" if torch.cuda.is_available() and torch.cuda.device_count() > int(cuda_device) else ("cuda" if torch.cuda.is_available() else "cpu")
+            # Get device from hardware detector
+            torch_device = hardware_detector.get_torch_device()
+            self.device = str(torch_device)
+            
+            # Adjust batch size based on hardware
+            optimal_batch = hardware_detector.get_optimal_batch_size(batch_size)
+            if optimal_batch != batch_size:
+                logger.info(f"Adjusting batch size from {batch_size} to {optimal_batch} based on hardware")
+                batch_size = optimal_batch
         
         self.model_name = model_name
         self.batch_size = batch_size
@@ -74,14 +78,22 @@ class TextEmbedder:
         self._queries_since_cleanup = 0
         self._cleanup_frequency = 10  # Force cleanup every N queries
 
+        # Log hardware detection results
+        hardware_detector.log_device_info()
+        
         logger.debug(f"Initializing TextEmbedder with model {self.model_name} on device {self.device}")
         logger.debug(f"Memory management: {'Enabled' if self.enable_memory_management else 'Disabled'}")
         
         # Set PyTorch memory allocation strategy for better memory management
-        if torch.cuda.is_available() and self.enable_memory_management:
+        device_info = hardware_detector.detect_hardware()
+        if device_info["device_type"] in ["cuda", "rocm"] and self.enable_memory_management:
             # Enable expandable segments to reduce fragmentation
             os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
             logger.debug("Set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True for better memory management")
+        elif device_info["device_type"] == "cpu":
+            # CPU-specific optimizations
+            torch.set_num_threads(hardware_detector.get_num_workers())
+            logger.debug(f"Set PyTorch threads to {hardware_detector.get_num_workers()} for CPU processing")
         
         try:
             # Initialize the BGE-M3 model
@@ -104,22 +116,25 @@ class TextEmbedder:
 
     def _get_gpu_memory_usage(self) -> float:
         """Get current GPU memory usage as a percentage."""
-        if not torch.cuda.is_available():
+        device_info = hardware_detector.detect_hardware()
+        if device_info["device_type"] not in ["cuda", "rocm"]:
             return 0.0
         try:
-            device_idx = int(self.device.split(':')[-1]) if ':' in self.device else 0
-            memory_allocated = torch.cuda.memory_allocated(device_idx)
-            memory_reserved = torch.cuda.memory_reserved(device_idx)
-            total_memory = torch.cuda.get_device_properties(device_idx).total_memory
-            usage_percentage = (memory_allocated + memory_reserved) / total_memory
-            return usage_percentage
+            if device_info["device_type"] == "cuda" or (device_info["device_type"] == "rocm" and torch.cuda.is_available()):
+                device_idx = int(self.device.split(':')[-1]) if ':' in self.device else 0
+                memory_allocated = torch.cuda.memory_allocated(device_idx)
+                memory_reserved = torch.cuda.memory_reserved(device_idx)
+                total_memory = torch.cuda.get_device_properties(device_idx).total_memory
+                usage_percentage = (memory_allocated + memory_reserved) / total_memory
+                return usage_percentage
         except Exception as e:
             logger.debug(f"Warning: Could not get GPU memory usage: {e}")
             return 0.0
 
     def _cleanup_gpu_memory(self, force: bool = False):
         """Clean up GPU memory to prevent OOM errors."""
-        if not self.enable_memory_management or not torch.cuda.is_available():
+        device_info = hardware_detector.detect_hardware()
+        if not self.enable_memory_management or device_info["device_type"] not in ["cuda", "rocm"]:
             return
             
         try:

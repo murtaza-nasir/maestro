@@ -878,6 +878,18 @@ async def enhanced_writing_chat(
         if isinstance(writing_settings, dict):
             custom_system_prompt = writing_settings.get("custom_system_prompt")
 
+    # Get default search settings from user profile if not provided
+    user_research_params = current_user.settings.get("research_parameters", {}) if current_user.settings else {}
+    user_search_settings = current_user.settings.get("search", {}) if current_user.settings else {}
+    
+    # Determine defaults based on deep search mode
+    if request.deep_search:
+        default_iterations = user_research_params.get("writing_deep_search_iterations", 3)
+        default_queries = user_research_params.get("writing_deep_search_queries", 10)
+    else:
+        default_iterations = user_research_params.get("writing_search_max_iterations", 1)
+        default_queries = user_research_params.get("writing_search_max_queries", 3)
+    
     # Prepare context for the agent based on selected tools
     context_info = {
         "document_group_id": document_group_id,
@@ -889,7 +901,13 @@ async def enhanced_writing_chat(
             "job_title": current_user.job_title,
         },
         "session_id": writing_session.id,  # Add session_id for stats tracking
-        "custom_system_prompt": custom_system_prompt  # Pass custom system prompt to agent
+        "custom_system_prompt": custom_system_prompt,  # Pass custom system prompt to agent
+        "search_config": {  # Add search configuration
+            "deep_search": request.deep_search or False,
+            "max_iterations": request.max_search_iterations or default_iterations,
+            "max_decomposed_queries": request.max_decomposed_queries or default_queries,
+            "max_results": user_search_settings.get("max_results", 5)  # Use user's search settings
+        }
     }
 
     # Create status update callback for WebSocket updates

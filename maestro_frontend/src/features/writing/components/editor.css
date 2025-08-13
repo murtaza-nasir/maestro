@@ -26,7 +26,7 @@
   opacity: 1 !important; /* Ensure toolbar is always visible */
   flex-shrink: 0; /* Prevent toolbar from shrinking */
   height: 40px !important; /* Increased height for better spacing */
-  border-bottom: 1px solid #e5e7eb !important; /* Light mode border */
+  border-bottom: 1px solid hsl(var(--border)) !important; /* Theme-aware border */
   background-color: hsl(var(--card)) !important; /* Use CSS variable for background */
   display: flex !important; /* Use flexbox for alignment */
   align-items: center !important; /* Center items vertically */
@@ -156,6 +156,45 @@
 .editor-container .EasyMDEContainer .CodeMirror-wrap {
   box-shadow: none !important;
   border: none !important;
+}
+
+/* Light Theme Styles */
+.editor-toolbar {
+  background-color: hsl(var(--card)) !important;
+  border-bottom: 1px solid hsl(var(--border)) !important;
+  box-shadow: none !important; /* Remove any shadows */
+}
+
+.editor-toolbar button {
+  color: hsl(var(--muted-foreground)) !important;
+  background-color: transparent !important;
+  border: none !important;
+}
+
+.editor-toolbar button:hover {
+  background-color: hsl(var(--muted)) !important;
+  color: hsl(var(--foreground)) !important;
+}
+
+.editor-toolbar button.active {
+  background-color: hsl(var(--accent)) !important;
+  color: hsl(var(--accent-foreground)) !important;
+}
+
+.CodeMirror {
+  background-color: hsl(var(--background)) !important;
+  color: hsl(var(--foreground)) !important;
+  border: none !important;
+}
+
+.CodeMirror-cursor {
+  border-left-color: hsl(var(--primary)) !important;
+}
+
+.CodeMirror-statusbar {
+  background-color: hsl(var(--card)) !important;
+  border-top: 1px solid hsl(var(--border)) !important;
+  color: hsl(var(--muted-foreground)) !important;
 }
 
 /* Dark Theme Styles */

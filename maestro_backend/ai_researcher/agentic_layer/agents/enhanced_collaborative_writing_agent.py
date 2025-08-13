@@ -94,7 +94,25 @@ class EnhancedCollaborativeWritingAgent(BaseAgent):
 
     def _default_system_prompt(self) -> str:
         """The system prompt that instructs the agent on its collaborative workflow."""
-        return """You are an advanced collaborative writing assistant. Your goal is to help users create and edit documents by being a proactive and intelligent partner.
+        return """You are an advanced collaborative writing assistant helping users create academic papers, research documents, and professional writing. Your responses will be incorporated directly into their documents.
+
+**CRITICAL CONTEXT:**
+When users ask for information, they intend to use your response directly in their paper or notes. Therefore:
+- Provide publication-ready content that can be copied directly into their document
+- Write in an academic or professional tone suitable for their paper
+- Format content appropriately for direct inclusion in formal writing
+- Include relevant details, citations, or context they might need
+
+**IMPORTANT - Content Block Types:**
+The system supports different content block types that are automatically formatted in the UI:
+- SECTION_CONTENT for sections with headings
+- PARAGRAPH_CONTENT for regular text (most common for paper content)
+- LIST_CONTENT for lists
+- NOTE_CONTENT for important notes
+- CODE_CONTENT for actual code only
+- DOCUMENT_CONTENT for complete documents
+
+When generating content, write naturally and the system will select the appropriate block type. NEVER use code blocks (```) for non-code content like biographical information or regular text.
 
 **Your Core Workflow:**
 
@@ -189,14 +207,49 @@ Remember the rules: to add content, you must use 'propose_and_add_paragraph'.
     def _create_content_generation_prompt(self, user_prompt: str, context: Dict[str, Any]) -> str:
         """Creates a prompt for the LLM to generate content for a proposal."""
         return f"""
-A user wants to add a paragraph to their document. Based on their request and the document's context, please write the content for this new paragraph.
+You are helping a user write their academic paper/research document. The content you provide will be incorporated DIRECTLY into their document.
 
 User's Request: "{user_prompt}"
 
 Document Context:
 {json.dumps(context, indent=2)}
 
-Please provide only the text for the paragraph as a raw string, without any JSON formatting.
+REMEMBER: The user is asking for content to include in their paper. Write publication-ready content that:
+- Can be copied directly into their document without modification
+- Maintains academic/professional tone and style
+- Is properly formatted for inclusion in formal writing
+- Provides complete, well-structured information
+
+AVAILABLE CONTENT BLOCK TYPES AND THEIR USAGE:
+
+1. **SECTION_CONTENT**: Use for section headings with detailed explanatory text
+   - Example: Overview sections, chapter introductions, topic explanations
+
+2. **PARAGRAPH_CONTENT**: Use for standard body text and regular paragraphs
+   - Example: General descriptions, explanations, narrative content
+
+3. **LIST_CONTENT**: Use for bulleted or numbered lists
+   - Example: Feature lists, steps, enumerated items, requirements
+
+4. **NOTE_CONTENT**: Use for important notes, warnings, or highlighted information
+   - Example: Important caveats, key takeaways, warnings, tips
+
+5. **CODE_CONTENT**: Use ONLY for actual programming code, scripts, or technical commands
+   - Example: Python functions, JavaScript snippets, terminal commands, configuration files
+   - DO NOT use for: biographical information, general text, descriptions, or non-code content
+   - IMPORTANT: When writing about people, companies, or technologies, use PARAGRAPH_CONTENT or SECTION_CONTENT, not CODE_CONTENT
+
+6. **DOCUMENT_CONTENT**: Use for complete document blocks or comprehensive information units
+   - Example: Full specifications, complete policies, standalone documents
+
+CRITICAL RULES:
+- The system will automatically format your content into the appropriate block type based on the content
+- Write naturally using markdown formatting where appropriate
+- Use **bold** for emphasis and *italics* for special terms
+- DO NOT wrap non-code content in code blocks (```)
+- Let the content type determine the block, not artificial formatting
+
+Provide your content as natural text with appropriate markdown formatting. The system will handle the block type selection.
 """
 
     async def _handle_new_request(

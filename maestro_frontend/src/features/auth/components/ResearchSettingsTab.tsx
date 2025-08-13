@@ -23,7 +23,7 @@ const DEFAULT_RESEARCH_PARAMS: ResearchParameters = {
   initial_exploration_doc_results: 5,
   initial_exploration_web_results: 3,
   main_research_doc_results: 5,
-  main_research_web_results: 0,
+  main_research_web_results: 5,
   thought_pad_context_limit: 5,
   max_notes_for_assignment_reranking: 80,  // Changed from 0 to 80
   max_concurrent_requests: 10,  // Changed from 80 to 10
@@ -37,7 +37,12 @@ const DEFAULT_RESEARCH_PARAMS: ResearchParameters = {
   max_notes_per_section_assignment: 40,
   max_planning_context_chars: 250000,
   writing_previous_content_preview_chars: 30000,
-  research_note_content_limit: 32000
+  research_note_content_limit: 32000,
+  // Writing mode search parameters
+  writing_search_max_iterations: 1,
+  writing_search_max_queries: 3,
+  writing_deep_search_iterations: 3,
+  writing_deep_search_queries: 10
 }
 
 // Preset configurations for different use cases
@@ -724,6 +729,68 @@ export const ResearchSettingsTab: React.FC = () => {
                   defaultValue={DEFAULT_RESEARCH_PARAMS.research_note_content_limit as number}
                   min={10000}
                   max={50000}
+                  onChange={handleNumberChange}
+                  onBlur={handleBlur}
+                  onReset={handleResetParameter}
+                />
+              </div>
+            </Card>
+            
+            {/* Writing Mode Search Settings */}
+            <Card className="border-muted/50">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-medium">Writing Mode Search Settings</CardTitle>
+                <CardDescription className="text-xs">Configure search behavior for Writing mode</CardDescription>
+              </CardHeader>
+              <div className="px-6 pb-4 grid grid-cols-2 gap-3">
+                <ResearchParameterInput
+                  field="writing_search_max_iterations"
+                  disabled={isAutoOptimizeEnabled}
+                  label="Regular Search Iterations"
+                  description="Max attempts for regular search"
+                  value={params.writing_search_max_iterations ?? DEFAULT_RESEARCH_PARAMS.writing_search_max_iterations!}
+                  defaultValue={DEFAULT_RESEARCH_PARAMS.writing_search_max_iterations as number}
+                  min={1}
+                  max={5}
+                  onChange={handleNumberChange}
+                  onBlur={handleBlur}
+                  onReset={handleResetParameter}
+                />
+                <ResearchParameterInput
+                  field="writing_search_max_queries"
+                  disabled={isAutoOptimizeEnabled}
+                  label="Regular Search Queries"
+                  description="Max decomposed queries"
+                  value={params.writing_search_max_queries ?? DEFAULT_RESEARCH_PARAMS.writing_search_max_queries!}
+                  defaultValue={DEFAULT_RESEARCH_PARAMS.writing_search_max_queries as number}
+                  min={1}
+                  max={10}
+                  onChange={handleNumberChange}
+                  onBlur={handleBlur}
+                  onReset={handleResetParameter}
+                />
+                <ResearchParameterInput
+                  field="writing_deep_search_iterations"
+                  disabled={isAutoOptimizeEnabled}
+                  label="Deep Search Iterations"
+                  description="Max attempts for deep search"
+                  value={params.writing_deep_search_iterations ?? DEFAULT_RESEARCH_PARAMS.writing_deep_search_iterations!}
+                  defaultValue={DEFAULT_RESEARCH_PARAMS.writing_deep_search_iterations as number}
+                  min={1}
+                  max={10}
+                  onChange={handleNumberChange}
+                  onBlur={handleBlur}
+                  onReset={handleResetParameter}
+                />
+                <ResearchParameterInput
+                  field="writing_deep_search_queries"
+                  disabled={isAutoOptimizeEnabled}
+                  label="Deep Search Queries"
+                  description="Max decomposed queries"
+                  value={params.writing_deep_search_queries ?? DEFAULT_RESEARCH_PARAMS.writing_deep_search_queries!}
+                  defaultValue={DEFAULT_RESEARCH_PARAMS.writing_deep_search_queries as number}
+                  min={1}
+                  max={20}
                   onChange={handleNumberChange}
                   onBlur={handleBlur}
                   onReset={handleResetParameter}

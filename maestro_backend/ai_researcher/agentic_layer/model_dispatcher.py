@@ -55,10 +55,16 @@ class ModelDispatcher:
                 api_key_preview = "None"
             logger.info(f"[DEBUG] Provider {provider_name}: API key {api_key_status} ({api_key_preview}), Base URL: {base_url}")
 
+            # For custom providers, use a dummy API key if none provided
+            # as the OpenAI client requires it even if the server doesn't
             if not api_key:
-                # logger.error(f"API key for provider '{provider_name}' is missing. Client cannot be initialized.")
-                self.clients[provider_name] = None
-                continue
+                if provider_name == "custom":
+                    api_key = "dummy-key-for-local-llm"
+                    logger.info(f"Using dummy API key for custom provider without authentication")
+                else:
+                    logger.error(f"API key for provider '{provider_name}' is missing. Client cannot be initialized.")
+                    self.clients[provider_name] = None
+                    continue
             
             if not base_url:
                 logger.error(f"Base URL for provider '{provider_name}' is not configured. Client cannot be initialized.")
@@ -533,8 +539,20 @@ class ModelDispatcher:
                      # Check if content is non-empty string OR if there are tool calls
                      has_content = isinstance(response.choices[0].message.content, str) and response.choices[0].message.content.strip()
                      has_tool_calls = bool(response.choices[0].message.tool_calls)
+                     
+                     # Special handling for router/query_strategy mode - allow empty responses
+                     # since the agent handles defaults for empty responses
+                     is_router_mode = effective_agent_mode == "query_strategy"
+                     
+                     # For thinking models (like o1-mini), sometimes the response is empty due to 
+                     # token consumption during reasoning. Allow empty responses for router.
+                     has_valid_empty_response = (is_router_mode and 
+                                                isinstance(response.choices[0].message.content, str))
 
-                     if has_content or has_tool_calls:
+                     if has_content or has_tool_calls or has_valid_empty_response:
+                          # Log special case for router with empty response
+                          if has_valid_empty_response and not has_content:
+                              logger.info(f"Router/query_strategy mode returned empty response (likely thinking model). Accepting as valid.")
                           # --- NEW: Log details to queue and call update_callback if provided ---
                           if log_queue:
                               try:

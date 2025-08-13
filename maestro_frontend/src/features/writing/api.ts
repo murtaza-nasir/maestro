@@ -63,6 +63,9 @@ export interface WritingChatRequest {
   operation_mode?: string;
   document_group_id?: string | null;
   use_web_search?: boolean;
+  deep_search?: boolean;
+  max_search_iterations?: number;
+  max_decomposed_queries?: number;
 }
 
 // Source types for writing responses

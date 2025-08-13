@@ -74,7 +74,7 @@ def get_main_research_doc_results(mission_id: Optional[str] = None) -> int:
     return get_setting_with_fallback("main_research_doc_results", 5, int, mission_id)
 
 def get_main_research_web_results(mission_id: Optional[str] = None) -> int:
-    return get_setting_with_fallback("main_research_web_results", 2, int, mission_id)
+    return get_setting_with_fallback("main_research_web_results", 5, int, mission_id)
 
 def get_thought_pad_context_limit(mission_id: Optional[str] = None) -> int:
     return get_setting_with_fallback("thought_pad_context_limit", 10, int, mission_id)
@@ -176,6 +176,40 @@ def get_searxng_categories(mission_id: Optional[str] = None) -> str:
     
     # Fallback to environment variable
     return os.getenv("SEARXNG_CATEGORIES", "general")
+
+def get_search_max_results(mission_id: Optional[str] = None) -> int:
+    """Get the maximum number of search results from user settings or environment."""
+    # Check user settings first
+    user_settings = get_user_settings()
+    if user_settings:
+        search_settings = user_settings.get("search", {})
+        if search_settings and search_settings.get("max_results"):
+            try:
+                return int(search_settings["max_results"])
+            except (ValueError, TypeError):
+                pass
+    
+    # Fallback to environment variable then default
+    env_value = os.getenv("SEARCH_MAX_RESULTS", "5")
+    try:
+        return int(env_value)
+    except (ValueError, TypeError):
+        return 5
+
+def get_search_depth(mission_id: Optional[str] = None) -> str:
+    """Get the search depth (standard/advanced) from user settings or environment."""
+    # Check user settings first
+    user_settings = get_user_settings()
+    if user_settings:
+        search_settings = user_settings.get("search", {})
+        if search_settings and search_settings.get("search_depth"):
+            depth = search_settings["search_depth"]
+            if depth in ["standard", "advanced", "basic", "deep"]:
+                # Map to provider-specific values
+                return depth
+    
+    # Fallback to environment variable then default
+    return os.getenv("SEARCH_DEPTH", "standard")
 
 # --- AI Provider Settings ---
 def get_ai_provider_config(provider_name: str, mission_id: Optional[str] = None) -> Dict[str, Any]:

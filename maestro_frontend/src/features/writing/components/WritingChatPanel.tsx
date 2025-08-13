@@ -9,8 +9,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../../components/ui/select'
-import { Send, Loader2, Bot, Trash2, Sparkles, Settings } from 'lucide-react'
+import { Send, Loader2, Bot, Trash2, Sparkles, Settings, SlidersHorizontal } from 'lucide-react'
 import { CustomSystemPromptModal } from './CustomSystemPromptModal'
+import { WritingSearchSettingsModal } from './WritingSearchSettingsModal'
 // import { apiClient } from '../../../config/api'
 import { useWritingStore } from '../store'
 import { getDocumentGroups } from '../../documents/api'
@@ -24,7 +25,17 @@ export const WritingChatPanel: React.FC = () => {
   const [documentGroups, setDocumentGroups] = useState<DocumentGroup[]>([])
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
   const [useWebSearch, setUseWebSearch] = useState<boolean>(true)
+  const [deepSearch, setDeepSearch] = useState<boolean>(false)
   const [showCustomPromptModal, setShowCustomPromptModal] = useState(false)
+  const [showSearchSettingsModal, setShowSearchSettingsModal] = useState(false)
+  const [searchSettings, setSearchSettings] = useState({
+    useWebSearch: true,
+    deepSearch: false,
+    maxIterations: 1,
+    maxQueries: 3,
+    deepSearchIterations: 3,
+    deepSearchQueries: 10,
+  })
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const { addToast } = useToast()
 
@@ -107,7 +118,10 @@ export const WritingChatPanel: React.FC = () => {
       // The sendMessage method will create a chat/session if none exists
       await sendMessage(userMessage, {
         documentGroupId: selectedGroupId,
-        useWebSearch: useWebSearch
+        useWebSearch: searchSettings.useWebSearch,
+        deepSearch: searchSettings.deepSearch,
+        maxIterations: searchSettings.deepSearch ? searchSettings.deepSearchIterations : searchSettings.maxIterations,
+        maxQueries: searchSettings.deepSearch ? searchSettings.deepSearchQueries : searchSettings.maxQueries
       })
       
     } catch (error) {
@@ -132,7 +146,10 @@ export const WritingChatPanel: React.FC = () => {
     try {
       await regenerateMessage(messageId, {
         documentGroupId: selectedGroupId,
-        useWebSearch: useWebSearch,
+        useWebSearch: searchSettings.useWebSearch,
+        deepSearch: searchSettings.deepSearch,
+        maxIterations: searchSettings.deepSearch ? searchSettings.deepSearchIterations : searchSettings.maxIterations,
+        maxQueries: searchSettings.deepSearch ? searchSettings.deepSearchQueries : searchSettings.maxQueries
       });
     } catch (error) {
       console.error('Error regenerating message:', error)
@@ -146,29 +163,14 @@ export const WritingChatPanel: React.FC = () => {
   }
 
   const getAgentStatusMessage = (status: string): string => {
-    switch (status) {
-      case 'analyzing':
-        return 'Analyzing your request...'
-      case 'router_thinking':
-        return 'Deciding which tools to use...'
-      case 'router_decision':
-        return 'Router has made a decision...'
-      case 'searching_web':
-        return 'Searching the web for information...'
-      case 'searching_documents':
-        return 'Searching your document collection...'
-      case 'generating':
-        return 'Generating response...'
-      case 'streaming':
-        return 'Streaming response...'
-      case 'complete':
-        return 'Response complete'
-      case 'error':
-        return 'Configuration required'
-      case 'idle':
-      default:
-        return 'Writing assistant is thinking...'
+    // The status now comes as a descriptive string from the backend
+    // If it starts with certain keywords, we can still handle them specially
+    if (!status || status === 'idle') {
+      return ''
     }
+    
+    // Return the status message as-is since backend now sends descriptive messages
+    return status
   }
 
   // Show welcome screen if no active chat is selected
@@ -235,6 +237,15 @@ export const WritingChatPanel: React.FC = () => {
           </div>
           <div className="flex-shrink-0 ml-4">
             <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowSearchSettingsModal(true)}
+                className="h-6 px-2 text-xs"
+              >
+                <SlidersHorizontal className="h-3 w-3 mr-1" />
+                Search Settings
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -399,6 +410,30 @@ export const WritingChatPanel: React.FC = () => {
                         {useWebSearch ? 'On' : 'Off'}
                       </span>
                     </div>
+                    
+                    {/* Deep Search Toggle */}
+                    {useWebSearch && (
+                      <div className="flex items-center space-x-1.5">
+                        <label className="text-xs text-muted-foreground whitespace-nowrap">Deep Search:</label>
+                        <button
+                          type="button"
+                          onClick={() => setDeepSearch(!deepSearch)}
+                          disabled={isLoading || !useWebSearch}
+                          className={`relative inline-flex h-3.5 w-6 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 ${
+                            deepSearch ? 'bg-primary' : 'bg-secondary'
+                          } ${isLoading || !useWebSearch ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                        >
+                          <span
+                            className={`inline-block h-2 w-2 transform rounded-full bg-white transition-transform ${
+                              deepSearch ? 'translate-x-3' : 'translate-x-0.5'
+                            }`}
+                          />
+                        </button>
+                        <span className={`text-xs ${deepSearch ? 'text-primary' : 'text-muted-foreground'}`}>
+                          {deepSearch ? 'On' : 'Off'}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -415,6 +450,18 @@ export const WritingChatPanel: React.FC = () => {
       <CustomSystemPromptModal
         isOpen={showCustomPromptModal}
         onClose={() => setShowCustomPromptModal(false)}
+      />
+      
+      {/* Search Settings Modal */}
+      <WritingSearchSettingsModal
+        isOpen={showSearchSettingsModal}
+        onClose={() => setShowSearchSettingsModal(false)}
+        settings={searchSettings}
+        onSave={(newSettings) => {
+          setSearchSettings(newSettings)
+          setUseWebSearch(newSettings.useWebSearch)
+          setDeepSearch(newSettings.deepSearch)
+        }}
       />
     </div>
   )
