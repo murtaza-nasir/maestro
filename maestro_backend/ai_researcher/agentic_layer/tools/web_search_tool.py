@@ -3,6 +3,7 @@ import logging
 import queue
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional, Callable
+from datetime import datetime
 
 # Import dynamic config to access user-specific provider settings
 from ai_researcher.dynamic_config import (

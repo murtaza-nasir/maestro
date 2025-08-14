@@ -6,7 +6,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { Label } from '../../../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select'
 import { Globe, Settings, ChevronDown } from 'lucide-react'
-import { Button } from '../../../components/ui/button'
 import { Checkbox } from '../../../components/ui/checkbox'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../../../components/ui/dropdown-menu'
 
@@ -265,6 +264,36 @@ export const SearchSettingsTab: React.FC = () => {
               </div>
             )}
 
+            {draftSettings.search.provider === 'jina' && (
+              <div className="space-y-3 pl-3 border-l-2 border-blue-200 bg-blue-50/30 rounded-r-lg p-3">
+                <p className="text-xs text-muted-foreground mb-2">
+                  Jina AI - neural search provider for semantic web search.
+                </p>
+                <div className="space-y-1.5">
+                  <Label htmlFor="jina-api-key" className="text-sm">Jina API Key</Label>
+                  <Input
+                    id="jina-api-key"
+                    type="password"
+                    value={draftSettings.search.jina_api_key || ''}
+                    onChange={(e) => handleApiKeyChange('jina_api_key', e.target.value)}
+                    placeholder="jina-..."
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Get your API key from{' '}
+                  <a 
+                    href="https://cloud.jina.ai/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
+                    Jina Dashboard
+                  </a>
+                </p>
+              </div>
+            )}
+
           </div>
         </CardContent>
       </Card>
@@ -299,6 +328,7 @@ export const SearchSettingsTab: React.FC = () => {
                 />
                 <p className="text-xs text-muted-foreground">
                   Number of search results to return per query (1-20). Higher values may increase API costs.
+                </p>
               </div>
 
               <div className="space-y-1.5">
@@ -324,13 +354,17 @@ export const SearchSettingsTab: React.FC = () => {
                     )}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">
                   {draftSettings.search.provider === 'tavily' 
                     ? 'Advanced search provides more comprehensive results but costs 2x API credits.'
                     : 'Deep search uses an agentic workflow for more comprehensive results but takes longer.'}
+                </p>
+              </div>
             </div>
           </CardContent>
         </Card>
       )} 
+
       {/* SearXNG-specific configuration */}
       {draftSettings.search.provider === 'searxng' && (
         <Card>
@@ -361,64 +395,13 @@ export const SearchSettingsTab: React.FC = () => {
               <p className="text-xs text-muted-foreground">
                 Number of search results to return per query (1-20).
               </p>
+            </div>
             <p className="text-xs text-muted-foreground">
               SearXNG aggregates results from multiple search engines. No API costs involved.
             </p>
           </CardContent>
         </Card>
       )}
-            {draftSettings.search.provider === 'jina' && (
-              <div className="space-y-3 pl-3 border-l-2 border-blue-200 bg-blue-50/30 rounded-r-lg p-3">
-                <p className="text-xs text-muted-foreground mb-2">
-                  Jina AI - neural search provider for semantic web search.
-                </p>
-                <div className="space-y-1.5">
-                  <Label htmlFor="jina-api-key" className="text-sm">Jina API Key</Label>
-                  <Input
-                    id="jina-api-key"
-                    type="password"
-                    value={draftSettings.search.jina_api_key || ''}
-                    onChange={(e) => handleApiKeyChange('jina_api_key', e.target.value)}
-                    placeholder="jina-..."
-                    className="h-8 text-sm"
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Get your API key from{' '}
-                  <a 
-                    href="https://cloud.jina.ai/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:underline"
-                  >
-                    Jina Dashboard
-                  </a>
-                </p>
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Settings className="h-4 w-4" />
-            Search Configuration
-          </CardTitle>
-          <CardDescription className="text-sm">
-            Configure search behavior and parameters.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex items-center p-3 bg-muted rounded-lg">
-            <Construction className="h-4 w-4 text-muted-foreground mr-2" />
-            <div className="text-sm text-muted-foreground">
-              Advanced search configuration options will be available in future updates.
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+    </div>
   )
-  }
-  
+}
