@@ -299,7 +299,7 @@ export const SearchSettingsTab: React.FC = () => {
       </Card>
 
       {/* Provider-specific search configuration */}
-      {(draftSettings.search.provider === 'tavily' || draftSettings.search.provider === 'linkup') && (
+      {(draftSettings.search.provider === 'tavily' || draftSettings.search.provider === 'linkup' || draftSettings.search.provider === 'jina') && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
@@ -307,7 +307,10 @@ export const SearchSettingsTab: React.FC = () => {
               Search Configuration
             </CardTitle>
             <CardDescription className="text-sm">
-              Configure search behavior and parameters for {draftSettings.search.provider === 'tavily' ? 'Tavily' : 'LinkUp'}.
+              Configure search behavior and parameters for {
+                draftSettings.search.provider === 'tavily' ? 'Tavily' :
+                draftSettings.search.provider === 'linkup' ? 'LinkUp' : 'Jina'
+              }.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -346,6 +349,11 @@ export const SearchSettingsTab: React.FC = () => {
                         <SelectItem value="standard">Standard (Basic - 1 credit)</SelectItem>
                         <SelectItem value="advanced">Advanced (2 credits)</SelectItem>
                       </>
+                    ) : draftSettings.search.provider === 'jina' ? (
+                      <>
+                        <SelectItem value="standard">Standard (Fast - Direct engine)</SelectItem>
+                        <SelectItem value="advanced">Advanced (Browser engine - Best quality)</SelectItem>
+                      </>
                     ) : (
                       <>
                         <SelectItem value="standard">Standard (Fast)</SelectItem>
@@ -357,6 +365,8 @@ export const SearchSettingsTab: React.FC = () => {
                 <p className="text-xs text-muted-foreground">
                   {draftSettings.search.provider === 'tavily' 
                     ? 'Advanced search provides more comprehensive results but costs 2x API credits.'
+                    : draftSettings.search.provider === 'jina'
+                    ? 'Advanced uses browser engine for best quality content extraction, Standard uses direct engine for faster results.'
                     : 'Deep search uses an agentic workflow for more comprehensive results but takes longer.'}
                 </p>
               </div>
