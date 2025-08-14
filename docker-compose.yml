@@ -39,6 +39,7 @@ services:
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-*}
       # Allow all origins in development mode when using nginx proxy
       - ALLOW_CORS_WILDCARD=${ALLOW_CORS_WILDCARD:-true}
+      - JINA_API_KEY=${JINA_API_KEY:-}
     networks:
       - maestro-network
     # GPU support - uncomment the following lines if you have a GPU and nvidia-container-toolkit installed
@@ -91,6 +92,7 @@ services:
     environment:
       - TZ=${TZ:-UTC}
       - LOG_LEVEL=${LOG_LEVEL:-ERROR}
+      - JINA_API_KEY=${JINA_API_KEY:-}
     deploy:
       resources:
         reservations:
