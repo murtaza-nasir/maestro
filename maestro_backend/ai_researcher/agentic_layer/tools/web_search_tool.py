@@ -3,12 +3,10 @@ import logging
 import queue
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional, Callable
-from datetime import datetime
 
 # Import dynamic config to access user-specific provider settings
 from ai_researcher.dynamic_config import (
-    get_web_search_provider, get_tavily_api_key, get_linkup_api_key, get_searxng_base_url, get_searxng_categories,
-    get_search_max_results, get_search_depth
+    get_web_search_provider, get_tavily_api_key, get_linkup_api_key, get_searxng_base_url, get_searxng_categories
 )
 
 logger = logging.getLogger(__name__)
@@ -38,15 +36,11 @@ except ImportError:
     requests = None
 
 
+
 # Define the input schema (Renamed for generality)
 class WebSearchInput(BaseModel):
     query: str = Field(..., description="The search query for the web search engine.")
-    max_results: Optional[int] = Field(None, description="Maximum number of search results desired.") # Will use user settings if not specified
-    from_date: Optional[str] = Field(None, description="Start date for filtering results (YYYY-MM-DD format)")
-    to_date: Optional[str] = Field(None, description="End date for filtering results (YYYY-MM-DD format)")
-    include_domains: Optional[List[str]] = Field(None, description="List of domains to specifically include")
-    exclude_domains: Optional[List[str]] = Field(None, description="List of domains to specifically exclude")
-    depth: Optional[str] = Field(None, description="Search depth: 'standard' or 'advanced' (affects API costs)")
+    max_results: int = Field(5, description="Maximum number of search results desired.") # Default to 5
 
 class WebSearchTool:
     """
@@ -97,6 +91,15 @@ class WebSearchTool:
                 self.client = base_url.rstrip('/')  # Store the base URL as the "client"
                 self.api_key_configured = True
                 logger.info("WebSearchTool initialized with SearXNG.")
+            elif self.provider == "jina":
+                api_key = get_jina_api_key()
+                if not api_key:
+                    logger.warning("Jina API key not configured in user settings or environment variables.")
+                    self.api_key_configured = False
+                    return
+                self.client = JinaClient(api_key=api_key)
+                self.api_key_configured = True
+                logger.info("WebSearchTool initialized with JinaClient.")    
             else:
                 raise ValueError(f"Unsupported web search provider configured: {self.provider}")
         except Exception as e:
@@ -106,12 +109,7 @@ class WebSearchTool:
     async def execute(
         self,
         query: str,
-        max_results: Optional[int] = None,
-        from_date: Optional[str] = None,
-        to_date: Optional[str] = None,
-        include_domains: Optional[List[str]] = None,
-        exclude_domains: Optional[List[str]] = None,
-        depth: Optional[str] = None,
+        max_results: int = 5,
         update_callback: Optional[Callable] = None,
         log_queue: Optional[queue.Queue] = None,
         mission_id: Optional[str] = None
@@ -123,12 +121,7 @@ class WebSearchTool:
 
         Args:
             query: The search query string.
-            max_results: Maximum number of results desired (uses user settings if not specified).
-            from_date: Optional start date for filtering results.
-            to_date: Optional end date for filtering results.
-            include_domains: Optional list of domains to include.
-            exclude_domains: Optional list of domains to exclude.
-            depth: Optional search depth ('standard' or 'advanced').
+            max_results: Maximum number of results desired.
             update_callback: Optional callback function for sending updates.
             log_queue: Optional queue for logging.
             mission_id: Optional mission ID for tracking web search calls.
@@ -161,51 +154,21 @@ class WebSearchTool:
             
             return {"error": user_friendly_error}
 
-        # Get default values from user settings if not provided
-        if max_results is None:
-            max_results = get_search_max_results(mission_id)
-        
-        if depth is None:
-            depth = get_search_depth(mission_id)
-        
-        # Validate max_results
-        max_results = max(1, min(20, max_results))  # Ensure between 1 and 20
-        
-        logger.info(f"Executing {self.provider.capitalize()} search for '{query}' with max_results={max_results}, depth={depth}")
+        logger.info(f"Executing {self.provider.capitalize()} search for '{query}' with max_results={max_results}")
         formatted_results = []
         error_msg = None
 
-        # Only add academic suffix if it's not already in the query
-        search_query = query
-        if "academic" not in query.lower() and "paper" not in query.lower():
-            search_query = query + " academic paper"
+        # Add academic paper suffix for better results
+        search_query = query + " academic paper"
 
         try:
             if self.provider == "tavily":
-                # Map depth values for Tavily
-                tavily_depth = "basic" if depth == "standard" else "advanced"
-                
-                # Build Tavily search parameters
-                search_params = {
-                    "query": search_query,
-                    "search_depth": tavily_depth,
-                    "max_results": max_results
-                }
-                
-                # Add optional date filters
-                if from_date:
-                    search_params["start_date"] = from_date
-                if to_date:
-                    search_params["end_date"] = to_date
-                    
-                # Add domain filters
-                if include_domains:
-                    search_params["include_domains"] = include_domains
-                if exclude_domains:
-                    search_params["exclude_domains"] = exclude_domains
-                
                 # Tavily client's search method (synchronous)
-                response = self.client.search(**search_params)
+                response = self.client.search(
+                    query=search_query,
+                    search_depth="advanced",
+                    max_results=max_results
+                )
                 search_results = response.get('results', [])
                 for result in search_results:
                     formatted_results.append({
@@ -215,40 +178,14 @@ class WebSearchTool:
                     })
 
             elif self.provider == "linkup":
-                # Map depth values for LinkUp
-                linkup_depth = "standard" if depth == "standard" else "deep"
-                
-                # Build LinkUp search parameters for Python client
-                search_params = {
-                    "query": search_query,  # Python client uses 'query'
-                    "depth": linkup_depth,
-                    "output_type": "searchResults",  # Python client uses underscore
-                    "include_images": False
-                }
-                
-                # Add optional date filters - need to convert string to date objects
-                if from_date:
-                    try:
-                        from datetime import datetime as dt
-                        search_params["from_date"] = dt.strptime(from_date, '%Y-%m-%d').date()
-                    except ValueError:
-                        logger.warning(f"Invalid from_date format: {from_date}")
-                        
-                if to_date:
-                    try:
-                        from datetime import datetime as dt
-                        search_params["to_date"] = dt.strptime(to_date, '%Y-%m-%d').date()
-                    except ValueError:
-                        logger.warning(f"Invalid to_date format: {to_date}")
-                    
-                # Add domain filters (Python client uses underscore)
-                if include_domains:
-                    search_params["include_domains"] = include_domains
-                if exclude_domains:
-                    search_params["exclude_domains"] = exclude_domains
-                
-                # Linkup client's search method
-                response = self.client.search(**search_params)
+                # Linkup client's search method (assuming synchronous)
+                response = self.client.search(
+                    query=search_query,
+                    depth="standard", # As per example
+                    output_type="searchResults", # To get structured results
+                    include_images=False,
+                    # Linkup might not have a direct 'max_results', handle post-fetch
+                )
 
                 # Adapt parsing based on actual Linkup response structure
                 if LinkupSearchResults and isinstance(response, LinkupSearchResults): # Check for the specific type
@@ -298,6 +235,59 @@ class WebSearchTool:
                         "snippet": result.get('content', 'No Snippet'),
                         "url": result.get('url', '#')
                     })
+
+            elif self.provider == "jina":
+            # Jina Search API endpoint
+                api_url = "https://s.jina.ai/"
+                api_key = get_jina_api_key()
+                if not api_key:
+                     raise ValueError("Jina API key not configured.")
+
+            # Prepare headers
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "X-No-Cache": "true",  # always fresh results
+            }
+
+            # Optionally handle domain/site search
+            if include_domains:
+                # Use first domain, or concatenate if needed
+                headers["X-Site"] = include_domains[0]
+
+            # Prepare request body
+            payload = {
+                "q": query,
+            }
+            if max_results:
+                payload["num"] = max_results
+
+            # Optional: Add language/location/country if available
+            # payload["hl"] = "en"
+            # payload["gl"] = "US"
+            # payload["location"] = "San Francisco"
+
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(api_url, headers=headers, json=payload, timeout=30)
+
+            if resp.status_code != 200:
+                logger.error(f"Jina API error: {resp.status_code} {resp.text}")
+                raise RuntimeError(f"Jina API error: {resp.status_code}")
+
+            results_json = resp.json()
+            # Extract and format search results for downstream use
+            formatted_results = []
+            for item in results_json.get("data", []):
+                formatted_results.append({
+                    "title": item.get("title"),
+                    "description": item.get("description"),
+                    "url": item.get("url"),
+                    "content": item.get("content"),
+                    "usage": item.get("usage"),
+                })
+
+            return {"results": formatted_results}
 
             if error_msg:
                  return {"error": error_msg}

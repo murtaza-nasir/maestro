@@ -31,11 +31,12 @@ interface AISettings {
 }
 
 interface SearchSettings {
-  provider: 'tavily' | 'linkup' | 'searxng'
+  provider: 'tavily' | 'linkup' | 'searxng' | 'jina'
   tavily_api_key: string | null
   linkup_api_key: string | null
   searxng_base_url: string | null
   searxng_categories: string | null
+  jina_api_key: string | null 
   max_results?: number
   search_depth?: 'standard' | 'advanced'
 }
@@ -233,6 +234,7 @@ const defaultSettings: UserSettings = {
     linkup_api_key: null,
     searxng_base_url: null,
     searxng_categories: null,
+    jina_api_key: null,
     max_results: 5,
     search_depth: 'standard'
   },

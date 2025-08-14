@@ -42,3 +42,4 @@ linkup-sdk
 psutil
 pytz
 pypandoc
+jinaai>=latest

@@ -31,7 +31,7 @@ try:
     from .dynamic_config import (
         get_setting_with_fallback, get_ai_provider_config, get_fast_llm_provider,
         get_mid_llm_provider, get_intelligent_llm_provider, get_verifier_llm_provider,
-        get_web_search_provider, get_tavily_api_key, get_linkup_api_key,
+        get_web_search_provider, get_tavily_api_key, get_linkup_api_key, get_jina_api_key,
         get_initial_research_max_depth, get_initial_research_max_questions,
         get_structured_research_rounds, get_writing_passes, get_thought_pad_context_limit,
         get_max_concurrent_requests, get_skip_final_replanning,
@@ -101,6 +101,9 @@ except ImportError:
 
     def get_linkup_api_key() -> Optional[str]:
         return get_setting_with_fallback("LINKUP_API_KEY", None)
+
+    def get_jina_api_key() -> Optional[str]:
+        return get_setting_with_fallback("JINA_API_KEY", None)    
 
     # Research parameters
     def get_initial_research_max_depth() -> int:
@@ -338,6 +341,7 @@ MAX_CONCURRENT_REQUESTS = get_max_concurrent_requests()
 WEB_SEARCH_PROVIDER = get_web_search_provider()
 TAVILY_API_KEY = get_tavily_api_key()
 LINKUP_API_KEY = get_linkup_api_key()
+JINA_API_KEY = get_jina_api_key() 
 # Define the cost per web search call (adjust default as needed)
 WEB_SEARCH_COST_PER_CALL = float(os.getenv("WEB_SEARCH_COST_PER_CALL", 0.005)) # Default $0.005 per search
 
@@ -349,6 +353,7 @@ print("--- Tool Keys ---")
 print(f"Web Search Provider: {WEB_SEARCH_PROVIDER.capitalize()}")
 print(f"  Tavily API Key Loaded: {'Yes' if TAVILY_API_KEY else 'No'}")
 print(f"  LinkUp API Key Loaded: {'Yes' if LINKUP_API_KEY else 'No'}")
+print(f"  Jina API Key Loaded: {'Yes' if JINA_API_KEY else 'No'}") # Added Jina key status
 print(f"  Cost Per Search Call: ${WEB_SEARCH_COST_PER_CALL:.4f}") # Added print for cost
 print(f"Web Cache Expiration: {WEB_CACHE_EXPIRATION_DAYS} days")
 

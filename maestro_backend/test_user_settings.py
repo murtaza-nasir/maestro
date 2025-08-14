@@ -20,7 +20,7 @@ def test_user_settings_integration():
     print("\n1. Testing environment variable fallback...")
     from ai_researcher.config import (
         FAST_LLM_PROVIDER, MID_LLM_PROVIDER, INTELLIGENT_LLM_PROVIDER,
-        WEB_SEARCH_PROVIDER, TAVILY_API_KEY, LINKUP_API_KEY,
+        WEB_SEARCH_PROVIDER, TAVILY_API_KEY, LINKUP_API_KEY, JINA_API_KEY,
         INITIAL_RESEARCH_MAX_DEPTH, INITIAL_RESEARCH_MAX_QUESTIONS,
         STRUCTURED_RESEARCH_ROUNDS, WRITING_PASSES, THOUGHT_PAD_CONTEXT_LIMIT,
         MAX_CONCURRENT_REQUESTS, SKIP_FINAL_REPLANNING
@@ -42,7 +42,7 @@ def test_user_settings_integration():
     print("\n2. Testing dynamic config functions...")
     from ai_researcher.dynamic_config import (
         get_fast_llm_provider, get_mid_llm_provider, get_intelligent_llm_provider,
-        get_web_search_provider, get_tavily_api_key, get_linkup_api_key,
+        get_web_search_provider, get_tavily_api_key, get_linkup_api_key, get_jina_api_key,
         get_initial_research_max_depth, get_initial_research_max_questions,
         get_structured_research_rounds, get_writing_passes, get_thought_pad_context_limit,
         get_max_concurrent_requests, get_skip_final_replanning

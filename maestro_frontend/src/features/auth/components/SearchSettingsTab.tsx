@@ -1,11 +1,10 @@
 import React from 'react'
 import { useSettingsStore } from './SettingsStore'
-// import { Button } from '../../../components/ui/button'
 import { Input } from '../../../components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card'
 import { Label } from '../../../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select'
-import { Globe, Settings, ChevronDown } from 'lucide-react'
+import { Globe, Settings, Construction, ChevronDown } from 'lucide-react'
 import { Button } from '../../../components/ui/button'
 import { Checkbox } from '../../../components/ui/checkbox'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../../../components/ui/dropdown-menu'
@@ -27,7 +26,7 @@ const SEARXNG_CATEGORIES = [
 export const SearchSettingsTab: React.FC = () => {
   const { draftSettings, setDraftSettings } = useSettingsStore()
 
-  const handleProviderChange = (provider: 'tavily' | 'linkup' | 'searxng') => {
+  const handleProviderChange = (provider: 'tavily' | 'linkup' | 'searxng' | 'jina') => {
     if (!draftSettings) return
     
     const newSearch = {
@@ -118,13 +117,14 @@ export const SearchSettingsTab: React.FC = () => {
                   <SelectItem value="tavily">Tavily</SelectItem>
                   <SelectItem value="linkup">LinkUp</SelectItem>
                   <SelectItem value="searxng">SearXNG</SelectItem>
+                  <SelectItem value="jina">Jina</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             {draftSettings.search.provider === 'tavily' && (
               <div className="space-y-3 pl-3 border-l-2 border-blue-200 bg-blue-50/30 rounded-r-lg p-3">
-                <p className="text-xs text-muted-foreground-foreground mb-2">
+                <p className="text-xs text-muted-foreground mb-2">
                   AI-powered search with real-time web data and citations.
                 </p>
                 <div className="space-y-1.5">
@@ -154,7 +154,7 @@ export const SearchSettingsTab: React.FC = () => {
 
             {draftSettings.search.provider === 'linkup' && (
               <div className="space-y-3 pl-3 border-l-2 border-green-200 bg-green-50/30 rounded-r-lg p-3">
-                <p className="text-xs text-muted-foreground-foreground mb-2">
+                <p className="text-xs text-muted-foreground mb-2">
                   Real-time search API with comprehensive web coverage.
                 </p>
                 <div className="space-y-1.5">
@@ -184,7 +184,7 @@ export const SearchSettingsTab: React.FC = () => {
 
             {draftSettings.search.provider === 'searxng' && (
               <div className="space-y-3 pl-3 border-l-2 border-purple-200 bg-purple-50/30 rounded-r-lg p-3">
-                <p className="text-xs text-muted-foreground-foreground mb-2">
+                <p className="text-xs text-muted-foreground mb-2">
                   Open-source metasearch engine that aggregates results from multiple search engines.
                 </p>
                 <div className="space-y-1.5">
@@ -213,7 +213,7 @@ export const SearchSettingsTab: React.FC = () => {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent className="w-full p-0" align="start">
                         <div className="p-3">
-                          <p className="text-xs text-muted-foreground-foreground mb-3">
+                          <p className="text-xs text-muted-foreground mb-3">
                             Select one or more categories for search results:
                           </p>
                           <div className="space-y-2">
@@ -263,114 +263,59 @@ export const SearchSettingsTab: React.FC = () => {
                 </p>
               </div>
             )}
+
+            {draftSettings.search.provider === 'jina' && (
+              <div className="space-y-3 pl-3 border-l-2 border-blue-200 bg-blue-50/30 rounded-r-lg p-3">
+                <p className="text-xs text-muted-foreground mb-2">
+                  Jina AI - neural search provider for semantic web search.
+                </p>
+                <div className="space-y-1.5">
+                  <Label htmlFor="jina-api-key" className="text-sm">Jina API Key</Label>
+                  <Input
+                    id="jina-api-key"
+                    type="password"
+                    value={draftSettings.search.jina_api_key || ''}
+                    onChange={(e) => handleApiKeyChange('jina_api_key', e.target.value)}
+                    placeholder="jina-..."
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Get your API key from{' '}
+                  <a 
+                    href="https://cloud.jina.ai/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
+                    Jina Dashboard
+                  </a>
+                </p>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
 
-      {/* Provider-specific search configuration */}
-      {(draftSettings.search.provider === 'tavily' || draftSettings.search.provider === 'linkup') && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Settings className="h-4 w-4" />
-              Search Configuration
-            </CardTitle>
-            <CardDescription className="text-sm">
-              Configure search behavior and parameters for {draftSettings.search.provider === 'tavily' ? 'Tavily' : 'LinkUp'}.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="max-search-results" className="text-sm">Maximum Search Results</Label>
-                <Input
-                  id="max-search-results"
-                  type="number"
-                  min="1"
-                  max="20"
-                  value={draftSettings.search.max_results || 5}
-                  onChange={(e) => {
-                    const value = Math.max(1, Math.min(20, parseInt(e.target.value) || 5))
-                    handleApiKeyChange('max_results', value.toString())
-                  }}
-                  className="h-8 text-sm"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Number of search results to return per query (1-20). Higher values may increase API costs.
-                </p>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="search-depth" className="text-sm">Search Depth</Label>
-                <Select
-                  value={draftSettings.search.search_depth || 'standard'}
-                  onValueChange={(value) => handleApiKeyChange('search_depth', value)}
-                >
-                  <SelectTrigger className="h-9">
-                    <SelectValue placeholder="Select search depth" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {draftSettings.search.provider === 'tavily' ? (
-                      <>
-                        <SelectItem value="standard">Standard (Basic - 1 credit)</SelectItem>
-                        <SelectItem value="advanced">Advanced (2 credits)</SelectItem>
-                      </>
-                    ) : (
-                      <>
-                        <SelectItem value="standard">Standard (Fast)</SelectItem>
-                        <SelectItem value="advanced">Deep (Comprehensive)</SelectItem>
-                      </>
-                    )}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  {draftSettings.search.provider === 'tavily' 
-                    ? 'Advanced search provides more comprehensive results but costs 2x API credits.'
-                    : 'Deep search uses an agentic workflow for more comprehensive results but takes longer.'}
-                </p>
-              </div>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Settings className="h-4 w-4" />
+            Search Configuration
+          </CardTitle>
+          <CardDescription className="text-sm">
+            Configure search behavior and parameters.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center p-3 bg-muted rounded-lg">
+            <Construction className="h-4 w-4 text-muted-foreground mr-2" />
+            <div className="text-sm text-muted-foreground">
+              Advanced search configuration options will be available in future updates.
             </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* SearXNG-specific configuration */}
-      {draftSettings.search.provider === 'searxng' && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Settings className="h-4 w-4" />
-              SearXNG Configuration
-            </CardTitle>
-            <CardDescription className="text-sm">
-              Configure search parameters for your SearXNG instance.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="max-search-results" className="text-sm">Maximum Search Results</Label>
-              <Input
-                id="max-search-results"
-                type="number"
-                min="1"
-                max="20"
-                value={draftSettings.search.max_results || 5}
-                onChange={(e) => {
-                  const value = Math.max(1, Math.min(20, parseInt(e.target.value) || 5))
-                  handleApiKeyChange('max_results', value.toString())
-                }}
-                className="h-8 text-sm"
-              />
-              <p className="text-xs text-muted-foreground">
-                Number of search results to return per query (1-20).
-              </p>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              SearXNG aggregates results from multiple search engines. No API costs involved.
-            </p>
-          </CardContent>
-        </Card>
-      )}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }
