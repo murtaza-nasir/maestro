@@ -1,6 +1,9 @@
 import os
 import logging
 import queue
+import httpx
+import asyncio
+from asyncio import Semaphore
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional, Callable
 from datetime import datetime
@@ -39,7 +42,6 @@ except ImportError:
 # Define the input schema (Renamed for generality)
 class WebSearchInput(BaseModel):
     query: str = Field(..., description="The search query for the web search engine.")
-    max_results: Optional[int] = Field(None, description="Maximum number of search results desired.") # Will use user settings if not specified
     from_date: Optional[str] = Field(None, description="Start date for filtering results (YYYY-MM-DD format)")
     to_date: Optional[str] = Field(None, description="End date for filtering results (YYYY-MM-DD format)")
     include_domains: Optional[List[str]] = Field(None, description="List of domains to specifically include")
@@ -49,7 +51,7 @@ class WebSearchInput(BaseModel):
 
 class WebSearchTool:
     """
-    Tool for performing web searches using the configured provider (Tavily or LinkUp).
+    Tool for performing web searches using the configured provider (Tavily, LinkUp, SearXNG, or Jina).
     """
     def __init__(self, controller=None):
         # Get provider and API keys from user settings or environment
@@ -61,6 +63,7 @@ class WebSearchTool:
         self.description = f"Performs a web search using the configured provider ({self.provider.capitalize()}) to find up-to-date information."
         self.parameters_schema = WebSearchInput
         self.api_key_configured = False
+        self.jina_semaphore = Semaphore(5)  # Limit concurrent requests for Jina
 
         try:
             if self.provider == "tavily":
@@ -98,13 +101,17 @@ class WebSearchTool:
                 logger.info("WebSearchTool initialized with SearXNG.")
             elif self.provider == "jina":
                 api_key = get_jina_api_key()
+                logger.info(f"Retrieved Jina API key: {'Found' if api_key else 'Not found'}")
+                if api_key:
+                    logger.info(f"API key format check: {api_key.startswith('jina_') if api_key else 'N/A'}")
                 if not api_key:
                     logger.warning("Jina API key not configured in user settings or environment variables.")
                     self.api_key_configured = False
                     return
-                self.client = JinaClient(api_key=api_key)
+                # Don't create a client - Jina uses direct HTTP calls
+                self.client = api_key  # Store the API key directly
                 self.api_key_configured = True
-                logger.info("WebSearchTool initialized with JinaClient.")    
+                logger.info("WebSearchTool initialized with Jina API.")    
             else:
                 raise ValueError(f"Unsupported web search provider configured: {self.provider}")
         except Exception as e:
@@ -123,7 +130,6 @@ class WebSearchTool:
         update_callback: Optional[Callable] = None,
         log_queue: Optional[queue.Queue] = None,
         mission_id: Optional[str] = None
-        # Removed agent_controller parameter
     ) -> Dict[str, Any]:
         """
         Executes the web search using the configured provider's API.
@@ -145,6 +151,9 @@ class WebSearchTool:
             A dictionary containing a list under the key 'results' on success,
             or a dictionary with an 'error' key on failure.
         """
+        # Initialize formatted_results
+        formatted_results = []
+        
         # Check if configuration is available
         if not self.api_key_configured:
             if self.provider == "searxng":
@@ -182,12 +191,10 @@ class WebSearchTool:
         logger.info(f"Executing {self.provider.capitalize()} search for '{query}' with max_results={max_results}, depth={depth}")
         error_msg = None
 
-        # Only add academic suffix if it's not already in the query
+        # Add academic paper suffix for better results (only if not already present)
         search_query = query
         if "academic" not in query.lower() and "paper" not in query.lower():
             search_query = query + " academic paper"
-        # Add academic paper suffix for better results
-        search_query = query + " academic paper"
 
         try:
             if self.provider == "tavily":
@@ -224,7 +231,7 @@ class WebSearchTool:
                     })
 
             elif self.provider == "linkup":
-                                # Map depth values for LinkUp
+                # Map depth values for LinkUp
                 linkup_depth = "standard" if depth == "standard" else "deep"
 
                 # Build LinkUp search parameters for Python client
@@ -275,8 +282,6 @@ class WebSearchTool:
                 elif isinstance(response, dict) and 'error' in response:
                      error_msg = f"LinkUp API error: {response['error']}"
                      logger.error(error_msg)
-                # Add handling for other potential error formats if Linkup API has them
-                # elif ... other error conditions ...
                 else:
                     # Handle truly unexpected response format (neither LinkupSearchResults nor known error dict)
                     error_msg = f"Unexpected LinkUp response format: {type(response)}"
@@ -309,60 +314,86 @@ class WebSearchTool:
                     })
 
             elif self.provider == "jina":
-            # Jina Search API endpoint
-                api_url = "https://s.jina.ai/"
-                api_key = get_jina_api_key()
-                if not api_key:
-                     raise ValueError("Jina API key not configured.")
-
-            # Prepare headers
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "X-No-Cache": "true",  # always fresh results
-            }
-
-            # Optionally handle domain/site search
-            if include_domains:
-                # Use first domain, or concatenate if needed
-                headers["X-Site"] = include_domains[0]
-
-            # Prepare request body
-            payload = {
-                "q": query,
-            }
-            if max_results:
-                payload["num"] = max_results
-
-            # Optional: Add language/location/country if available
-            # payload["hl"] = "en"
-            # payload["gl"] = "US"
-            # payload["location"] = "San Francisco"
-
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(api_url, headers=headers, json=payload, timeout=30)
-
-            if resp.status_code != 200:
-                logger.error(f"Jina API error: {resp.status_code} {resp.text}")
-                raise RuntimeError(f"Jina API error: {resp.status_code}")
-
-            results_json = resp.json()
-            # Extract and format search results for downstream use
-            formatted_results = []
-            for item in results_json.get("data", []):
-                formatted_results.append({
-                    "title": item.get("title"),
-                    "description": item.get("description"),
-                    "url": item.get("url"),
-                    "content": item.get("content"),
-                    "usage": item.get("usage"),
-                })
-
-            return {"results": formatted_results}
+                # Use semaphore to limit concurrent requests
+                async with self.jina_semaphore:
+                    # Add a small delay to respect rate limits
+                    await asyncio.sleep(0.1)
+                    
+                    # Jina Search API endpoint
+                    api_url = "https://s.jina.ai/"
+                    api_key = self.client  # Get the API key from self.client
+                    
+                    logger.info(f"Making Jina API request to {api_url}")
+                    logger.info(f"Request payload: {{'q': '{search_query}', 'num': {max_results}}}")
+                    
+                    # Prepare headers
+                    headers = {
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                        "X-No-Cache": "true",  # always fresh results
+                    }
+                    
+                    # Map search depth to X-Engine header
+                    if depth == "advanced":
+                        headers["X-Engine"] = "browser"  # Better quality content
+                    else:
+                        headers["X-Engine"] = "direct"   # Faster results
+                    
+                    # Handle domain filtering
+                    if include_domains:
+                        headers["X-Site"] = include_domains[0]
+                    
+                    # Prepare request body
+                    payload = {
+                        "q": search_query,
+                    }
+                    if max_results:
+                        payload["num"] = max_results
+                    
+                    # Configure timeouts and connection limits
+                    timeout = httpx.Timeout(30.0, connect=10.0)  # 30s total, 10s connect
+                    limits = httpx.Limits(max_keepalive_connections=5, max_connections=10)
+                    
+                    # Make the HTTP request with proper error handling
+                    resp = None
+                    try:
+                        logger.info("HTTP client created, sending request...")
+                        async with httpx.AsyncClient(timeout=timeout, limits=limits) as http_client:
+                            resp = await http_client.post(api_url, headers=headers, json=payload)
+                            resp.raise_for_status()  # Raise exception for HTTP errors
+                            logger.info(f"Received response: {resp.status_code}")
+                        
+                        if resp.status_code == 200:
+                            results_json = resp.json()
+                            logger.info(f"Parsed {len(results_json.get('data', []))} results from Jina API")
+                            # Extract and format search results
+                            search_results = results_json.get("data", [])
+                            for item in search_results:
+                                formatted_results.append({
+                                    "title": item.get("title", "No Title"),
+                                    "snippet": item.get("description", "No Snippet"),  # Use description as snippet
+                                    "url": item.get("url", "#")
+                                })
+                        else:
+                            error_msg = f"Jina API returned status {resp.status_code}"
+                            logger.error(error_msg)
+                            
+                    except httpx.TimeoutException:
+                        error_msg = "Jina API request timed out after 30 seconds"
+                        logger.error(error_msg)
+                    except httpx.HTTPStatusError as e:
+                        error_msg = f"Jina API HTTP error: {e.response.status_code} - {e.response.text}"
+                        logger.error(error_msg)
+                    except httpx.ConnectError:
+                        error_msg = "Failed to connect to Jina API - network issue"
+                        logger.error(error_msg)
+                    except Exception as e:
+                        error_msg = f"Jina API request failed: {str(e)}"
+                        logger.error(error_msg)
 
             if error_msg:
-                 return {"error": error_msg}
+                return {"error": error_msg}
 
             logger.info(f"{self.provider.capitalize()} search successful, returning {len(formatted_results)} results.")
 
@@ -392,7 +423,7 @@ class WebSearchTool:
                 user_friendly_error = f"Web search failed due to invalid {self.provider.capitalize()} API key. Please check your API key in Settings > Search and ensure it's valid and has sufficient credits."
             elif "quota" in str(e).lower() or "limit" in str(e).lower():
                 user_friendly_error = f"Web search quota exceeded for {self.provider.capitalize()}. Please check your account limits or try again later."
-            elif "network" in str(e).lower() or "connection" in str(e).lower():
+            elif "network" in str(e).lower() or "connection" in str(e).lower() or "timeout" in str(e).lower():
                 user_friendly_error = f"Web search temporarily unavailable due to network issues. Please try again in a moment."
             else:
                 user_friendly_error = f"Web search temporarily unavailable. Please try again or check your {self.provider.capitalize()} API key configuration in Settings."
