@@ -1,12 +1,11 @@
 import React from 'react'
 import { useSettingsStore } from './SettingsStore'
-// import { Button } from '../../../components/ui/button'
+import { Button } from '../../../components/ui/button'
 import { Input } from '../../../components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card'
 import { Label } from '../../../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select'
 import { Globe, Settings, ChevronDown } from 'lucide-react'
-import { Button } from '../../../components/ui/button'
 import { Checkbox } from '../../../components/ui/checkbox'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../../../components/ui/dropdown-menu'
 
@@ -27,7 +26,7 @@ const SEARXNG_CATEGORIES = [
 export const SearchSettingsTab: React.FC = () => {
   const { draftSettings, setDraftSettings } = useSettingsStore()
 
-  const handleProviderChange = (provider: 'tavily' | 'linkup' | 'searxng') => {
+  const handleProviderChange = (provider: 'tavily' | 'linkup' | 'searxng' | 'jina') => {
     if (!draftSettings) return
     
     const newSearch = {
@@ -118,13 +117,14 @@ export const SearchSettingsTab: React.FC = () => {
                   <SelectItem value="tavily">Tavily</SelectItem>
                   <SelectItem value="linkup">LinkUp</SelectItem>
                   <SelectItem value="searxng">SearXNG</SelectItem>
+                  <SelectItem value="jina">Jina</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             {draftSettings.search.provider === 'tavily' && (
               <div className="space-y-3 pl-3 border-l-2 border-blue-200 bg-blue-50/30 rounded-r-lg p-3">
-                <p className="text-xs text-muted-foreground-foreground mb-2">
+                <p className="text-xs text-muted-foreground mb-2">
                   AI-powered search with real-time web data and citations.
                 </p>
                 <div className="space-y-1.5">
@@ -154,7 +154,7 @@ export const SearchSettingsTab: React.FC = () => {
 
             {draftSettings.search.provider === 'linkup' && (
               <div className="space-y-3 pl-3 border-l-2 border-green-200 bg-green-50/30 rounded-r-lg p-3">
-                <p className="text-xs text-muted-foreground-foreground mb-2">
+                <p className="text-xs text-muted-foreground mb-2">
                   Real-time search API with comprehensive web coverage.
                 </p>
                 <div className="space-y-1.5">
@@ -184,7 +184,7 @@ export const SearchSettingsTab: React.FC = () => {
 
             {draftSettings.search.provider === 'searxng' && (
               <div className="space-y-3 pl-3 border-l-2 border-purple-200 bg-purple-50/30 rounded-r-lg p-3">
-                <p className="text-xs text-muted-foreground-foreground mb-2">
+                <p className="text-xs text-muted-foreground mb-2">
                   Open-source metasearch engine that aggregates results from multiple search engines.
                 </p>
                 <div className="space-y-1.5">
@@ -213,7 +213,7 @@ export const SearchSettingsTab: React.FC = () => {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent className="w-full p-0" align="start">
                         <div className="p-3">
-                          <p className="text-xs text-muted-foreground-foreground mb-3">
+                          <p className="text-xs text-muted-foreground mb-3">
                             Select one or more categories for search results:
                           </p>
                           <div className="space-y-2">
@@ -263,12 +263,43 @@ export const SearchSettingsTab: React.FC = () => {
                 </p>
               </div>
             )}
+
+            {draftSettings.search.provider === 'jina' && (
+              <div className="space-y-3 pl-3 border-l-2 border-blue-200 bg-blue-50/30 rounded-r-lg p-3">
+                <p className="text-xs text-muted-foreground mb-2">
+                  Jina AI - neural search provider for semantic web search.
+                </p>
+                <div className="space-y-1.5">
+                  <Label htmlFor="jina-api-key" className="text-sm">Jina API Key</Label>
+                  <Input
+                    id="jina-api-key"
+                    type="password"
+                    value={draftSettings.search.jina_api_key || ''}
+                    onChange={(e) => handleApiKeyChange('jina_api_key', e.target.value)}
+                    placeholder="jina-..."
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Get your API key from{' '}
+                  <a 
+                    href="https://cloud.jina.ai/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
+                    Jina Dashboard
+                  </a>
+                </p>
+              </div>
+            )}
+
           </div>
         </CardContent>
       </Card>
 
       {/* Provider-specific search configuration */}
-      {(draftSettings.search.provider === 'tavily' || draftSettings.search.provider === 'linkup') && (
+      {(draftSettings.search.provider === 'tavily' || draftSettings.search.provider === 'linkup' || draftSettings.search.provider === 'jina') && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
@@ -276,7 +307,10 @@ export const SearchSettingsTab: React.FC = () => {
               Search Configuration
             </CardTitle>
             <CardDescription className="text-sm">
-              Configure search behavior and parameters for {draftSettings.search.provider === 'tavily' ? 'Tavily' : 'LinkUp'}.
+              Configure search behavior and parameters for {
+                draftSettings.search.provider === 'tavily' ? 'Tavily' :
+                draftSettings.search.provider === 'linkup' ? 'LinkUp' : 'Jina'
+              }.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -315,6 +349,11 @@ export const SearchSettingsTab: React.FC = () => {
                         <SelectItem value="standard">Standard (Basic - 1 credit)</SelectItem>
                         <SelectItem value="advanced">Advanced (2 credits)</SelectItem>
                       </>
+                    ) : draftSettings.search.provider === 'jina' ? (
+                      <>
+                        <SelectItem value="standard">Standard (Fast - Direct engine)</SelectItem>
+                        <SelectItem value="advanced">Advanced (Browser engine - Best quality)</SelectItem>
+                      </>
                     ) : (
                       <>
                         <SelectItem value="standard">Standard (Fast)</SelectItem>
@@ -326,13 +365,15 @@ export const SearchSettingsTab: React.FC = () => {
                 <p className="text-xs text-muted-foreground">
                   {draftSettings.search.provider === 'tavily' 
                     ? 'Advanced search provides more comprehensive results but costs 2x API credits.'
+                    : draftSettings.search.provider === 'jina'
+                    ? 'Advanced uses browser engine for best quality content extraction, Standard uses direct engine for faster results.'
                     : 'Deep search uses an agentic workflow for more comprehensive results but takes longer.'}
                 </p>
               </div>
             </div>
           </CardContent>
         </Card>
-      )}
+      )} 
 
       {/* SearXNG-specific configuration */}
       {draftSettings.search.provider === 'searxng' && (

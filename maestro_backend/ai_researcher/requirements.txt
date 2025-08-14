@@ -35,3 +35,4 @@ newspaper3k # <-- Add web content extraction library
 lxml[html_clean] # <-- Add lxml with cleaning extras for newspaper3k
 lxml_html_clean
 linkup-sdk
+jinaai>=latest

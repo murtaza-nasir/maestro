@@ -153,6 +153,18 @@ def get_linkup_api_key(mission_id: Optional[str] = None) -> Optional[str]:
     # Fallback to environment variable
     return os.getenv("LINKUP_API_KEY")
 
+def get_jina_api_key(mission_id: Optional[str] = None) -> Optional[str]:
+    """Get the Jina API key from user settings or environment."""   
+    # Check user settings first
+    user_settings = get_user_settings()
+    if user_settings:
+        search_settings = user_settings.get("search", {})
+        if search_settings and search_settings.get("jina_api_key"):
+            return search_settings["jina_api_key"]
+
+    # Fallback to environment variable
+    return os.getenv("JINA_API_KEY")             
+
 def get_searxng_base_url(mission_id: Optional[str] = None) -> Optional[str]:
     """Get the SearXNG base URL from user settings or environment."""
     # Check user settings first
@@ -161,10 +173,11 @@ def get_searxng_base_url(mission_id: Optional[str] = None) -> Optional[str]:
         search_settings = user_settings.get("search", {})
         if search_settings and search_settings.get("searxng_base_url"):
             return search_settings["searxng_base_url"]
-    
+            
     # Fallback to environment variable
-    return os.getenv("SEARXNG_BASE_URL")
+    return os.getenv("SEARXNG_BASE_URL") 
 
+        
 def get_searxng_categories(mission_id: Optional[str] = None) -> str:
     """Get the SearXNG categories from user settings or environment."""
     # Check user settings first

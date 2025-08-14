@@ -12,7 +12,7 @@ from unittest.mock import patch, MagicMock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ai_researcher.dynamic_config import (
-    get_web_search_provider, get_tavily_api_key, get_linkup_api_key
+    get_web_search_provider, get_tavily_api_key, get_linkup_api_key, get_jina_api_key
 )
 from ai_researcher.user_context import set_current_user
 from database.models import User
@@ -28,19 +28,23 @@ def test_search_provider_fallback_to_env():
     with patch.dict(os.environ, {
         'WEB_SEARCH_PROVIDER': 'tavily',
         'TAVILY_API_KEY': 'test-tavily-key',
-        'LINKUP_API_KEY': 'test-linkup-key'
+        'LINKUP_API_KEY': 'test-linkup-key',
+        'JINA_API_KEY': 'test-jina-key
     }):
         provider = get_web_search_provider()
         tavily_key = get_tavily_api_key()
         linkup_key = get_linkup_api_key()
+        jina_key = get_jina_api_key()
         
         print(f"Provider: {provider}")
         print(f"Tavily API Key: {tavily_key}")
         print(f"LinkUp API Key: {linkup_key}")
+        print(f"Jina API Key: {jina_key}")  
         
         assert provider == "tavily", f"Expected 'tavily', got '{provider}'"
         assert tavily_key == "test-tavily-key", f"Expected 'test-tavily-key', got '{tavily_key}'"
         assert linkup_key == "test-linkup-key", f"Expected 'test-linkup-key', got '{linkup_key}'"
+        assert jina_key == "test-jina-key", f"Expected 'test-jina-key', got '{jina_key}'"
         
         print("✅ Environment variable fallback working correctly")
 
@@ -54,7 +58,8 @@ def test_search_provider_user_settings():
         "search": {
             "provider": "linkup",
             "tavily_api_key": "user-tavily-key",
-            "linkup_api_key": "user-linkup-key"
+            "linkup_api_key": "user-linkup-key",
+            "jina_api_key": "user-jina-key"
         }
     }
     
@@ -65,19 +70,23 @@ def test_search_provider_user_settings():
     with patch.dict(os.environ, {
         'WEB_SEARCH_PROVIDER': 'tavily',
         'TAVILY_API_KEY': 'env-tavily-key',
-        'LINKUP_API_KEY': 'env-linkup-key'
+        'LINKUP_API_KEY': 'env-linkup-key',
+        'JINA_API_KEY': 'env-jina-key'  
     }):
         provider = get_web_search_provider()
         tavily_key = get_tavily_api_key()
         linkup_key = get_linkup_api_key()
+        jina_key = get_jina_api_key()
         
         print(f"Provider: {provider}")
         print(f"Tavily API Key: {tavily_key}")
         print(f"LinkUp API Key: {linkup_key}")
+        print(f"Jina API Key: {jina_key}")  
         
         assert provider == "linkup", f"Expected 'linkup', got '{provider}'"
         assert tavily_key == "user-tavily-key", f"Expected 'user-tavily-key', got '{tavily_key}'"
         assert linkup_key == "user-linkup-key", f"Expected 'user-linkup-key', got '{linkup_key}'"
+        assert jina_key == "user-jina-key", f"Expected 'user-jina-key', got '{jina_key}'"
         
         print("✅ User settings override working correctly")
 
@@ -102,19 +111,23 @@ def test_search_provider_partial_user_settings():
     with patch.dict(os.environ, {
         'WEB_SEARCH_PROVIDER': 'linkup',
         'TAVILY_API_KEY': 'env-tavily-key',
-        'LINKUP_API_KEY': 'env-linkup-key'
+        'LINKUP_API_KEY': 'env-linkup-key',
+        'JINA_API_KEY': 'env-jina-key'
     }):
         provider = get_web_search_provider()
         tavily_key = get_tavily_api_key()
         linkup_key = get_linkup_api_key()
+        jina_key = get_jina_api_key()   
         
         print(f"Provider: {provider}")
         print(f"Tavily API Key: {tavily_key}")
         print(f"LinkUp API Key: {linkup_key}")
+        print(f"Jina API Key: {jina_key}")
         
         assert provider == "tavily", f"Expected 'tavily', got '{provider}'"
         assert tavily_key == "user-tavily-key", f"Expected 'user-tavily-key', got '{tavily_key}'"
         assert linkup_key == "env-linkup-key", f"Expected 'env-linkup-key', got '{linkup_key}'"
+        assert jina_key == "env-jina-key", f"Expected 'env-jina-key', got '{jina_key}'" 
         
         print("✅ Partial user settings working correctly")
 
@@ -134,18 +147,22 @@ def test_search_provider_no_settings():
         'WEB_SEARCH_PROVIDER': 'tavily',
         'TAVILY_API_KEY': 'env-tavily-key',
         'LINKUP_API_KEY': 'env-linkup-key'
+        'JINA_API_KEY': 'env-jina-key'
     }):
         provider = get_web_search_provider()
         tavily_key = get_tavily_api_key()
         linkup_key = get_linkup_api_key()
+        jina_key = get_jina_api_key()   
         
         print(f"Provider: {provider}")
         print(f"Tavily API Key: {tavily_key}")
         print(f"LinkUp API Key: {linkup_key}")
+        print(f"Jina API Key: {jina_key}")
         
         assert provider == "tavily", f"Expected 'tavily', got '{provider}'"
         assert tavily_key == "env-tavily-key", f"Expected 'env-tavily-key', got '{tavily_key}'"
         assert linkup_key == "env-linkup-key", f"Expected 'env-linkup-key', got '{linkup_key}'"
+        assert jina_key == "env-jina-key", f"Expected 'env-jina-key', got '{jina_key}'"
         
         print("✅ No search settings fallback working correctly")
 

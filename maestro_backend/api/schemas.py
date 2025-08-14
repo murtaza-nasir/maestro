@@ -77,6 +77,7 @@ class SearchSettings(BaseModel):
     provider: str
     tavily_api_key: Optional[str] = None
     linkup_api_key: Optional[str] = None
+    jina_api_key: Optional[str] = None
     searxng_base_url: Optional[str] = None
     searxng_categories: Optional[str] = None
     max_results: Optional[int] = None

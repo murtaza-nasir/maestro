@@ -18,7 +18,7 @@ detect_gpu() {
     # Check for NVIDIA GPU on Linux/Windows
     if command -v nvidia-smi &> /dev/null; then
         # Check if nvidia-container-toolkit is installed
-        if docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi &> /dev/null 2>&1; then
+        if docker run --rm --gpus all nvidia/cuda:12.8.0-base-ubuntu24.04 nvidia-smi &> /dev/null 2>&1; then
             echo "nvidia"
             return
         fi
