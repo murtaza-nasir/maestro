@@ -445,7 +445,6 @@ maestro_backend/cleanup_*.py
 maestro_backend/apply_*.py
 maestro_backend/update_*.py
 maestro_backend/nuke_and_restart.sh
-maestro_backend/services/*_v2.py
 maestro_backend/ai_researcher/core_rag/vector_store_safe.py
 temp.txt
 setup.sh
