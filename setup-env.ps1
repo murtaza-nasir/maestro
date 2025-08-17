@@ -78,9 +78,79 @@ switch ($setupMode) {
 }
 
 # Port configuration
+Write-Host ""
 $maestroPort = Read-Host "Port for MAESTRO (default: 80)"
 if (-not $maestroPort) { $maestroPort = "80" }
 (Get-Content .env) -replace 'MAESTRO_PORT=80', "MAESTRO_PORT=$maestroPort" | Set-Content .env
+
+# Database Security Configuration
+Write-Host ""
+Write-Host "Database Security Setup" -ForegroundColor Cyan
+Write-Host "Choose how to set database passwords:"
+Write-Host "1) Generate secure random passwords (recommended)"
+Write-Host "2) Enter custom passwords"
+Write-Host "3) Skip (use default - NOT RECOMMENDED for production)"
+$passMode = Read-Host "Choice (1-3, default: 1)"
+if (-not $passMode) { $passMode = "1" }
+
+switch ($passMode) {
+    "1" {
+        # Generate secure random passwords
+        $postgresPass = -join ((65..90) + (97..122) + (48..57) | Get-Random -Count 25 | ForEach-Object {[char]$_})
+        $adminPass = -join ((65..90) + (97..122) + (48..57) | Get-Random -Count 16 | ForEach-Object {[char]$_})
+        $jwtSecret = -join ((65..90) + (97..122) + (48..57) | Get-Random -Count 64 | ForEach-Object {[char]$_})
+        
+        (Get-Content .env) -replace 'POSTGRES_PASSWORD=CHANGE_THIS_PASSWORD_IMMEDIATELY', "POSTGRES_PASSWORD=$postgresPass" | Set-Content .env
+        (Get-Content .env) -replace 'ADMIN_PASSWORD=CHANGE_THIS_ADMIN_PASSWORD', "ADMIN_PASSWORD=$adminPass" | Set-Content .env
+        (Get-Content .env) -replace 'JWT_SECRET_KEY=GENERATE_A_RANDOM_KEY_DO_NOT_USE_DEFAULT', "JWT_SECRET_KEY=$jwtSecret" | Set-Content .env
+        
+        Write-Host "SUCCESS: Generated secure passwords" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "SAVE THESE CREDENTIALS:" -ForegroundColor Yellow
+        Write-Host "   Admin Username: admin" -ForegroundColor Yellow
+        Write-Host "   Admin Password: $adminPass" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "   Database credentials are stored in .env" -ForegroundColor Gray
+    }
+    "2" {
+        # Custom passwords
+        $postgresPass = Read-Host "Enter PostgreSQL password" -AsSecureString
+        $postgresPassConfirm = Read-Host "Confirm PostgreSQL password" -AsSecureString
+        
+        # Convert SecureString to plain text for comparison
+        $postgresPassPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($postgresPass))
+        $postgresPassConfirmPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($postgresPassConfirm))
+        
+        if ($postgresPassPlain -ne $postgresPassConfirmPlain) {
+            Write-Host "ERROR: Passwords don't match. Using defaults." -ForegroundColor Red
+        } else {
+            $adminPass = Read-Host "Enter admin password" -AsSecureString
+            $adminPassPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($adminPass))
+            
+            $jwtSecret = Read-Host "Enter JWT secret (press Enter to generate)"
+            if (-not $jwtSecret) {
+                $jwtSecret = -join ((65..90) + (97..122) + (48..57) | Get-Random -Count 64 | ForEach-Object {[char]$_})
+                Write-Host "Generated JWT secret" -ForegroundColor Green
+            }
+            
+            (Get-Content .env) -replace 'POSTGRES_PASSWORD=CHANGE_THIS_PASSWORD_IMMEDIATELY', "POSTGRES_PASSWORD=$postgresPassPlain" | Set-Content .env
+            (Get-Content .env) -replace 'ADMIN_PASSWORD=CHANGE_THIS_ADMIN_PASSWORD', "ADMIN_PASSWORD=$adminPassPlain" | Set-Content .env
+            (Get-Content .env) -replace 'JWT_SECRET_KEY=GENERATE_A_RANDOM_KEY_DO_NOT_USE_DEFAULT', "JWT_SECRET_KEY=$jwtSecret" | Set-Content .env
+            
+            Write-Host "SUCCESS: Custom passwords set" -ForegroundColor Green
+            Write-Host ""
+            Write-Host "   Admin Username: admin" -ForegroundColor Yellow
+            Write-Host "   Admin Password: [your custom password]" -ForegroundColor Yellow
+        }
+    }
+    "3" {
+        Write-Host "WARNING: Using default passwords - CHANGE THESE IN PRODUCTION!" -ForegroundColor Yellow
+        Write-Host "   Default admin login: admin / admin123" -ForegroundColor Yellow
+    }
+    default {
+        Write-Host "Invalid choice. Using defaults." -ForegroundColor Red
+    }
+}
 
 # Timezone
 Write-Host ""
@@ -167,9 +237,13 @@ if ($maestroPort -eq "80") {
     }
 }
 Write-Host ""
-Write-Host "Default login:"
-Write-Host "  Username: admin"
-Write-Host "  Password: admin123"
+if ($passMode -eq "3") {
+    Write-Host "Default login:" -ForegroundColor Cyan
+    Write-Host "  Username: admin"
+    Write-Host "  Password: admin123"
+} else {
+    Write-Host "Login credentials were displayed above" -ForegroundColor Cyan
+}
 Write-Host ""
 Write-Host "Start MAESTRO with:"
 Write-Host "  docker compose up -d" -ForegroundColor Cyan
