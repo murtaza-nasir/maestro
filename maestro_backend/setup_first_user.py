@@ -23,17 +23,24 @@ def create_first_user():
     db = SessionLocal()
     
     try:
+        # Get admin credentials from environment or use defaults
+        admin_username = os.environ.get('ADMIN_USERNAME', 'admin')
+        admin_password = os.environ.get('ADMIN_PASSWORD', 'admin123')
+        admin_email = os.environ.get('ADMIN_EMAIL', 'admin@maestro.local')
+        
         # Check if admin user already exists
-        existing_user = db.query(User).filter(User.username == "admin").first()
+        existing_user = db.query(User).filter(User.username == admin_username).first()
         if existing_user:
-            print("Admin user 'admin' already exists.")
+            print(f"Admin user '{admin_username}' already exists.")
             return existing_user
         
         # Create admin user
-        hashed_password = get_password_hash("adminpass123")
+        hashed_password = get_password_hash(admin_password)
         admin_user = User(
-            username="admin",
+            username=admin_username,
+            email=admin_email,
             hashed_password=hashed_password,
+            full_name="System Administrator",
             is_admin=True,
             is_active=True,
             role="admin",
@@ -47,8 +54,9 @@ def create_first_user():
         db.refresh(admin_user)
         
         print(f"✅ Admin user created successfully:")
-        print(f"   Username: admin")
-        print(f"   Password: adminpass123")
+        print(f"   Username: {admin_username}")
+        print(f"   Email: {admin_email}")
+        print(f"   Password: {'[FROM ENVIRONMENT]' if admin_password != 'admin123' else 'admin123 (DEFAULT - CHANGE IMMEDIATELY!)'}")
         print(f"   User ID: {admin_user.id}")
         
         return admin_user

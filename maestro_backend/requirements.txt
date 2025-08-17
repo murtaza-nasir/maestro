@@ -2,6 +2,8 @@
 fastapi
 uvicorn[standard]
 sqlalchemy
+psycopg2-binary
+asyncpg
 passlib[bcrypt]
 python-jose[cryptography]
 python-multipart
@@ -24,7 +26,7 @@ python-docx
 
 # Embeddings & Vector Store
 FlagEmbedding
-chromadb
+# chromadb - removed, using PostgreSQL pgvector instead
 torch
 torchvision
 torchaudio
@@ -42,3 +44,5 @@ linkup-sdk
 psutil
 pytz
 pypandoc
+typer
+rich

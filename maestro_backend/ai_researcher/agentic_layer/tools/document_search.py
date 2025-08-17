@@ -108,6 +108,77 @@ class DocumentSearchTool:
         except Exception as e:
             logger.error(f"DEBUG: Error querying documents from group {document_group_id}: {e}", exc_info=True)
             return []
+    
+    def _enrich_chunks_with_document_metadata(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Enrich chunks with document metadata from PostgreSQL database.
+        
+        Args:
+            chunks: List of chunks from vector store
+        
+        Returns:
+            List of chunks with enriched metadata including original_filename
+        """
+        if not chunks:
+            return chunks
+        
+        try:
+            # Import database dependencies
+            from database.database import get_db
+            from database.models import Document
+            from sqlalchemy.orm import Session
+            
+            # Extract unique doc_ids from chunks
+            doc_ids = set()
+            for chunk in chunks:
+                doc_id = chunk.get("metadata", {}).get("doc_id")
+                if doc_id:
+                    doc_ids.add(doc_id)
+            
+            if not doc_ids:
+                logger.warning("No doc_ids found in chunks to enrich")
+                return chunks
+            
+            # Get database session
+            db_gen = get_db()
+            db: Session = next(db_gen)
+            
+            try:
+                # Batch fetch documents from PostgreSQL
+                documents = db.query(Document).filter(Document.id.in_(list(doc_ids))).all()
+                
+                # Create lookup dictionary
+                doc_metadata_lookup = {}
+                for doc in documents:
+                    doc_metadata_lookup[doc.id] = {
+                        "original_filename": doc.original_filename or doc.filename,
+                        "filename": doc.filename,
+                        "title": doc.metadata_.get("title") if doc.metadata_ else None,
+                        "authors": doc.metadata_.get("authors") if doc.metadata_ else None,
+                        "year": doc.metadata_.get("year") if doc.metadata_ else None,
+                        "journal": doc.metadata_.get("journal") if doc.metadata_ else None,
+                        "processing_status": doc.processing_status
+                    }
+                
+                # Enrich each chunk
+                for chunk in chunks:
+                    doc_id = chunk.get("metadata", {}).get("doc_id")
+                    if doc_id and doc_id in doc_metadata_lookup:
+                        # Merge document metadata into chunk metadata
+                        chunk["metadata"].update(doc_metadata_lookup[doc_id])
+                    else:
+                        logger.debug(f"Document {doc_id} not found in database for enrichment")
+                
+                logger.info(f"Enriched {len(chunks)} chunks with metadata from {len(doc_metadata_lookup)} documents")
+                
+            finally:
+                db.close()
+        
+        except Exception as e:
+            logger.error(f"Error enriching chunks with document metadata: {e}")
+            # Return chunks unchanged if enrichment fails
+        
+        return chunks
 
     async def execute( # Make method async
         self,
@@ -282,6 +353,9 @@ class DocumentSearchTool:
                 # If not reranking, just take the top N (or fewer) aggregated results
                 final_results = initial_aggregated_list[:n_results]
                 logger.info(f"Returning {len(final_results)} aggregated results (reranker disabled or skipped).")
+
+            # 6.5. Enrich results with document metadata from PostgreSQL
+            final_results = self._enrich_chunks_with_document_metadata(final_results)
 
             # 7. Return Results
             return final_results

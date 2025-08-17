@@ -19,12 +19,14 @@ export interface MissionContext {
 }
 
 export interface Log {
+  log_id?: string;  // Unique identifier for each log entry
   timestamp: Date;
   agent_name: string;
   action: string;
   status: 'success' | 'failure' | 'running' | 'warning';
   output_summary?: string;
   error_message?: string;
+  input_summary?: string;  // Added to match backend
 }
 
 interface Mission {
@@ -472,22 +474,21 @@ export const useMissionStore = create<MissionState>((set, get) => ({
     })
   },
 
-  setMissionLogs: async (missionId: string, logs: Log[]) => {
+  setMissionLogs: (missionId: string, logs: Log[]) => {
     const processedLogs = logs.map(l => ({ ...l, timestamp: ensureDate(l.timestamp) }))
     
-    // Store logs in IndexedDB
-    try {
-      await missionDB.storeLogs(missionId, processedLogs)
-    } catch (error) {
-      console.error('Failed to store logs in IndexedDB:', error)
-    }
-    
+    // Update state synchronously first to prevent race conditions
     set((state) => ({
       missionLogs: {
         ...state.missionLogs,
         [missionId]: processedLogs,
       },
     }))
+    
+    // Store logs in IndexedDB asynchronously (non-blocking)
+    missionDB.storeLogs(missionId, processedLogs).catch((error) => {
+      console.error('Failed to store logs in IndexedDB:', error)
+    })
   },
 
   setMissionDraft: (missionId: string, draft: string) => {

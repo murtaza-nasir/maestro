@@ -1,13 +1,13 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useCallback, useRef } from 'react'
 import { useChatStore } from '../../chat/store'
-import { useMissionStore, type Log } from '../store'
+import { useMissionStore } from '../store'
 import { ResearchTabs } from './ResearchTabs'
 import { Button } from '../../../components/ui/button'
 import { PanelHeader } from '../../../components/ui/PanelHeader'
 import { PanelControls } from '../../../components/ui/PanelControls'
 import { usePanelControls } from '../../../components/layout/SplitPaneLayout'
 import { useToast } from '../../../components/ui/toast'
-import { useMissionWebSocket } from '../../../services/websocket'
+import { useResearchWebSocket } from '../../../services/websocket'
 import { apiClient } from '../../../config/api'
 import { MissionHeaderStats } from '../../../components/mission'
 import { ensureDate } from '../../../utils/timezone'
@@ -17,7 +17,7 @@ export const ResearchPanel: React.FC = () => {
   const { activeChat } = useChatStore()
   const { missions, startMission, stopMission, resumeMission, fetchMissionStatus, ensureMissionInStore, missionLogs, setMissionLogs } = useMissionStore()
   const { addToast } = useToast()
-  const [logs, setLogs] = useState<Log[]>([])
+  const previousMissionId = useRef<string | null>(null)
   
   // Get panel controls - use try/catch to handle when not in SplitPaneLayout context
   let panelControls = null
@@ -39,104 +39,73 @@ export const ResearchPanel: React.FC = () => {
     }
     
     try {
-      // Always fetch from database to get the complete persistent log history
-      const response = await apiClient.get(`/api/missions/${activeChat.missionId}/logs`)
+      // Fetch only recent logs to reduce payload size (limit to 100 most recent)
+      // WebSocket will provide real-time updates for new logs
+      const response = await apiClient.get(`/api/missions/${activeChat.missionId}/logs?limit=100`)
       if (response.data && response.data.logs) {
         const persistentLogs = response.data.logs.map((log: any) => ({
           ...log,
           timestamp: ensureDate(log.timestamp),
         }))
         
-        // Sort by timestamp
-        persistentLogs.sort((a: Log, b: Log) => a.timestamp.getTime() - b.timestamp.getTime())
+        // Sort logs by timestamp (newest first, then reverse for chronological order)
+        const sortedLogs = persistentLogs.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
         
-        // Set the logs directly from database - this is the authoritative source
-        setLogs(persistentLogs)
-        setMissionLogs(activeChat.missionId, persistentLogs)
-        
-        // console.log(`Loaded ${persistentLogs.length} logs from database for mission ${activeChat.missionId}`)
+        setMissionLogs(activeChat.missionId, sortedLogs)
+        // console.log(`Loaded ${persistentLogs.length} recent logs from database for mission ${activeChat.missionId}`)
       }
     } catch (error) {
       console.error('Failed to fetch initial mission logs:', error)
-      // If database fetch fails, fall back to existing in-memory logs
-      if (activeChat?.missionId && missionLogs[activeChat.missionId]) {
-        const fallbackLogs = missionLogs[activeChat.missionId].map(l => ({ ...l, timestamp: ensureDate(l.timestamp) }))
-        setLogs(fallbackLogs)
-        console.log(`Fell back to ${fallbackLogs.length} in-memory logs for mission ${activeChat.missionId}`)
-      } else {
-        setLogs([])
-        console.log(`No logs available for mission ${activeChat.missionId}`)
-      }
+      // If database fetch fails, just log the error
+      console.log(`Failed to fetch logs for mission ${activeChat.missionId}`)
     }
-  }, [activeChat?.missionId, missionLogs, setMissionLogs])
+  }, [activeChat?.missionId, setMissionLogs])
 
-  // Handle WebSocket messages for real-time log updates
-  const handleWebSocketMessage = useCallback((message: any) => {
-    try {
-      if (message.type === 'logs_update') {
-        const newLogs: Log[] = message.data.map((log: any) => ({
-          ...log,
-          timestamp: ensureDate(log.timestamp),
-        }))
-
-        setLogs(prevLogs => {
-          const updatedLogs = [...prevLogs, ...newLogs]
-          // Use the mission_id from the message instead of activeChat
-          if (message.mission_id) {
-            setMissionLogs(message.mission_id, updatedLogs)
-          }
-          return updatedLogs
-        })
-      }
-    } catch (error) {
-      console.error('Error processing WebSocket message:', error)
-    }
-  }, [setMissionLogs]) // Remove activeChat dependency
-
-  // Set up WebSocket connection for real-time updates using centralized service
-  const { isConnected, subscribe } = useMissionWebSocket(activeChat?.missionId || null)
-
-  // Subscribe to logs updates via centralized WebSocket service
+  // Set up single WebSocket connection for ALL research updates
+  const { isConnected, subscribeMission, unsubscribeMission } = useResearchWebSocket()
+  
+  // Subscribe/unsubscribe to mission when it changes
   useEffect(() => {
-    if (!isConnected) return
-
-    const unsubscribe = subscribe('logs_update', handleWebSocketMessage)
-    return unsubscribe
-  }, [activeChat?.missionId, isConnected, subscribe, handleWebSocketMessage])
-
-  // Subscribe to status updates via centralized WebSocket service
-  useEffect(() => {
-    if (!isConnected) return
-
-    const unsubscribe = subscribe('status_update', (message: any) => {
-      if (import.meta.env.DEV) {
-        console.log('Status update received:', message)
-      }
+    if (activeChat?.missionId) {
+      subscribeMission(activeChat.missionId)
       
-      if (message.mission_id === activeChat?.missionId && message.data) {
-        const { updateMissionStatus } = useMissionStore.getState()
-        updateMissionStatus(message.mission_id, message.data.status)
+      // Properly unsubscribe when mission changes or component unmounts
+      return () => {
+        unsubscribeMission(activeChat.missionId)
       }
-    })
+    }
+  }, [activeChat?.missionId, subscribeMission, unsubscribeMission])
 
-    return unsubscribe
-  }, [activeChat?.missionId, isConnected, subscribe])
+  // No need for WebSocket event subscriptions here anymore!
+  // The ResearchWebSocketService handles all mission-specific updates at the service level
+  // when subscribeMission/unsubscribeMission is called
 
   // Ensure mission is loaded and fetch status when chat changes
   useEffect(() => {
+    // Check if mission actually changed
+    const missionChanged = previousMissionId.current !== activeChat?.missionId
+    
+    if (missionChanged) {
+      // console.log(`Mission changed from ${previousMissionId.current} to ${activeChat?.missionId}`)
+      previousMissionId.current = activeChat?.missionId
+    }
+    
     if (activeChat?.missionId) {
       const loadMission = async () => {
         try {
+          // ensureMissionInStore already fetches status, so we don't need to call fetchMissionStatus
           await ensureMissionInStore(activeChat.missionId!)
-          await fetchMissionStatus(activeChat.missionId!)
-          await fetchInitialLogs()
+          // Only fetch initial logs if mission changed
+          if (missionChanged) {
+            await fetchInitialLogs()
+          }
         } catch (error) {
           console.error('Failed to load mission:', error)
         }
       }
       loadMission()
     }
-  }, [activeChat?.missionId]) // Removed unstable function dependencies
+  }, [activeChat?.missionId, fetchInitialLogs]) // Added fetchInitialLogs dependency
 
   // Minimal polling - only for actively running missions, rely on WebSocket for most updates
   useEffect(() => {
@@ -303,7 +272,7 @@ export const ResearchPanel: React.FC = () => {
               <span className="text-sm text-muted-foreground">{getStatusText(currentMission?.status)}</span>
             </div>
             <MissionHeaderStats 
-              logs={logs} 
+              logs={activeChat?.missionId ? (missionLogs[activeChat.missionId] || []) : []} 
               missionStatus={currentMission?.status} 
             />
           </div>
@@ -377,7 +346,10 @@ export const ResearchPanel: React.FC = () => {
       {/* Research Tabs Content */}
       <div className="flex-1 overflow-hidden p-6">
         <div className="h-full">
-          <ResearchTabs missionId={activeChat.missionId} />
+          <ResearchTabs 
+            missionId={activeChat.missionId} 
+            isWebSocketConnected={isConnected}
+          />
         </div>
       </div>
     </div>

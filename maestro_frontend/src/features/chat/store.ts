@@ -200,13 +200,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           return chat
         })
 
-        // Ensure activeChat is also updated with the new message
+        // activeChat should reference the same object from updatedChats, not a separate copy
         const activeChat = state.activeChat?.id === chatId 
-          ? {
-              ...state.activeChat,
-              messages: [...state.activeChat.messages, newMessage],
-              updatedAt: ensureDate(new Date()),
-            }
+          ? updatedChats.find(c => c.id === chatId) || state.activeChat
           : state.activeChat
 
         return {

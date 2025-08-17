@@ -32,6 +32,7 @@ from database.migrations.migration_017_add_role_to_users import Migration as Mig
 from database.migrations.migration_018_add_user_type_to_users import Migration as Migration018
 from database.migrations.migration_019_create_system_settings_table import Migration as Migration019
 from database.migrations.migration_020_add_execution_logs import Migration as Migration020
+from database.migrations.migration_021_merge_ai_database import Migration as Migration021
 
 # Configure logging
 logging.basicConfig(
@@ -70,6 +71,7 @@ def setup_migrations():
         runner.register_migration(Migration018)
         runner.register_migration(Migration019)
         runner.register_migration(Migration020)
+        runner.register_migration(Migration021)
         
         return runner
         

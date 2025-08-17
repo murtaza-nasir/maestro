@@ -56,7 +56,7 @@ export const WritingChatSidebar: React.FC<WritingChatSidebarProps> = React.memo(
   useEffect(() => {
     const handleChatTitleUpdate = (event: CustomEvent) => {
       const { chatId, title } = event.detail
-      console.log('Received chat title update in sidebar:', chatId, title)
+      // console.log('Received chat title update in sidebar:', chatId, title)
       
       // Reload chats to get the updated title
       loadChats()
@@ -83,7 +83,7 @@ export const WritingChatSidebar: React.FC<WritingChatSidebarProps> = React.memo(
         navigate('/app')
       }
 
-      console.log('New writing chat created successfully')
+      // console.log('New writing chat created successfully')
     } catch (error) {
       console.error('Failed to create new writing chat:', error)
     }
@@ -146,7 +146,7 @@ export const WritingChatSidebar: React.FC<WritingChatSidebarProps> = React.memo(
     try {
       setIsDeleting(true)
       await deleteChat(chatToDelete.id)
-      console.log('Writing chat deleted successfully')
+      // console.log('Writing chat deleted successfully')
       
       setDeleteModalOpen(false)
       setChatToDelete(null)

@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 # or using `python -m ai_researcher.main_cli` which adds project root to path.
 from ai_researcher.core_rag.processor import DocumentProcessor
 from ai_researcher.core_rag.embedder import TextEmbedder
-from ai_researcher.core_rag.vector_store_manager import VectorStoreManager as VectorStore
+from ai_researcher.core_rag.pgvector_store import PGVectorStore as VectorStore
 from ai_researcher.core_rag.reranker import TextReranker
 from ai_researcher.core_rag.retriever import Retriever
 # --- Agentic Layer Imports ---
@@ -97,7 +97,7 @@ def ingest(
         # Pass resolved absolute paths to components
         # Initialize components that DocumentProcessor needs
         embedder = TextEmbedder(model_name=embedding_model, batch_size=batch_size_embed)
-        vector_store = VectorStore(persist_directory=str(vector_store_path), batch_size=batch_size_store) # Chroma needs str path
+        vector_store = VectorStore()  # PGVectorStore uses PostgreSQL, no path needed
 
         # Initialize DocumentProcessor, passing embedder and vector_store
         processor = DocumentProcessor(
@@ -155,7 +155,7 @@ def query(
         # 1. Initialize components
         typer.echo("\nInitializing components...")
         embedder = TextEmbedder(model_name=embedding_model)
-        vector_store = VectorStore(persist_directory=str(vector_store_path)) # Chroma needs str path
+        vector_store = VectorStore() # Chroma needs str path
         reranker = TextReranker(model_name=reranker_model) if use_reranker else None
         retriever = Retriever(embedder=embedder, vector_store=vector_store, reranker=reranker)
         typer.echo("Components initialized.")
@@ -238,7 +238,7 @@ def inspect_store(
         typer.echo("Initializing VectorStore...")
         # Use a try-except block for ChromaDB initialization issues
         try:
-            vector_store = VectorStore(persist_directory=str(vector_store_path))
+            vector_store = VectorStore()
             collection = vector_store.dense_collection # Use the dense collection as primary
         except Exception as e_init:
             typer.secho(f"Error initializing ChromaDB client or collection: {e_init}", fg=typer.colors.RED)
@@ -478,7 +478,7 @@ def run_research( # Changed to synchronous 'def'
     try:
         # RAG Components
         embedder = TextEmbedder(model_name=embedding_model)
-        vector_store = VectorStore(persist_directory=str(vector_store_path))
+        vector_store = VectorStore()
         reranker = TextReranker(model_name=reranker_model)
         retriever = Retriever(embedder=embedder, vector_store=vector_store, reranker=reranker)
 

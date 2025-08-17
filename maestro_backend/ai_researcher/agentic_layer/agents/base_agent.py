@@ -246,7 +246,8 @@ class BaseAgent(ABC):
             tool_params = sig.parameters
 
             # Prepare arguments to pass, starting with the ones provided by the LLM
-            final_args = tool_arguments.copy()
+            # Filter out any arguments that the tool doesn't accept
+            final_args = {k: v for k, v in tool_arguments.items() if k in tool_params or k == 'kwargs'}
 
             # Check for and add extra context arguments if the tool accepts them and the agent has them
             context_args_map = {
@@ -303,12 +304,53 @@ class BaseAgent(ABC):
             if hasattr(self, 'controller') and self.controller and hasattr(self.controller, 'context_manager'):
                 context_manager = self.controller.context_manager
 
-            if context_manager and hasattr(self, 'mission_id') and self.mission_id and log_queue and update_callback:
+            # If update_callback not provided as parameter, check if it's in the tool arguments
+            # This handles cases where tools are called directly by LLM function calling
+            effective_update_callback = update_callback
+            if not effective_update_callback and 'update_callback' in final_args:
+                effective_update_callback = final_args['update_callback']
+
+            if context_manager and hasattr(self, 'mission_id') and self.mission_id and log_queue and effective_update_callback:
+                # Create more meaningful action text based on tool name and arguments
+                action_text = f"Execute Tool: {tool_name}"
+                input_text = f"Args: {str(tool_arguments)[:100]}..."
+                
+                # Customize action text for specific tools to be more user-friendly
+                if tool_name == "read_full_document":
+                    if 'original_filename' in tool_arguments:
+                        action_text = f"Read Document: {tool_arguments['original_filename']}"
+                        input_text = tool_arguments.get('original_filename', 'Document')
+                    elif 'filepath' in tool_arguments:
+                        # Extract filename from filepath
+                        filepath = tool_arguments['filepath']
+                        filename = filepath.split('/')[-1] if '/' in filepath else filepath
+                        action_text = f"Read Document: {filename}"
+                        input_text = filename
+                elif tool_name == "fetch_web_page_content":
+                    if 'url' in tool_arguments:
+                        url = tool_arguments['url']
+                        # Extract domain from URL for display
+                        from urllib.parse import urlparse
+                        parsed_url = urlparse(url)
+                        domain = parsed_url.netloc or url[:50]
+                        action_text = f"Fetch Web Page: {domain}"
+                        input_text = url[:100] + ("..." if len(url) > 100 else "")
+                elif tool_name == "document_search":
+                    if 'query' in tool_arguments:
+                        query = tool_arguments['query']
+                        action_text = f"Search Documents: {query[:50]}{'...' if len(query) > 50 else ''}"
+                        input_text = query[:100] + ("..." if len(query) > 100 else "")
+                elif tool_name == "web_search":
+                    if 'query' in tool_arguments:
+                        query = tool_arguments['query']
+                        action_text = f"Web Search: {query[:50]}{'...' if len(query) > 50 else ''}"
+                        input_text = query[:100] + ("..." if len(query) > 100 else "")
+                
                 context_manager.log_execution_step(
                     mission_id=self.mission_id,
                     agent_name=self.agent_name, # Logged by the agent calling the tool
-                    action=f"Execute Tool: {tool_name}",
-                    input_summary=f"Args: {str(tool_arguments)[:100]}...", # Log truncated args
+                    action=action_text,
+                    input_summary=input_text,
                     output_summary=result_summary,
                     status=log_status,
                     error_message=error_message,
@@ -317,7 +359,7 @@ class BaseAgent(ABC):
                     # full_output=result,
                     tool_calls=[{"tool_name": tool_name, "arguments": tool_arguments, "result_summary": result_summary, "error": error_message}], # Log as a tool call structure
                     log_queue=log_queue,
-                    update_callback=update_callback
+                    update_callback=effective_update_callback
                 )
             else:
                 # --- MODIFIED: More detailed warning ---
@@ -326,7 +368,7 @@ class BaseAgent(ABC):
                 # Check for mission_id attribute existence AND if it has a truthy value
                 if not hasattr(self, 'mission_id') or not self.mission_id: missing.append("mission_id")
                 if not log_queue: missing.append("log_queue")
-                if not update_callback: missing.append("update_callback")
+                if not effective_update_callback: missing.append("update_callback")
                 print(f"WARNING ({self.agent_name}): Could not log tool execution for '{tool_name}'. Missing: {', '.join(missing)}")
                 # --- END MODIFICATION ---
 
@@ -351,12 +393,43 @@ class BaseAgent(ABC):
             context_manager = None
             if hasattr(self, 'controller') and self.controller and hasattr(self.controller, 'context_manager'):
                 context_manager = self.controller.context_manager
-            if context_manager and hasattr(self, 'mission_id') and self.mission_id and log_queue and update_callback:
-                 context_manager.log_execution_step(
+            
+            # If update_callback not provided as parameter, check if it's in the tool arguments
+            effective_update_callback = update_callback
+            if not effective_update_callback and 'update_callback' in tool_arguments:
+                effective_update_callback = tool_arguments['update_callback']
+            
+            if context_manager and hasattr(self, 'mission_id') and self.mission_id and log_queue and effective_update_callback:
+                # Create more meaningful action text (same logic as success case)
+                action_text = f"Execute Tool: {tool_name}"
+                
+                if tool_name == "read_full_document":
+                    if 'original_filename' in tool_arguments:
+                        action_text = f"Read Document: {tool_arguments['original_filename']}"
+                    elif 'filepath' in tool_arguments:
+                        filepath = tool_arguments['filepath']
+                        filename = filepath.split('/')[-1] if '/' in filepath else filepath
+                        action_text = f"Read Document: {filename}"
+                elif tool_name == "fetch_web_page_content":
+                    if 'url' in tool_arguments:
+                        from urllib.parse import urlparse
+                        parsed_url = urlparse(tool_arguments['url'])
+                        domain = parsed_url.netloc or tool_arguments['url'][:50]
+                        action_text = f"Fetch Web Page: {domain}"
+                elif tool_name == "document_search":
+                    if 'query' in tool_arguments:
+                        query = tool_arguments['query']
+                        action_text = f"Search Documents: {query[:50]}{'...' if len(query) > 50 else ''}"
+                elif tool_name == "web_search":
+                    if 'query' in tool_arguments:
+                        query = tool_arguments['query']
+                        action_text = f"Web Search: {query[:50]}{'...' if len(query) > 50 else ''}"
+                
+                context_manager.log_execution_step(
                      mission_id=self.mission_id, agent_name=self.agent_name,
-                     action=f"Execute Tool: {tool_name}", status="failure", error_message=str(e),
+                     action=action_text, status="failure", error_message=str(e),
                      tool_calls=[{"tool_name": tool_name, "arguments": tool_arguments, "error": str(e)}],
-                     log_queue=log_queue, update_callback=update_callback
+                     log_queue=log_queue, update_callback=effective_update_callback
                  )
             # Return a structured error
             return {"error": f"Error executing tool '{tool_name}': {e}"}

@@ -24,7 +24,7 @@ export const MainLayout: React.FC = () => {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const { user, logout } = useAuthStore()
   const { setSelectedGroup } = useDocumentContext()
-  const { uploadingFiles, cancelUpload, cancelAllUploads, clearCompletedUploads, dismissFile } = useDocumentUploadManager()
+  const { uploadingFiles, cancelUpload, cancelAllUploads, clearCompletedUploads, clearAllErrors, dismissFile } = useDocumentUploadManager()
   const { currentView, setView } = useViewStore()
   const { theme, getThemeClasses } = useTheme()
   const navigate = useNavigate()

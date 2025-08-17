@@ -42,7 +42,7 @@ const DEFAULT_RESEARCH_PARAMS: ResearchParameters = {
   writing_search_max_iterations: 1,
   writing_search_max_queries: 3,
   writing_deep_search_iterations: 3,
-  writing_deep_search_queries: 10
+  writing_deep_search_queries: 5
 }
 
 // Preset configurations for different use cases

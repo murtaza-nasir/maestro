@@ -21,7 +21,10 @@ import type { DocumentViewResponse } from '../api';
 import { getDocumentContent } from '../api';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 
 interface DocumentViewModalProps {
   document: Document | null;
@@ -270,8 +273,8 @@ export const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
                   {documentContent?.content ? (
                     <div className="prose prose-base max-w-none prose-headings:text-foreground prose-p:text-foreground prose-a:text-primary prose-strong:text-foreground prose-code:text-foreground prose-pre:bg-muted prose-blockquote:border-l-primary">
                       <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        rehypePlugins={[rehypeRaw]}
+                        remarkPlugins={[remarkGfm, remarkMath]}
+                        rehypePlugins={[rehypeRaw, rehypeKatex]}
                         components={{
                           // Custom link component to open external links in new tab
                           a: ({ ...props }) => (

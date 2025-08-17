@@ -1,4 +1,9 @@
+/**
+ * Document Upload Service - now uses UnifiedWebSocketService
+ * Handles document upload progress tracking via WebSocket
+ */
 import { apiClient } from '../../../config/api';
+import { unifiedWebSocketService } from '../../../services/unifiedWebSocketService';
 
 export interface UploadProgress {
   fileId: string;
@@ -18,68 +23,70 @@ interface CompletionCallback {
 }
 
 export class UploadService {
-  private websocket: WebSocket | null = null;
   private progressCallbacks: Map<string, ProgressCallback> = new Map();
   private completionCallbacks: Set<CompletionCallback> = new Set();
+  private connectionKey: string | null = null;
+  private userId: number | null = null;
+  private connectionPromise: Promise<void> | null = null;
 
   constructor() {
-    this.connectWebSocket();
+    // Connect on first use
+    this.ensureConnection();
   }
 
-  private connectWebSocket() {
-    // Get user ID and access token from auth store or API
-    Promise.all([this.getUserId(), this.getAccessToken()]).then(([userId, accessToken]) => {
-      if (userId && accessToken) {
-        // Build WebSocket URL using nginx proxy (same origin)
-        let wsBaseUrl = import.meta.env.VITE_API_WS_URL;
-        
-        // If no WebSocket URL is set, use relative URL (same origin through nginx proxy)
-        if (!wsBaseUrl) {
-          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-          wsBaseUrl = `${protocol}//${window.location.host}`;
-        }
-        
-        const wsUrl = `${wsBaseUrl}/ws/documents/${userId}?token=${encodeURIComponent(accessToken)}`;
-        
-        // console.log('Attempting to connect to WebSocket:', wsUrl);
-        
-        try {
-          this.websocket = new WebSocket(wsUrl);
-          
-          this.websocket.onopen = () => {
-            // console.log('Upload WebSocket connected successfully to:', wsUrl);
-          };
-          
-          this.websocket.onmessage = (event) => {
-            try {
-              const data = JSON.parse(event.data);
-              // console.log('Upload WebSocket message received:', data);
-              this.handleWebSocketMessage(data);
-            } catch (error) {
-              console.error('Error parsing WebSocket message:', error);
-            }
-          };
-          
-          this.websocket.onclose = (event) => {
-            console.log('Upload WebSocket disconnected. Code:', event.code, 'Reason:', event.reason);
-            // Only attempt to reconnect if it's not a permanent failure
-            if (event.code !== 1008) { // 1008 = Policy Violation (auth failure)
-              setTimeout(() => this.connectWebSocket(), 3000);
-            }
-          };
-          
-          this.websocket.onerror = (error) => {
-            console.error('Upload WebSocket error:', error);
-            console.error('Failed to connect to:', wsUrl);
-          };
-        } catch (error) {
-          console.error('Error creating WebSocket connection:', error);
-        }
-      } else {
-        console.warn('Cannot connect to WebSocket: missing userId or accessToken');
-        console.log('UserId:', userId, 'AccessToken present:', !!accessToken);
+  private async ensureConnection(): Promise<void> {
+    // Return existing connection promise if connecting
+    if (this.connectionPromise) {
+      return this.connectionPromise;
+    }
+
+    // Already connected
+    if (this.connectionKey && unifiedWebSocketService.isConnected(this.connectionKey)) {
+      return Promise.resolve();
+    }
+
+    // Create new connection promise
+    this.connectionPromise = this.connectWebSocket();
+    return this.connectionPromise;
+  }
+
+  private async connectWebSocket(): Promise<void> {
+    try {
+      // Get user ID if not already cached
+      if (!this.userId) {
+        this.userId = await this.getUserId();
       }
-    });
+
+      if (!this.userId) {
+        console.warn('Cannot connect to upload WebSocket: missing userId');
+        throw new Error('User ID not available');
+      }
+
+      // Use unified service for connection
+      this.connectionKey = await unifiedWebSocketService.getConnection({
+        endpoint: `/ws/documents/${this.userId}`,
+        connectionType: 'document',
+        onMessage: (message) => this.handleWebSocketMessage(message),
+        onConnect: () => {
+          // console.log('Document upload WebSocket connected');
+        },
+        onDisconnect: () => {
+          // console.log('Document upload WebSocket disconnected');
+          // Clear connection key to trigger reconnection on next use
+          this.connectionKey = null;
+          this.connectionPromise = null;
+        },
+        onError: (error) => {
+          console.error('Document upload WebSocket error:', error);
+          this.connectionKey = null;
+          this.connectionPromise = null;
+        }
+      });
+    } catch (error) {
+      console.error('Failed to connect document upload WebSocket:', error);
+      this.connectionPromise = null;
+      throw error;
+    }
   }
 
   private async getUserId(): Promise<number | null> {
@@ -94,247 +101,293 @@ export class UploadService {
     }
   }
 
-  private async getAccessToken(): Promise<string | null> {
-    try {
-      // Try to get from auth store first
-      const authStore = (window as any).__AUTH_STORE__;
-      if (authStore && authStore.getState) {
-        const token = authStore.getState().accessToken;
-        if (token) return token;
-      }
-
-      // Fallback to localStorage
-      const token = localStorage.getItem('access_token');
-      if (token) return token;
-
-      // Fallback to cookies
-      const cookies = document.cookie.split(';');
-      for (const cookie of cookies) {
-        const [name, value] = cookie.trim().split('=');
-        if (name === 'access_token') {
-          return value;
-        }
-      }
-
-      return null;
-    } catch (error) {
-      console.error('Error getting access token:', error);
-      return null;
-    }
-  }
-
   private handleWebSocketMessage(data: any) {
-    console.log('Upload service received WebSocket message:', data);
-    if (data.type === 'document_progress' || data.type === 'job_progress') {
-      const { doc_id, document_id, progress, status, error } = data;
-      const finalDocId = doc_id || document_id;
-
-      console.log('Processing progress update for doc_id:', finalDocId);
-      console.log('Current progress callbacks:', Array.from(this.progressCallbacks.keys()));
-
-      if (finalDocId) {
-        const entry = Array.from(this.progressCallbacks.entries()).find(
-          ([_, value]) => value.docId === finalDocId
-        );
-
-        if (entry) {
-          const [fileId, { callback }] = entry;
-          console.log('Found matching callback for fileId:', fileId);
-          const currentStatus = status as 'uploading' | 'processing' | 'completed' | 'error';
+    // console.log('Upload service received WebSocket message:', data);
+    
+    if (data.type === 'connection_established') {
+      // Connection confirmed
+      return;
+    }
+    
+    if (data.type === 'document_progress') {
+      const docId = data.doc_id || data.document_id;
+      
+      // Find callbacks by document ID
+      const relevantCallbacks = Array.from(this.progressCallbacks.entries())
+        .filter(([_, callbackInfo]) => callbackInfo.docId === docId);
+      
+      if (relevantCallbacks.length > 0) {
+        relevantCallbacks.forEach(([fileId, callbackInfo]) => {
+          const progress: UploadProgress = {
+            fileId: fileId, // Use the original fileId for UI updates
+            progress: data.progress || 0,
+            status: data.status || 'processing',
+            error: data.error,
+            documentId: docId
+          };
           
-          callback({
+          // Map status values
+          if (data.status === 'completed') {
+            progress.status = 'completed';
+            progress.progress = 100;
+          } else if (data.status === 'error' || data.status === 'failed' || data.error) {
+            progress.status = 'error';
+          } else if (data.status === 'processing') {
+            progress.status = 'processing';
+          }
+          
+          // Call the specific callback
+          try {
+            callbackInfo.callback(progress);
+          } catch (error) {
+            console.error('Error in progress callback:', error);
+          }
+        });
+        
+        // If completed, notify completion callbacks
+        if (data.status === 'completed') {
+          this.notifyCompletionCallbacks(docId);
+        }
+      } else {
+        // console.log(`No callbacks found for document ${docId}`);
+      }
+    } else if (data.type === 'job_progress') {
+      // Handle job progress updates
+      const docId = data.doc_id || data.job_id;
+      
+      // Find callbacks by document ID
+      const relevantCallbacks = Array.from(this.progressCallbacks.entries())
+        .filter(([_, callbackInfo]) => callbackInfo.docId === docId);
+      
+      if (relevantCallbacks.length > 0) {
+        relevantCallbacks.forEach(([fileId, callbackInfo]) => {
+          const progress: UploadProgress = {
             fileId: fileId,
-            progress: progress || 0,
-            status: currentStatus,
-            error: error,
-            documentId: finalDocId
-          });
-
-          // If the process is complete, notify completion callbacks
-          if (currentStatus === 'completed') {
-            console.log(`Document processing completed for ${finalDocId}. Notifying completion callbacks.`);
-            this.completionCallbacks.forEach(({ callback }) => {
-              try {
-                callback(finalDocId);
-              } catch (error) {
-                console.error('Error in completion callback:', error);
-              }
-            });
+            progress: data.progress || 0,
+            status: data.status === 'completed' ? 'completed' : 'processing',
+            error: data.error,
+            documentId: docId
+          };
+          
+          if (data.status === 'completed') {
+            progress.progress = 100;
           }
-
-          // If the process is complete or has failed, remove the callback
-          if (currentStatus === 'completed' || currentStatus === 'error') {
-            console.log(`Upload for ${fileId} finished with status: ${currentStatus}. Removing callback.`);
-            this.progressCallbacks.delete(fileId);
+          
+          // Call the specific callback
+          try {
+            callbackInfo.callback(progress);
+          } catch (error) {
+            console.error('Error in progress callback:', error);
           }
-        } else {
-          console.log('No matching callback found for doc_id:', finalDocId);
+        });
+        
+        if (data.status === 'completed') {
+          this.notifyCompletionCallbacks(docId);
         }
       }
     } else {
-      console.log('Ignoring non-progress message type:', data.type);
+      // console.log('Ignoring non-progress message type:', data.type);
     }
+  }
+
+  private notifyProgressCallbacks(progress: UploadProgress) {
+    this.progressCallbacks.forEach((callbackInfo) => {
+      // Only notify if this callback is interested in this document
+      if (callbackInfo.docId === null || callbackInfo.docId === progress.fileId) {
+        try {
+          callbackInfo.callback(progress);
+        } catch (error) {
+          console.error('Error in progress callback:', error);
+        }
+      }
+    });
+  }
+
+  private notifyCompletionCallbacks(documentId: string) {
+    this.completionCallbacks.forEach((callbackInfo) => {
+      try {
+        callbackInfo.callback(documentId);
+      } catch (error) {
+        console.error('Error in completion callback:', error);
+      }
+    });
+  }
+
+  public async uploadFiles(files: File[], documentGroupId?: string): Promise<void> {
+    // Ensure WebSocket is connected before uploading
+    await this.ensureConnection();
+
+    // Upload files one by one since the backend expects single file uploads
+    for (const file of files) {
+      const formData = new FormData();
+      formData.append('file', file); // Changed from 'files' to 'file' to match backend expectation
+
+      try {
+        if (documentGroupId) {
+          // If we have a group ID, use the group upload endpoint
+          await apiClient.post(`/api/document-groups/${documentGroupId}/upload/`, formData, {
+            headers: {
+              'Content-Type': 'multipart/form-data'
+            }
+          });
+        } else {
+          // Otherwise use the regular upload endpoint
+          await apiClient.post('/api/documents/upload', formData, {
+            headers: {
+              'Content-Type': 'multipart/form-data'
+            }
+          });
+        }
+      } catch (error: any) {
+        // Handle duplicate file error (409) gracefully
+        if (error.response?.status === 409) {
+          console.log(`File ${file.name} already exists in the database, skipping.`);
+          // Continue with the next file instead of throwing
+          continue;
+        }
+        // Re-throw other errors
+        throw error;
+      }
+    }
+  }
+
+  public onProgress(callback: (progress: UploadProgress) => void, docId: string | null = null): () => void {
+    const id = Date.now().toString() + Math.random().toString(36);
+    const callbackInfo: ProgressCallback = { callback, docId };
+    this.progressCallbacks.set(id, callbackInfo);
+    
+    // Return unsubscribe function
+    return () => {
+      this.progressCallbacks.delete(id);
+    };
+  }
+
+  public onCompletion(callback: (documentId: string) => void): () => void {
+    const callbackObj: CompletionCallback = { callback };
+    this.completionCallbacks.add(callbackObj);
+    
+    // Return unsubscribe function
+    return () => {
+      this.completionCallbacks.delete(callbackObj);
+    };
   }
 
   public async uploadFile(
     file: File,
-    groupId: string,
+    documentGroupId: string,
     fileId: string,
     onProgress: (progress: UploadProgress) => void
-  ): Promise<{ success: boolean; documentId?: string; error?: string }> {
-    // Register progress callback
-    this.progressCallbacks.set(fileId, { callback: onProgress, docId: null });
-
+  ): Promise<void> {
+    // Ensure WebSocket is connected before uploading
+    await this.ensureConnection();
+    
+    // Store the progress callback for this specific file
+    this.progressCallbacks.set(fileId, { callback: onProgress, docId: fileId });
+    
+    // Upload the file and get the document ID from the response
+    const formData = new FormData();
+    formData.append('file', file);
+    
     try {
-      // Initial progress
-      onProgress({
-        fileId,
-        progress: 0,
-        status: 'uploading'
-      });
-
-      const formData = new FormData();
-      formData.append('file', file);
-
-      // Upload with progress tracking
       const response = await apiClient.post(
-        `/api/document-groups/${groupId}/upload/`,
+        documentGroupId 
+          ? `/api/document-groups/${documentGroupId}/upload/`
+          : '/api/documents/upload',
         formData,
         {
           headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-          onUploadProgress: (progressEvent: any) => {
-            if (progressEvent.total) {
-              const uploadProgress = Math.round(
-                (progressEvent.loaded * 100) / progressEvent.total
-              );
-              // Upload progress is 0-10%, processing will be 10-100%
-              onProgress({
-                fileId,
-                progress: Math.min(uploadProgress / 10, 10),
-                status: 'uploading'
-              });
-            }
+            'Content-Type': 'multipart/form-data'
           }
         }
       );
-
-      // Upload completed, now processing will be handled by WebSocket
-      const documentId = response.data.id;
-      if (this.progressCallbacks.has(fileId)) {
-        this.progressCallbacks.get(fileId)!.docId = documentId;
-      }
-
-      onProgress({
-        fileId,
-        progress: 10,
-        status: 'processing',
-        documentId
-      });
-
-      return {
-        success: true,
-        documentId
-      };
-
-    } catch (error: any) {
-      const errorMessage = error.response?.data?.detail || error.message || 'Upload failed';
       
+      // The backend returns the actual document ID
+      const docId = response.data.id;
+      
+      if (docId) {
+        // Update our callback mapping to use the real document ID
+        const callbackInfo = this.progressCallbacks.get(fileId);
+        if (callbackInfo) {
+          // Remove old mapping and add new one with actual doc ID
+          this.progressCallbacks.delete(fileId);
+          this.progressCallbacks.set(docId, { ...callbackInfo, docId });
+          
+          // Also keep the fileId mapping for UI updates
+          this.progressCallbacks.set(fileId, { ...callbackInfo, docId });
+        }
+        
+        // Send initial progress update
+        onProgress({
+          fileId: fileId,
+          progress: 10,
+          status: 'processing',
+          documentId: docId
+        });
+      }
+    } catch (error: any) {
+      console.error('Upload error:', error);
+      
+      // Handle duplicate file error (409) with user-friendly message
+      let errorMessage = 'Upload failed';
+      
+      if (error.response?.status === 409) {
+        const duplicateFilename = error.response.data?.filename || file.name;
+        errorMessage = `This file has already been uploaded: ${duplicateFilename}`;
+      } else if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      // Send error update with user-friendly message
       onProgress({
-        fileId,
+        fileId: fileId,
         progress: 0,
         status: 'error',
         error: errorMessage
       });
-
-      // Clean up the callback immediately on HTTP error
-      this.progressCallbacks.delete(fileId);
-
-      return {
-        success: false,
-        error: errorMessage
-      };
+      
+      // Don't throw for duplicate files, just notify
+      if (error.response?.status !== 409) {
+        throw error;
+      }
     }
   }
 
-  public async uploadMultipleFiles(
-    files: File[],
-    groupId: string,
-    onProgress: (fileId: string, progress: UploadProgress) => void
-  ): Promise<{ success: boolean; results: Array<{ fileId: string; success: boolean; documentId?: string; error?: string }> }> {
-    const results: Array<{ fileId: string; success: boolean; documentId?: string; error?: string }> = [];
-    
-    // Upload files sequentially to avoid overwhelming the server
-    for (const file of files) {
-      const fileId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      
-      const result = await this.uploadFile(
-        file,
-        groupId,
-        fileId,
-        (progress) => onProgress(fileId, progress)
-      );
+  public cancelUpload(fileId: string) {
+    // For now, just remove the progress callback
+    // In a real implementation, you'd cancel the actual upload request
+    this.progressCallbacks.delete(fileId);
+    console.log(`Upload cancelled for file: ${fileId}`);
+  }
 
-      results.push({
-        fileId,
-        success: result.success,
-        documentId: result.documentId,
-        error: result.error
-      });
-    }
-
-    const successCount = results.filter(r => r.success).length;
-    
-    return {
-      success: successCount > 0,
-      results
-    };
+  public dismissFile(fileId: string) {
+    // Remove the progress callback for dismissed file
+    this.progressCallbacks.delete(fileId);
+    // console.log(`File dismissed: ${fileId}`);
   }
 
   public onDocumentProcessingComplete(callback: (documentId: string) => void): () => void {
-    const completionCallback: CompletionCallback = { callback };
-    this.completionCallbacks.add(completionCallback);
+    // This is the same as onCompletion but with a different signature
+    const callbackObj: CompletionCallback = { callback };
+    this.completionCallbacks.add(callbackObj);
     
     // Return unsubscribe function
     return () => {
-      this.completionCallbacks.delete(completionCallback);
+      this.completionCallbacks.delete(callbackObj);
     };
   }
 
-  public async cancelUpload(fileId: string): Promise<void> {
-    try {
-      // Try to cancel on the backend if we have a document ID
-      const progressCallback = this.progressCallbacks.get(fileId);
-      if (progressCallback && progressCallback.docId) {
-        const { cancelDocumentProcessing } = await import('../api');
-        await cancelDocumentProcessing(progressCallback.docId);
-        console.log(`Backend processing cancelled for document: ${progressCallback.docId}`);
-      }
-    } catch (error) {
-      console.error(`Failed to cancel upload for file ${fileId}:`, error);
-    } finally {
-      // Always remove the callback to stop receiving updates
-      this.progressCallbacks.delete(fileId);
-      console.log(`Upload cancelled for fileId: ${fileId}`);
-    }
-  }
-
-  public dismissFile(fileId: string): void {
-    // Remove the callback for this file (for completed/error files)
-    this.progressCallbacks.delete(fileId);
-    console.log(`File dismissed: ${fileId}`);
-  }
-
   public disconnect() {
-    if (this.websocket) {
-      this.websocket.close();
-      this.websocket = null;
-    }
+    // Don't actually disconnect - let unified service manage
+    // Just clear our local state
     this.progressCallbacks.clear();
     this.completionCallbacks.clear();
+    this.connectionKey = null;
+    this.userId = null;
+    this.connectionPromise = null;
   }
 }
 
-// Singleton instance
+// Export singleton instance
 export const uploadService = new UploadService();

@@ -407,6 +407,7 @@ If you DO NOT receive 'Focus Questions' but receive 'Existing Relevant Notes':
                 if proactive_search_tool_calls: tool_calls_list.extend(proactive_search_tool_calls)
 
                 # Process results and generate notes
+                proactive_notes_generated = 0  # Initialize here to avoid UnboundLocalError
                 if not proactive_search_results.get("document") and not proactive_search_results.get("web"):
                     logger.info(f"{log_prefix}: No proactive search results found.")
                     scratchpad_parts.append("No proactive search results found.")
@@ -503,7 +504,6 @@ If you DO NOT receive 'Focus Questions' but receive 'Existing Relevant Notes':
                         proactive_note_results = await asyncio.gather(*proactive_note_tasks)
 
                         # Collect results
-                        proactive_notes_generated = 0
                         # --- Add logging for gather results ---
                         logger.info(f"Processing {len(proactive_note_results)} results from proactive note generation gather.")
                         for i, result_tuple in enumerate(proactive_note_results):
@@ -839,6 +839,13 @@ Now, generate the questions for the provided research request.
         # This allows _call_llm to access it for updating mission stats
         self.mission_id = mission_id
         
+        # Check mission status at the start
+        if hasattr(self, 'controller') and self.controller:
+            from ai_researcher.agentic_layer.controller.utils.status_checks import check_mission_status_sync
+            if not check_mission_status_sync(self.controller, mission_id):
+                logger.info(f"Mission {mission_id} is stopped/paused. Exiting explore_question.")
+                return ([], [], agent_scratchpad, {"model_calls": [], "tool_calls": [], "file_interactions": []})
+        
         log_prefix = f"{self.agent_name} (Explore Q Depth {current_depth})"
         print(f"\n{log_prefix}: Exploring Question: '{question}'")
 
@@ -890,6 +897,14 @@ Now, generate the questions for the provided research request.
         )
         tool_calls_list.extend(search_tool_calls)
 
+        # Check mission status after searches
+        if hasattr(self, 'controller') and self.controller:
+            from ai_researcher.agentic_layer.controller.utils.status_checks import check_mission_status_sync
+            if not check_mission_status_sync(self.controller, mission_id):
+                logger.info(f"Mission {mission_id} is stopped/paused. Exiting explore_question after searches.")
+                return (relevant_notes_with_context, new_sub_questions, updated_scratchpad, 
+                       {"model_calls": model_calls_list, "tool_calls": tool_calls_list, "file_interactions": file_interactions_list})
+        
         # 3. Process Results and Generate *Relevant* Notes in parallel
         if not search_results.get("document") and not search_results.get("web"):
             print(f"{log_prefix}: No search results found for question.")
@@ -1756,6 +1771,7 @@ If no relevant sub-questions are identified, return an empty list for "sub_quest
                         "feedback_callback": feedback_callback, # <-- Pass callback to tool args
                         "original_filename": original_filename_for_tool, # <-- Pass original filename
                         "log_queue": log_queue # <-- ADD log_queue to tool args
+                        # Note: update_callback is passed to _execute_tool, not in tool_args
                         }
                     logger.info(f"DEBUG (ResearchAgent): Arguments prepared for _execute_tool (using unresolved path): {tool_args}")
 

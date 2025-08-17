@@ -24,8 +24,8 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 import logging
 
-from ai_researcher.core_rag.vector_store_manager import VectorStoreManager as VectorStore
-from ai_researcher.core_rag.database import Database
+# Use direct vector store access to avoid locking issues
+from ai_researcher.core_rag.pgvector_store import PGVectorStore as VectorStore
 from database import crud, models
 
 logger = logging.getLogger(__name__)
@@ -68,7 +68,7 @@ class DocumentConsistencyManager:
         self.pdf_dir = self.base_path / "raw_pdfs"
         self.markdown_dir = self.base_path / "processed" / "markdown"  
         self.metadata_dir = self.base_path / "processed" / "metadata"
-        self.db_path = self.base_path / "processed" / "metadata.db"
+        self.db_path = "data/maestro.db"  # Use unified database
         
         # Ensure directories exist
         for dir_path in [self.pdf_dir, self.markdown_dir, self.metadata_dir]:
@@ -76,27 +76,24 @@ class DocumentConsistencyManager:
             
         # Initialize storage components (lazy loaded)
         self._vector_store = None
-        self._ai_db = None
         
     def _get_vector_store(self) -> VectorStore:
         """Get or initialize vector store."""
         if self._vector_store is None:
-            self._vector_store = VectorStore(persist_directory=str(self.base_path / "vector_store"))
+            self._vector_store = VectorStore()
         return self._vector_store
-        
-    def _get_ai_db(self) -> Database:
-        """Get or initialize AI database."""
-        if self._ai_db is None:
-            self._ai_db = Database(db_path=self.db_path)
-        return self._ai_db
     
     def generate_consistent_doc_id(self) -> str:
-        """Generate a consistent 8-character document ID."""
-        return str(uuid.uuid4()).replace('-', '')[:8]
+        """Generate a consistent UUID document ID."""
+        return str(uuid.uuid4())
         
     def validate_doc_id_format(self, doc_id: str) -> bool:
-        """Validate document ID format (8 alphanumeric characters)."""
-        return len(doc_id) == 8 and doc_id.isalnum()
+        """Validate document ID format (UUID format)."""
+        try:
+            uuid.UUID(doc_id)
+            return True
+        except (ValueError, AttributeError):
+            return False
     
     def check_document_exists(self, doc_id: str, user_id: int, db: Session) -> Dict[str, bool]:
         """Check where a document exists across all storage systems."""
@@ -114,21 +111,13 @@ class DocumentConsistencyManager:
             main_doc = crud.get_document(db, doc_id, user_id)
             exists['main_db'] = main_doc is not None
             
-            # Check AI database
-            try:
-                ai_db = self._get_ai_db()
-                ai_doc = ai_db.get_document_metadata(doc_id)
-                exists['ai_db'] = ai_doc is not None
-            except Exception:
-                exists['ai_db'] = False
+            # AI database no longer exists - metadata is in main database
+            exists['ai_db'] = exists['main_db']  # For backwards compatibility
                 
             # Check vector store
             try:
                 vector_store = self._get_vector_store()
-                with vector_store._file_lock("read"):
-                    client, dense_collection, sparse_collection = vector_store._get_client()
-                    dense_results = dense_collection.get(where={"doc_id": doc_id}, limit=1)
-                    exists['vector_store'] = len(dense_results.get('ids', [])) > 0
+                exists['vector_store'] = vector_store.check_document_exists(doc_id)
             except Exception:
                 exists['vector_store'] = False
                 
@@ -153,31 +142,34 @@ class DocumentConsistencyManager:
         }
         
         try:
-            # Get all documents from main database
+            # Get all documents from main database for this user
             main_docs = crud.get_user_documents(db, user_id, limit=1000)
             main_doc_ids = {doc.id for doc in main_docs}
             
-            # Get documents from AI database  
-            try:
-                ai_db = self._get_ai_db()
-                ai_doc_ids = set(ai_db.get_all_document_ids())
-            except Exception:
-                ai_doc_ids = set()
+            # AI database no longer exists - all documents are in main database
+            ai_doc_ids = main_doc_ids  # For backwards compatibility
                 
-            # Get documents from vector store
+            # Get documents from vector store - filter to only this user's documents
             try:
                 vector_store = self._get_vector_store()
-                # Use the proper method to access collections
-                with vector_store._file_lock("read"):
-                    client, dense_collection, sparse_collection = vector_store._get_client()
-                    dense_results = dense_collection.get(include=['metadatas'])
-                    vector_doc_ids = {meta.get('doc_id') for meta in dense_results.get('metadatas', []) if meta.get('doc_id')}
-                    vector_doc_ids.discard(None)
+                all_vector_doc_ids = vector_store.get_all_document_ids()
+                
+                # Only consider vector documents that belong to this user or no user
+                vector_doc_ids = set()
+                for doc_id in all_vector_doc_ids:
+                    if doc_id in main_doc_ids:
+                        vector_doc_ids.add(doc_id)
+                    else:
+                        # Check if this document belongs to another user
+                        other_user_doc = db.query(models.Document).filter(models.Document.id == doc_id).first()
+                        if not other_user_doc:
+                            # This document doesn't belong to any user - it's a true orphan
+                            vector_doc_ids.add(doc_id)
             except Exception as e:
                 logger.error(f"Error getting vector store documents: {e}")
                 vector_doc_ids = set()
                 
-            # Find orphans
+            # Find orphans - now these are only documents that don't belong to ANY user
             orphans['ai_db_only'] = list(ai_doc_ids - main_doc_ids)
             orphans['vector_store_only'] = list(vector_doc_ids - main_doc_ids)
             
@@ -203,63 +195,60 @@ class DocumentConsistencyManager:
         return orphans
     
     async def delete_document_atomically(self, doc_id: str, user_id: int, db: Session) -> bool:
-        """Delete a document atomically from all storage systems."""
+        """
+        Delete a document atomically from all storage systems.
+        
+        Ensures document is removed from:
+        1. ChromaDB vector store (dense and sparse collections)
+        2. Physical files (PDF, markdown, metadata JSON)
+        3. Main application database with all metadata (last step)
+        """
         transaction = DocumentTransaction(doc_id, 'delete')
+        logger.info(f"Starting atomic deletion for document {doc_id}")
         
         try:
-            # Step 1: Get document info before deletion
+            # Step 1: Verify document exists and user has permission
             document = crud.get_document(db, doc_id, user_id)
             if not document:
-                logger.warning(f"Document {doc_id} not found in main database")
-                return False
+                logger.warning(f"Document {doc_id} not found in main database or user lacks permission")
+                # Check if document exists but user doesn't have permission
+                from database.models import Document
+                any_doc = db.query(Document).filter(Document.id == doc_id).first()
+                if any_doc:
+                    logger.warning(f"Document {doc_id} exists but user {user_id} lacks permission")
+                    return False
+                else:
+                    # Document doesn't exist at all - might already be deleted
+                    logger.info(f"Document {doc_id} does not exist - may already be deleted")
+                    return True
                 
-            transaction.mark_step_completed('document_located')
+            transaction.mark_step_completed('document_verified')
             
-            # Step 2: Delete from vector store
+            # Step 2: Delete from ChromaDB vector store
             try:
                 vector_store = self._get_vector_store()
+                dense_deleted, sparse_deleted = vector_store.delete_document(doc_id)
                 
-                with vector_store._file_lock("write"):
-                    client, dense_collection, sparse_collection = vector_store._get_client()
+                if dense_deleted > 0 or sparse_deleted > 0:
+                    transaction.add_rollback_action(
+                        lambda: logger.warning(f"Cannot rollback vector store deletion for {doc_id}"),
+                        f"Vector store deletion (not reversible)"
+                    )
+                    transaction.mark_step_completed('vector_store_deleted')
+                    logger.info(f"Deleted {dense_deleted + sparse_deleted} chunks from vector store")
+                else:
+                    logger.info(f"No chunks found in vector store for {doc_id}")
+                    transaction.mark_step_completed('vector_store_deleted')
                     
-                    # Delete from dense collection
-                    dense_results = dense_collection.get(where={"doc_id": doc_id})
-                    if dense_results['ids']:
-                        dense_collection.delete(ids=dense_results['ids'])
-                        transaction.add_rollback_action(
-                            lambda: logger.warning(f"Cannot rollback vector store deletion for {doc_id}"),
-                            f"Vector store dense collection deletion (not reversible)"
-                        )
-                    
-                    # Delete from sparse collection  
-                    sparse_results = sparse_collection.get(where={"doc_id": doc_id})
-                    if sparse_results['ids']:
-                        sparse_collection.delete(ids=sparse_results['ids'])
-                    
-                transaction.mark_step_completed('vector_store_deleted')
-                logger.info(f"Deleted {len(dense_results['ids']) + len(sparse_results['ids'])} chunks from vector store")
-                
             except Exception as e:
                 transaction.failed_at_step = 'vector_store_deletion'
                 logger.error(f"Failed to delete from vector store: {e}")
                 # Continue with other deletions even if vector store fails
                 
-            # Step 3: Delete from AI database
-            try:
-                ai_db = self._get_ai_db()
-                ai_deleted = ai_db.delete_document(doc_id)
-                
-                if ai_deleted:
-                    transaction.add_rollback_action(
-                        lambda: logger.warning(f"Cannot rollback AI DB deletion for {doc_id}"),
-                        f"AI database deletion (not reversible)"
-                    )
-                    transaction.mark_step_completed('ai_db_deleted')
-                    logger.info(f"Deleted document from AI database")
-                    
-            except Exception as e:
-                transaction.failed_at_step = 'ai_db_deletion'
-                logger.error(f"Failed to delete from AI database: {e}")
+            # Step 3: Note about unified database
+            # Metadata is now stored in the main database (documents table)
+            # It will be deleted in the final step along with the document record
+            logger.info(f"Document metadata is in main database - will be deleted with document record")
                 
             # Step 4: Delete physical files
             files_deleted = []
@@ -311,6 +300,14 @@ class DocumentConsistencyManager:
                 
             # Step 5: Delete from main database (last step - point of no return)
             try:
+                # Re-fetch the document to ensure it still exists before deletion
+                document = crud.get_document(db, doc_id, user_id)
+                if not document:
+                    logger.warning(f"Document {doc_id} already deleted or not found")
+                    # If already gone, consider it successfully deleted
+                    transaction.mark_step_completed('main_db_deleted')
+                    return True
+                    
                 db.delete(document)
                 db.commit()
                 transaction.mark_step_completed('main_db_deleted')
@@ -337,34 +334,19 @@ class DocumentConsistencyManager:
             # Check current state
             exists = self.check_document_exists(doc_id, user_id, db)
             
-            # Clean up AI database entry
-            if exists['ai_db']:
-                try:
-                    ai_db = self._get_ai_db()
-                    ai_db.delete_document(doc_id)
-                    transaction.mark_step_completed('ai_db_cleaned')
-                except Exception as e:
-                    logger.error(f"Failed to clean up AI database: {e}")
+            # AI database no longer exists - skip this step
+            transaction.mark_step_completed('ai_db_cleaned')
+            logger.info(f"AI database no longer exists - skipping cleanup")
                     
             # Clean up vector store entries
             if exists['vector_store']:
                 try:
                     vector_store = self._get_vector_store()
+                    dense_deleted, sparse_deleted = vector_store.delete_document(doc_id)
                     
-                    with vector_store._file_lock("write"):
-                        client, dense_collection, sparse_collection = vector_store._get_client()
-                        
-                        # Clean up dense collection
-                        dense_results = dense_collection.get(where={"doc_id": doc_id})
-                        if dense_results['ids']:
-                            dense_collection.delete(ids=dense_results['ids'])
-                            
-                        # Clean up sparse collection  
-                        sparse_results = sparse_collection.get(where={"doc_id": doc_id})
-                        if sparse_results['ids']:
-                            sparse_collection.delete(ids=sparse_results['ids'])
-                        
-                    transaction.mark_step_completed('vector_store_cleaned')
+                    if dense_deleted > 0 or sparse_deleted > 0:
+                        transaction.mark_step_completed('vector_store_cleaned')
+                        logger.info(f"Cleaned up {dense_deleted + sparse_deleted} chunks from vector store")
                     
                 except Exception as e:
                     logger.error(f"Failed to clean up vector store: {e}")
@@ -447,20 +429,11 @@ class DocumentConsistencyManager:
             vector_store = self._get_vector_store()
             for doc_id in orphans['vector_store_only']:
                 try:
-                    with vector_store._file_lock("write"):
-                        client, dense_collection, sparse_collection = vector_store._get_client()
-                        
-                        dense_results = dense_collection.get(where={"doc_id": doc_id})
-                        sparse_results = sparse_collection.get(where={"doc_id": doc_id})
-                        
-                        if dense_results['ids']:
-                            dense_collection.delete(ids=dense_results['ids'])
-                        if sparse_results['ids']:
-                            sparse_collection.delete(ids=sparse_results['ids'])
-                        
-                    if dense_results['ids'] or sparse_results['ids']:
+                    dense_deleted, sparse_deleted = vector_store.delete_document(doc_id)
+                    
+                    if dense_deleted > 0 or sparse_deleted > 0:
                         cleanup_stats['vector_store_cleaned'] += 1
-                        logger.info(f"Cleaned up vector store orphan: {doc_id}")
+                        logger.info(f"Cleaned up vector store orphan: {doc_id} ({dense_deleted + sparse_deleted} chunks)")
                         
                 except Exception as e:
                     logger.error(f"Failed to clean up vector store orphan {doc_id}: {e}")

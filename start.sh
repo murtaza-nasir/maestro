@@ -39,6 +39,21 @@ fi
 # Source environment variables
 export $(grep -v '^#' .env | xargs)
 
+# Check if images exist, build if needed
+echo "🐳 Checking Docker images..."
+if ! docker images | grep -q "maestro-backend"; then
+    echo "📦 Building Docker images for first time setup..."
+    docker compose $COMPOSE_FILES build
+    echo "📦 Building CLI image..."
+    docker compose build cli
+else
+    # Check if CLI image exists
+    if ! docker images | grep -q "maestro-cli"; then
+        echo "📦 Building CLI image..."
+        docker compose build cli
+    fi
+fi
+
 # Start services
 echo "🐳 Starting Docker services..."
 docker compose $COMPOSE_FILES up -d
@@ -66,7 +81,12 @@ if docker compose ps | grep -q "Up"; then
     echo ""
     echo "Default login:"
     echo "   Username: admin"
-    echo "   Password: adminpass123"
+    echo "   Password: admin123"
+    echo ""
+    echo "⚠️  IMPORTANT - First Run:"
+    echo "   Initial startup takes 5-10 minutes to download AI models"
+    echo "   Monitor progress with: docker compose logs -f maestro-backend"
+    echo "   Wait for message: Application startup complete"
 else
     echo "❌ Failed to start services. Check logs with: docker compose logs"
     exit 1

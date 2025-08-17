@@ -1,4 +1,26 @@
 services:
+  # PostgreSQL database for document management
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: maestro-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-maestro_db}
+      POSTGRES_USER: ${POSTGRES_USER:-maestro_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-maestro_password}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    networks:
+      - maestro-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-maestro_user} -d ${POSTGRES_DB:-maestro_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Nginx reverse proxy - single entry point for the application
   nginx:
     build:
@@ -21,6 +43,9 @@ services:
       dockerfile: Dockerfile
     image: maestro-backend
     container_name: maestro-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - maestro-data:/app/ai_researcher/data
       - ./maestro_model_cache:/root/.cache/huggingface
@@ -39,6 +64,13 @@ services:
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-*}
       # Allow all origins in development mode when using nginx proxy
       - ALLOW_CORS_WILDCARD=${ALLOW_CORS_WILDCARD:-true}
+      # PostgreSQL connection - uses environment variables
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-maestro_user}:${POSTGRES_PASSWORD:-maestro_password}@${POSTGRES_HOST:-postgres}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-maestro_db}
+      # Admin credentials for initial setup
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      # JWT Secret for authentication
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-change-this}
     networks:
       - maestro-network
     # GPU support - uncomment the following lines if you have a GPU and nvidia-container-toolkit installed
@@ -91,6 +123,8 @@ services:
     environment:
       - TZ=${TZ:-UTC}
       - LOG_LEVEL=${LOG_LEVEL:-ERROR}
+      # PostgreSQL connection - same as backend
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-maestro_user}:${POSTGRES_PASSWORD:-maestro_password}@${POSTGRES_HOST:-postgres}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-maestro_db}
     deploy:
       resources:
         reservations:
@@ -122,6 +156,8 @@ services:
     environment:
       - TZ=${TZ:-UTC}
       - LOG_LEVEL=${LOG_LEVEL:-ERROR}
+      # PostgreSQL connection - same as backend
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-maestro_user}:${POSTGRES_PASSWORD:-maestro_password}@${POSTGRES_HOST:-postgres}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-maestro_db}
       # Performance settings from .env (optional, with defaults)
       - TRANSFORMERS_VERBOSITY=${TRANSFORMERS_VERBOSITY:-error}
       - TOKENIZERS_PARALLELISM=${TOKENIZERS_PARALLELISM:-false}
@@ -157,6 +193,7 @@ services:
   #   #           capabilities: [gpu]
 
 volumes:
+  postgres-data:
   maestro-data:
   maestro-models:  # New volume for models
   # ollama-data:

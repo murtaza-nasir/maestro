@@ -136,6 +136,11 @@ class MetadataExtractor:
 
         # Limit the text sample size
         text_sample_truncated = text_sample[:self.max_text_sample]
+        
+        # Debug: Print the first part of the text sample
+        print(f"MetadataExtractor: Processing text sample (first 500 chars):")
+        print(f"{text_sample_truncated[:500]}...")
+        print(f"MetadataExtractor: Total text sample length: {len(text_sample_truncated)} chars")
 
         # Construct the prompt
         system_prompt = "You are a meticulous metadata extraction assistant. You always return valid JSON conforming exactly to the provided schema. Extract information based *only* on the provided text."
@@ -195,6 +200,16 @@ Extract the metadata based *only* on the text provided above and return it as JS
             # Parse the JSON response
             metadata = json.loads(response_content)
             print("MetadataExtractor: Successfully parsed JSON response.")
+            
+            # Debug: Print the extracted metadata
+            print(f"MetadataExtractor: Extracted metadata:")
+            print(f"  - Title: {metadata.get('title', 'N/A')}")
+            print(f"  - Authors: {metadata.get('authors', [])}")
+            print(f"  - Journal/Source: {metadata.get('journal_or_source', 'N/A')}")
+            print(f"  - Year: {metadata.get('publication_year', 'N/A')}")
+            print(f"  - Keywords: {metadata.get('keywords', [])}")
+            if metadata.get('abstract'):
+                print(f"  - Abstract: {metadata.get('abstract', '')[:100]}...")
 
             # Basic validation (more robust validation using Pydantic could be added)
             if not isinstance(metadata, dict):

@@ -21,7 +21,7 @@ from auth.dependencies import get_current_user_from_cookie
 from database.database import SessionLocal, get_db
 from database import crud
 from database.models import User
-from ai_researcher.agentic_layer.context_manager import ContextManager
+from ai_researcher.agentic_layer.context_manager import ContextManager, set_main_event_loop
 from ai_researcher.agentic_layer.schemas.notes import Note
 from ai_researcher.agentic_layer.agent_controller import AgentController
 import json
@@ -83,14 +83,86 @@ async def transform_note_for_frontend_batch(note, code_to_filename: dict) -> dic
         if filename:
             transformed["source"] = filename
         else:
-            # Use pre-fetched filename mappings
+            # Try to get document title from database if we have a UUID
             if source_id:
-                from services.document_service import document_service
-                document_codes = document_service.extract_document_codes_from_text(source_id)
-                if document_codes and document_codes[0] in code_to_filename:
-                    transformed["source"] = code_to_filename[document_codes[0]]
+                # Check if source_id looks like a UUID
+                import re
+                uuid_pattern = re.compile(r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$', re.IGNORECASE)
+                if uuid_pattern.match(source_id):
+                    # It's a UUID, fetch document from database
+                    from database.database import get_db
+                    from database.models import Document
+                    db = next(get_db())
+                    try:
+                        doc = db.query(Document).filter(Document.id == source_id).first()
+                        if doc:
+                            # Prefer title from metadata, then filename
+                            if doc.metadata_ and doc.metadata_.get('title'):
+                                transformed["source"] = doc.metadata_['title']
+                            elif doc.original_filename:
+                                transformed["source"] = doc.original_filename
+                            elif doc.filename:
+                                transformed["source"] = doc.filename
+                            else:
+                                transformed["source"] = "Unknown Document"
+                        else:
+                            # Document not found, try legacy code extraction
+                            from services.document_service import document_service
+                            document_codes = document_service.extract_document_codes_from_text(source_id)
+                            if document_codes and document_codes[0] in code_to_filename:
+                                transformed["source"] = code_to_filename[document_codes[0]]
+                            else:
+                                transformed["source"] = source_id or "Unknown Document"
+                    finally:
+                        db.close()
                 else:
-                    transformed["source"] = source_id or "Unknown Document"
+                    # Not a UUID, try legacy code extraction
+                    from services.document_service import document_service
+                    document_codes = document_service.extract_document_codes_from_text(source_id)
+                    if document_codes and document_codes[0] in code_to_filename:
+                        transformed["source"] = code_to_filename[document_codes[0]]
+                    else:
+                        transformed["source"] = source_id or "Unknown Document"
+            else:
+                transformed["source"] = "Unknown Document"
+        
+        transformed.pop("url", None)
+        
+    elif source_type == "document_window":
+        # Document window is a content window extracted from a document
+        # The source_id should be the doc_id
+        if source_id:
+            # Check if source_id looks like a UUID
+            import re
+            uuid_pattern = re.compile(r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$', re.IGNORECASE)
+            if uuid_pattern.match(source_id):
+                # It's a UUID, fetch document from database
+                from database.database import get_db
+                from database.models import Document
+                db = next(get_db())
+                try:
+                    doc = db.query(Document).filter(Document.id == source_id).first()
+                    if doc:
+                        # Prefer title from metadata, then filename
+                        if doc.metadata_ and doc.metadata_.get('title'):
+                            transformed["source"] = doc.metadata_['title']
+                        elif doc.original_filename:
+                            transformed["source"] = doc.original_filename
+                        elif doc.filename:
+                            transformed["source"] = doc.filename
+                        else:
+                            transformed["source"] = "Unknown Document"
+                    else:
+                        transformed["source"] = source_id or "Unknown Document"
+                finally:
+                    db.close()
+            else:
+                transformed["source"] = source_id or "Unknown Document"
+        else:
+            # Check if we have original_filename in metadata
+            filename = source_metadata.get("original_filename")
+            if filename:
+                transformed["source"] = filename
             else:
                 transformed["source"] = "Unknown Document"
         
@@ -234,13 +306,15 @@ def initialize_ai_components():
         
         # Initialize RAG components
         from ai_researcher.core_rag.embedder import TextEmbedder
-        from ai_researcher.core_rag.vector_store_manager import VectorStoreManager as VectorStore
+        from ai_researcher.core_rag.pgvector_store import PGVectorStore as VectorStore
         
-        embedder = TextEmbedder()
-        # Use absolute path to ensure we connect to the existing ChromaDB data
-        vector_store = VectorStore(persist_directory="/app/ai_researcher/data/vector_store")
+        # Use cached model instances to avoid repeated initialization
+        from ai_researcher.core_rag.model_cache import model_cache
+        embedder = model_cache.get_embedder()
+        reranker = model_cache.get_reranker()
+        # PGVectorStore uses PostgreSQL database connection, no directory needed
+        vector_store = VectorStore()
         retriever = Retriever(embedder=embedder, vector_store=vector_store)
-        reranker = TextReranker()
         
         # Initialize agent controller
         agent_controller = AgentController(
@@ -569,16 +643,18 @@ async def get_mission_notes(
         )
 
 @router.get("/missions/{mission_id}/logs", response_model=MissionLogs)
+@router.get("/missions/{mission_id}/activity-logs", response_model=MissionLogs)  # Alias for frontend compatibility
 async def get_mission_logs(
     mission_id: str,
     current_user: User = Depends(get_current_user_from_cookie),
     context_mgr: ContextManager = Depends(get_context_manager),
     db: Session = Depends(get_db)
 ):
-    """Get all execution logs for a given mission, merging database and in-memory logs."""
+    """Get all execution logs for a given mission from the database."""
     try:
-        mission_context = context_mgr.get_mission_context(mission_id)
-        if not mission_context:
+        # Check if the mission exists and belongs to the current user
+        mission = crud.get_mission(db, mission_id, current_user.id)
+        if not mission:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Mission not found"
@@ -587,18 +663,14 @@ async def get_mission_logs(
         # Import document service for filename mapping
         from services.document_service import document_service
         
-        # Get logs from database (rich metadata)
+        # Get logs from database only - these are the source of truth
+        # Live updates come through WebSocket, not through this endpoint
         db_logs = crud.get_mission_execution_logs(db, mission_id, current_user.id)
         
-        # Get logs from in-memory (simple messages)
-        memory_logs = mission_context.execution_log
+        logger.info(f"Retrieved {len(db_logs)} logs from DB for mission {mission_id}")
         
-        logger.info(f"Retrieved {len(db_logs)} logs from DB, {len(memory_logs)} from memory for mission {mission_id}")
-        
-        # Create a dictionary to store merged logs by timestamp
-        merged_logs = {}
-        
-        # Process database logs first (they have rich metadata)
+        # Process database logs
+        logs = []
         for db_log in db_logs:
             # Replace document codes in the action text
             action_with_filenames = await document_service.replace_document_codes_in_text(db_log.action)
@@ -623,50 +695,12 @@ async def get_mission_logs(
                 "completion_tokens": db_log.completion_tokens,
                 "native_tokens": db_log.native_tokens
             }
-            
-            # Use timestamp as key for merging (normalize timezone differences)
-            timestamp_key = db_log.timestamp.replace(microsecond=0).isoformat() if hasattr(db_log.timestamp, 'replace') else str(db_log.timestamp)
-            merged_logs[timestamp_key] = log_entry
+            logs.append(log_entry)
         
-        # Process in-memory logs (add any that aren't in database)
-        for memory_log in memory_logs:
-            # Normalize timestamp for comparison
-            if hasattr(memory_log.timestamp, 'replace'):
-                timestamp_key = memory_log.timestamp.replace(microsecond=0).isoformat()
-            else:
-                timestamp_key = str(memory_log.timestamp)
-            
-            # Only add if not already in merged_logs from database
-            if timestamp_key not in merged_logs:
-                # Replace document codes in the action text
-                action_with_filenames = await document_service.replace_document_codes_in_text(memory_log.action)
-                
-                # Create simple log entry from memory
-                log_entry = {
-                    "timestamp": memory_log.timestamp.isoformat() if hasattr(memory_log.timestamp, 'isoformat') else str(memory_log.timestamp),
-                    "agent_name": memory_log.agent_name,
-                    "message": action_with_filenames,
-                    "action": action_with_filenames,
-                    "input_summary": getattr(memory_log, 'input_summary', None),
-                    "output_summary": getattr(memory_log, 'output_summary', None),
-                    "status": getattr(memory_log, 'status', 'success'),
-                    "error_message": getattr(memory_log, 'error_message', None),
-                    "full_input": getattr(memory_log, 'full_input', None),
-                    "full_output": getattr(memory_log, 'full_output', None),
-                    "model_details": getattr(memory_log, 'model_details', None),
-                    "tool_calls": getattr(memory_log, 'tool_calls', None),
-                    "file_interactions": getattr(memory_log, 'file_interactions', None),
-                    "cost": None,
-                    "prompt_tokens": None,
-                    "completion_tokens": None,
-                    "native_tokens": None
-                }
-                merged_logs[timestamp_key] = log_entry
+        # Sort logs by timestamp
+        sorted_logs = sorted(logs, key=lambda x: x["timestamp"])
         
-        # Sort logs by timestamp and convert to list
-        sorted_logs = sorted(merged_logs.values(), key=lambda x: x["timestamp"])
-        
-        logger.info(f"Returning {len(sorted_logs)} merged logs for mission {mission_id}")
+        logger.info(f"Returning {len(sorted_logs)} logs for mission {mission_id}")
         
         return MissionLogs(
             mission_id=mission_id,
@@ -767,8 +801,10 @@ async def resume_mission_execution(
                 elif hasattr(update_data, 'agent_name') and hasattr(update_data, 'action'):
                     # This is an ExecutionLogEntry object, transform it for frontend
                     log_entry_dict = {
+                        "log_id": getattr(update_data, 'log_id', None),  # Include the unique log ID
                         "timestamp": update_data.timestamp.isoformat() if hasattr(update_data.timestamp, 'isoformat') else str(update_data.timestamp),
                         "agent_name": update_data.agent_name,
+                        "message": update_data.action,  # Add message field for frontend compatibility
                         "action": update_data.action,
                         "input_summary": getattr(update_data, 'input_summary', None),
                         "output_summary": getattr(update_data, 'output_summary', None),
@@ -841,9 +877,9 @@ async def resume_mission_execution(
         thread_pool: ThreadPoolExecutor = request.app.state.thread_pool
         
         def run_mission_in_thread():
-            """Sets user context and runs the mission."""
+            """Sets user context and resumes the mission from where it left off."""
             set_current_user(current_user)
-            asyncio.run(controller.run_mission(
+            asyncio.run(controller.resume_mission(
                 mission_id,
                 log_queue=log_queue,
                 update_callback=websocket_update_callback
@@ -989,8 +1025,10 @@ async def start_mission_execution(
                 elif hasattr(update_data, 'agent_name') and hasattr(update_data, 'action'):
                     # This is an ExecutionLogEntry object, transform it for frontend
                     log_entry_dict = {
+                        "log_id": getattr(update_data, 'log_id', None),  # Include the unique log ID
                         "timestamp": update_data.timestamp.isoformat() if hasattr(update_data.timestamp, 'isoformat') else str(update_data.timestamp),
                         "agent_name": update_data.agent_name,
+                        "message": update_data.action,  # Add message field for frontend compatibility
                         "action": update_data.action,
                         "input_summary": getattr(update_data, 'input_summary', None),
                         "output_summary": getattr(update_data, 'output_summary', None),

@@ -7,7 +7,7 @@ python-docx # <-- Add DOCX creation
 
 # Embeddings & Vector Store
 FlagEmbedding
-chromadb
+# chromadb - removed, using PostgreSQL pgvector instead
 torch
 torchvision
 torchaudio

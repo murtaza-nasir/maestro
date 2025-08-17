@@ -11,7 +11,6 @@ import { FileText, RefreshCw, Copy, Edit3, X, Save, CheckCheck } from 'lucide-re
 //   DropdownMenuTrigger,
 // } from '../../../components/ui/dropdown-menu'
 import { apiClient } from '../../../config/api'
-import { useMissionWebSocket } from '../../../services/websocket'
 
 interface DraftTabProps {
   missionId: string
@@ -25,9 +24,6 @@ export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
   const [isLoading, setIsLoading] = useState(false)
   const [wordCount, setWordCount] = useState(0)
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'success' | 'error'>('idle')
-
-  // WebSocket connection for real-time draft updates
-  const { isConnected, subscribe } = useMissionWebSocket(missionId)
 
   const fetchDraft = useCallback(async (showLoading = true) => {
     if (!missionId) return
@@ -55,28 +51,8 @@ export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
     }
   }, [missionId, setMissionDraft, updateMissionReport])
 
-  // Handle WebSocket draft updates
-  useEffect(() => {
-    if (!isConnected) return
-
-    const unsubscribe = subscribe('draft_update', (message: any) => {
-      if (import.meta.env.DEV) {
-        console.log('Draft update received')
-      }
-      
-      if (message.mission_id === missionId && message.data) {
-        if (message.action === 'draft') {
-          setMissionDraft(missionId, message.data)
-        } else if (message.action === 'report') {
-          updateMissionReport(missionId, message.data)
-        }
-      }
-    })
-
-    return unsubscribe
-  }, [isConnected, subscribe, missionId, setMissionDraft, updateMissionReport])
-
-  // Initial fetch only - rely on ResearchPanel's WebSocket for updates
+  // WebSocket updates are now handled by ResearchPanel
+  // Initial fetch only
   useEffect(() => {
     if (!activeMission?.draft && !activeMission?.report) {
       fetchDraft()
@@ -213,9 +189,9 @@ export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
   }
 
   const handleDownload = (format: 'md' | 'docx') => {
-    console.log('Download clicked:', format);
-    console.log('Current content available:', !!getCurrentContent());
-    console.log('Mission ID:', missionId);
+    // console.log('Download clicked:', format);
+    // console.log('Current content available:', !!getCurrentContent());
+    // console.log('Mission ID:', missionId);
     
     if (format === 'md') {
       handleDownloadMarkdown();
@@ -543,7 +519,7 @@ export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
               </Button>
               <Button
                 onClick={() => {
-                  console.log('DIRECT MARKDOWN TEST BUTTON CLICKED');
+                  // console.log('DIRECT MARKDOWN TEST BUTTON CLICKED');
                   handleDownload('md');
                 }}
                 variant="outline"
@@ -555,7 +531,7 @@ export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
               </Button>
               <Button
                 onClick={() => {
-                  console.log('DIRECT WORD TEST BUTTON CLICKED');
+                  // console.log('DIRECT WORD TEST BUTTON CLICKED');
                   handleDownload('docx');
                 }}
                 variant="outline"
@@ -580,14 +556,14 @@ export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onClick={() => {
-                    console.log('MARKDOWN CLICK HANDLER CALLED');
+                    // console.log('MARKDOWN CLICK HANDLER CALLED');
                     handleDownload('md');
                   }}>
                     <FileText className="mr-2 h-4 w-4" />
                     Download as Markdown
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => {
-                    console.log('WORD CLICK HANDLER CALLED');
+                    // console.log('WORD CLICK HANDLER CALLED');
                     handleDownload('docx');
                   }}>
                     <FileText className="mr-2 h-4 w-4" />

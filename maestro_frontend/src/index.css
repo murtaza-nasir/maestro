@@ -478,153 +478,153 @@
 
 /* Light Theme Variants */
 .theme-light-blue {
-  --background: 220 20% 98%; /* soft blue-tinted background */
-  --background-alt: 220 15% 96%; /* very light blue */
-  --card: 220 10% 99%; /* card background */
+  --background: 220 20% 94%; /* soft blue-tinted background */
+  --background-alt: 220 15% 91%; /* very light blue */
+  --card: 220 10% 96%; /* card background */
   --primary: 220 70% 55%; /* blue primary */
   --primary-foreground: 220 20% 98%;
-  --secondary: 220 15% 94%; /* soft blue secondary */
+  --secondary: 220 15% 90%; /* soft blue secondary */
   --secondary-foreground: 220 70% 25%;
-  --muted: 220 15% 94%;
+  --muted: 220 15% 90%;
   --muted-foreground: 220 20% 40%;
-  --accent: 220 30% 90%; /* light blue accent */
+  --accent: 220 30% 85%; /* light blue accent */
   --accent-foreground: 220 70% 25%;
-  --border: 220 20% 88%; /* light blue border */
-  --input: 220 10% 99%; /* white input background */
+  --border: 220 20% 85%; /* light blue border */
+  --input: 220 10% 95%; /* white input background */
   --ring: 220 70% 55%; /* blue focus ring */
-  --code-background: 220 15% 94%;
+  --code-background: 220 15% 90%;
   --code-foreground: 220 70% 25%;
-  --sidebar-background: 220 15% 96%;
-  --header-background: 220 15% 96%;
-  --stats-background: 220 10% 99%;
-  --tab-list-background: 220 15% 96%;
-  --tab-trigger-active-background: 220 10% 99%;
-  --tab-trigger-hover-background: 220 15% 94%;
+  --sidebar-background: 220 15% 92%;
+  --header-background: 220 15% 92%;
+  --stats-background: 220 10% 95%;
+  --tab-list-background: 220 15% 92%;
+  --tab-trigger-active-background: 220 10% 95%;
+  --tab-trigger-hover-background: 220 15% 90%;
 }
 
 .theme-light-emerald {
-  --background: 150 20% 98%; /* soft green-tinted background */
-  --background-alt: 150 15% 96%; /* very light green */
-  --card: 150 10% 99%; /* card background */
+  --background: 150 20% 94%; /* soft green-tinted background */
+  --background-alt: 150 15% 91%; /* very light green */
+  --card: 150 10% 96%; /* card background */
   --primary: 150 60% 45%; /* emerald primary */
   --primary-foreground: 150 20% 98%;
-  --secondary: 150 15% 94%; /* soft green secondary */
+  --secondary: 150 15% 90%; /* soft green secondary */
   --secondary-foreground: 150 60% 20%;
-  --muted: 150 15% 94%;
+  --muted: 150 15% 90%;
   --muted-foreground: 150 20% 40%;
-  --accent: 150 30% 90%; /* light green accent */
+  --accent: 150 30% 85%; /* light green accent */
   --accent-foreground: 150 60% 20%;
-  --border: 150 20% 88%; /* light green border */
-  --input: 150 10% 99%; /* white input background */
+  --border: 150 20% 85%; /* light green border */
+  --input: 150 10% 95%; /* white input background */
   --ring: 150 60% 45%; /* emerald focus ring */
-  --code-background: 150 15% 94%;
+  --code-background: 150 15% 90%;
   --code-foreground: 150 60% 20%;
-  --sidebar-background: 150 15% 96%;
-  --header-background: 150 15% 96%;
-  --stats-background: 150 10% 99%;
-  --tab-list-background: 150 15% 96%;
-  --tab-trigger-active-background: 150 10% 99%;
-  --tab-trigger-hover-background: 150 15% 94%;
+  --sidebar-background: 150 15% 92%;
+  --header-background: 150 15% 92%;
+  --stats-background: 150 10% 95%;
+  --tab-list-background: 150 15% 92%;
+  --tab-trigger-active-background: 150 10% 95%;
+  --tab-trigger-hover-background: 150 15% 90%;
 }
 
 .theme-light-purple {
-  --background: 270 20% 98%; /* soft purple-tinted background */
-  --background-alt: 270 15% 96%; /* very light purple */
-  --card: 270 10% 99%; /* card background */
+  --background: 270 20% 94%; /* soft purple-tinted background */
+  --background-alt: 270 15% 91%; /* very light purple */
+  --card: 270 10% 96%; /* card background */
   --primary: 270 60% 55%; /* purple primary */
   --primary-foreground: 270 20% 98%;
-  --secondary: 270 15% 94%; /* soft purple secondary */
+  --secondary: 270 15% 90%; /* soft purple secondary */
   --secondary-foreground: 270 60% 25%;
-  --muted: 270 15% 94%;
+  --muted: 270 15% 90%;
   --muted-foreground: 270 20% 40%;
-  --accent: 270 30% 90%; /* light purple accent */
+  --accent: 270 30% 85%; /* light purple accent */
   --accent-foreground: 270 60% 25%;
-  --border: 270 20% 88%; /* light purple border */
-  --input: 270 10% 99%; /* white input background */
+  --border: 270 20% 85%; /* light purple border */
+  --input: 270 10% 95%; /* white input background */
   --ring: 270 60% 55%; /* purple focus ring */
-  --code-background: 270 15% 94%;
+  --code-background: 270 15% 90%;
   --code-foreground: 270 60% 25%;
-  --sidebar-background: 270 15% 96%;
-  --header-background: 270 15% 96%;
-  --stats-background: 270 10% 99%;
-  --tab-list-background: 270 15% 96%;
-  --tab-trigger-active-background: 270 10% 99%;
-  --tab-trigger-hover-background: 270 15% 94%;
+  --sidebar-background: 270 15% 92%;
+  --header-background: 270 15% 92%;
+  --stats-background: 270 10% 95%;
+  --tab-list-background: 270 15% 92%;
+  --tab-trigger-active-background: 270 10% 95%;
+  --tab-trigger-hover-background: 270 15% 90%;
 }
 
 .theme-light-rose {
-  --background: 350 20% 98%; /* soft rose-tinted background */
-  --background-alt: 350 15% 96%; /* very light rose */
-  --card: 350 10% 99%; /* card background */
+  --background: 350 20% 94%; /* soft rose-tinted background */
+  --background-alt: 350 15% 91%; /* very light rose */
+  --card: 350 10% 96%; /* card background */
   --primary: 350 70% 55%; /* rose primary */
   --primary-foreground: 350 20% 98%;
-  --secondary: 350 15% 94%; /* soft rose secondary */
+  --secondary: 350 15% 90%; /* soft rose secondary */
   --secondary-foreground: 350 70% 25%;
-  --muted: 350 15% 94%;
+  --muted: 350 15% 90%;
   --muted-foreground: 350 20% 40%;
-  --accent: 350 30% 90%; /* light rose accent */
+  --accent: 350 30% 85%; /* light rose accent */
   --accent-foreground: 350 70% 25%;
-  --border: 350 20% 88%; /* light rose border */
-  --input: 350 10% 99%; /* white input background */
+  --border: 350 20% 85%; /* light rose border */
+  --input: 350 10% 95%; /* white input background */
   --ring: 350 70% 55%; /* rose focus ring */
-  --code-background: 350 15% 94%;
+  --code-background: 350 15% 90%;
   --code-foreground: 350 70% 25%;
-  --sidebar-background: 350 15% 96%;
-  --header-background: 350 15% 96%;
-  --stats-background: 350 10% 99%;
-  --tab-list-background: 350 15% 96%;
-  --tab-trigger-active-background: 350 10% 99%;
-  --tab-trigger-hover-background: 350 15% 94%;
+  --sidebar-background: 350 15% 92%;
+  --header-background: 350 15% 92%;
+  --stats-background: 350 10% 95%;
+  --tab-list-background: 350 15% 92%;
+  --tab-trigger-active-background: 350 10% 95%;
+  --tab-trigger-hover-background: 350 15% 90%;
 }
 
 .theme-light-amber {
-  --background: 45 20% 98%; /* soft amber-tinted background */
-  --background-alt: 45 15% 96%; /* very light amber */
-  --card: 45 10% 99%; /* card background */
+  --background: 45 20% 94%; /* soft amber-tinted background */
+  --background-alt: 45 15% 91%; /* very light amber */
+  --card: 45 10% 96%; /* card background */
   --primary: 45 90% 50%; /* amber primary */
   --primary-foreground: 45 20% 98%;
-  --secondary: 45 15% 94%; /* soft amber secondary */
+  --secondary: 45 15% 90%; /* soft amber secondary */
   --secondary-foreground: 45 90% 25%;
-  --muted: 45 15% 94%;
+  --muted: 45 15% 90%;
   --muted-foreground: 45 20% 40%;
-  --accent: 45 30% 90%; /* light amber accent */
+  --accent: 45 30% 85%; /* light amber accent */
   --accent-foreground: 45 90% 25%;
-  --border: 45 20% 88%; /* light amber border */
-  --input: 45 10% 99%; /* white input background */
+  --border: 45 20% 85%; /* light amber border */
+  --input: 45 10% 95%; /* white input background */
   --ring: 45 90% 50%; /* amber focus ring */
-  --code-background: 45 15% 94%;
+  --code-background: 45 15% 90%;
   --code-foreground: 45 90% 25%;
-  --sidebar-background: 45 15% 96%;
-  --header-background: 45 15% 96%;
-  --stats-background: 45 10% 99%;
-  --tab-list-background: 45 15% 96%;
-  --tab-trigger-active-background: 45 10% 99%;
-  --tab-trigger-hover-background: 45 15% 94%;
+  --sidebar-background: 45 15% 92%;
+  --header-background: 45 15% 92%;
+  --stats-background: 45 10% 95%;
+  --tab-list-background: 45 15% 92%;
+  --tab-trigger-active-background: 45 10% 95%;
+  --tab-trigger-hover-background: 45 15% 90%;
 }
 
 .theme-light-teal {
-  --background: 180 20% 98%; /* soft teal-tinted background */
-  --background-alt: 180 15% 96%; /* very light teal */
-  --card: 180 10% 99%; /* card background */
+  --background: 180 20% 94%; /* soft teal-tinted background */
+  --background-alt: 180 15% 91%; /* very light teal */
+  --card: 180 10% 96%; /* card background */
   --primary: 180 60% 45%; /* teal primary */
   --primary-foreground: 180 20% 98%;
-  --secondary: 180 15% 94%; /* soft teal secondary */
+  --secondary: 180 15% 90%; /* soft teal secondary */
   --secondary-foreground: 180 60% 20%;
-  --muted: 180 15% 94%;
+  --muted: 180 15% 90%;
   --muted-foreground: 180 20% 40%;
-  --accent: 180 30% 90%; /* light teal accent */
+  --accent: 180 30% 85%; /* light teal accent */
   --accent-foreground: 180 60% 20%;
-  --border: 180 20% 88%; /* light teal border */
-  --input: 180 10% 99%; /* white input background */
+  --border: 180 20% 85%; /* light teal border */
+  --input: 180 10% 95%; /* white input background */
   --ring: 180 60% 45%; /* teal focus ring */
-  --code-background: 180 15% 94%;
+  --code-background: 180 15% 90%;
   --code-foreground: 180 60% 20%;
-  --sidebar-background: 180 15% 96%;
-  --header-background: 180 15% 96%;
-  --stats-background: 180 10% 99%;
-  --tab-list-background: 180 15% 96%;
-  --tab-trigger-active-background: 180 10% 99%;
-  --tab-trigger-hover-background: 180 15% 94%;
+  --sidebar-background: 180 15% 92%;
+  --header-background: 180 15% 92%;
+  --stats-background: 180 10% 95%;
+  --tab-list-background: 180 15% 92%;
+  --tab-trigger-active-background: 180 10% 95%;
+  --tab-trigger-hover-background: 180 15% 90%;
 }
 
 /* Dark Theme Variants */

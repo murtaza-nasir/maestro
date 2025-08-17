@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
-  Search,
   CheckSquare, 
   Square, 
   Trash2, 
@@ -13,16 +12,14 @@ import {
   Edit,
   Eye
 } from 'lucide-react';
-import type { Document, PaginationInfo } from '../types';
+import type { Document } from '../types';
 import { 
   bulkDeleteDocuments, 
   bulkAddDocumentsToGroup, 
   bulkRemoveDocumentsFromGroup
 } from '../api';
-import { PaginationControls } from '../../../components/ui/PaginationControls';
 import { useDocumentContext } from '../context/DocumentContext';
 import { DeleteConfirmationModal } from '../../../components/ui/DeleteConfirmationModal';
-import { DocumentUploadZone } from './DocumentUploadZone';
 import { useDocumentUploadManager } from '../context/DocumentUploadContext';
 import { DocumentMetadataEditModal } from './DocumentMetadataEditModal';
 import { DocumentViewModal } from './DocumentViewModal';
@@ -35,11 +32,6 @@ interface EnhancedDocumentListProps {
   showGroupActions?: boolean;
   isGroupView?: boolean; // true when viewing documents within a group, false when browsing to add to group
   title?: string;
-  pagination?: PaginationInfo;
-  onPageChange?: (page: number) => void;
-  onLimitChange?: (limit: number) => void;
-  searchValue?: string;
-  onSearchChange?: (search: string) => void;
 }
 
 export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
@@ -49,11 +41,6 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
   onDocumentAdded,
   showGroupActions = false,
   isGroupView = false,
-  pagination,
-  onPageChange,
-  onLimitChange,
-  searchValue = '',
-  onSearchChange,
 }) => {
   const { refreshGroups } = useDocumentContext();
   const { startUploads } = useDocumentUploadManager();
@@ -245,11 +232,6 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
     e.preventDefault();
     setIsDragOver(false);
     
-    if (!selectedGroupId) {
-      setError('Please select a document group first');
-      return;
-    }
-    
     // Accept multiple file types: PDF, Word documents, and Markdown files
     const supportedTypes = [
       'application/pdf',
@@ -262,7 +244,7 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
     const supportedExtensions = ['.pdf', '.docx', '.doc', '.md', '.markdown'];
     
     const allFiles = Array.from(e.dataTransfer.files);
-    console.log(`EnhancedDocumentList: Files dropped:`, allFiles.map(f => `${f.name} (type: ${f.type})`));
+    // console.log(`EnhancedDocumentList: Files dropped:`, allFiles.map(f => `${f.name} (type: ${f.type})`));
     
     const files = allFiles.filter(file => {
       const hasValidType = supportedTypes.includes(file.type);
@@ -271,13 +253,13 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
       );
       
       const isValid = hasValidType || hasValidExtension;
-      console.log(`File ${file.name}: type=${file.type}, extension valid=${hasValidExtension}, type valid=${hasValidType}, accepted=${isValid}`);
+      // console.log(`File ${file.name}: type=${file.type}, extension valid=${hasValidExtension}, type valid=${hasValidType}, accepted=${isValid}`);
       
       // Accept file if either MIME type OR file extension matches
       return isValid;
     });
     
-    console.log(`EnhancedDocumentList: ${files.length}/${allFiles.length} files passed validation`);
+    // console.log(`EnhancedDocumentList: ${files.length}/${allFiles.length} files passed validation`);
     
     if (files.length > 0) {
       startUploads(files, selectedGroupId);
@@ -289,18 +271,12 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
   }, [selectedGroupId, startUploads, onDocumentAdded]);
 
   const handleFilesSelected = useCallback((files: File[]) => {
-    console.log(`handleFilesSelected called with ${files.length} files:`, files.map(f => f.name));
-    console.log('selectedGroupId:', selectedGroupId);
+    // console.log(`handleFilesSelected called with ${files.length} files:`, files.map(f => f.name));
+    // console.log('selectedGroupId:', selectedGroupId);
     
-    if (!selectedGroupId) {
-      const errorMsg = 'Please select a document group first';
-      console.error(errorMsg);
-      setError(errorMsg);
-      return;
-    }
-    
-    console.log('Starting uploads...');
-    startUploads(files, selectedGroupId);
+    // Allow uploads without a group - they go to general documents
+    // console.log('Starting uploads...');
+    startUploads(files, selectedGroupId || null);
     onDocumentAdded?.();
   }, [selectedGroupId, startUploads, onDocumentAdded]);
 
@@ -340,26 +316,8 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
             <Upload className="h-16 w-16 text-primary mx-auto mb-4" />
             <h3 className="text-xl font-semibold text-foreground mb-2">Drop documents here</h3>
             <p className="text-muted-foreground">
-              {selectedGroupId 
-                ? 'Supports PDF, Word (docx/doc), and Markdown (md) files'
-                : 'Select a document group first to upload files'
-              }
+              Supports PDF, Word (docx/doc), and Markdown (md) files
             </p>
-          </div>
-        </div>
-      )}
-      {/* Search Bar - matching DocumentBrowser and sidebar styling exactly */}
-      {onSearchChange && (
-        <div className="p-3 border-b border-border">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-text-tertiary" />
-            <input
-              type="text"
-              placeholder="Search by title, author, or filename..."
-              value={searchValue}
-              onChange={(e) => onSearchChange(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 border border-border rounded-md focus:ring-2 focus:ring-primary focus:border-transparent text-xs bg-background text-text-primary placeholder:text-text-secondary"
-            />
           </div>
         </div>
       )}
@@ -430,32 +388,21 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
         )}
 
         {filteredDocuments.length === 0 ? (
-          <div className="flex-1 flex flex-col">
-            {documents.length === 0 && selectedGroupId ? (
-              // Show upload zone when no documents in group
-              <div className="flex-1 p-6">
-                <DocumentUploadZone
-                  selectedGroupId={selectedGroupId}
-                  onFilesSelected={handleFilesSelected}
-                />
-              </div>
-            ) : (
-              // Show empty state for filtered results or no group selected
-              <div className="flex-1 flex items-center justify-center h-full">
-                <div className="text-center">
-                  <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-foreground mb-2">
-                    {documents.length === 0 ? 'No documents yet' : 'No documents match your filters'}
-                  </h3>
-                  <p className="text-muted-foreground">
-                    {documents.length === 0 
-                      ? 'Upload PDF documents or browse the document library to get started.'
-                      : 'Try adjusting your search terms or filters.'
-                    }
-                  </p>
-                </div>
-              </div>
-            )}
+          <div className="flex-1 flex items-center justify-center h-full">
+            <div className="text-center">
+              <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-foreground mb-2">
+                {documents.length === 0 ? 'No documents yet' : 'No documents match your filters'}
+              </h3>
+              <p className="text-muted-foreground">
+                {documents.length === 0 
+                  ? selectedGroupId 
+                    ? 'Drag and drop files here or use "Browse & Add" to get started.'
+                    : 'Drag and drop files here to upload to your library.'
+                  : 'Try adjusting your search terms or filters.'
+                }
+              </p>
+            </div>
           </div>
         ) : (
           <div className="divide-y divide-border">
@@ -543,8 +490,8 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
                         )}
                       </div>
                       
-                      {/* Action buttons - only show for completed documents */}
-                      {doc.processing_status === 'completed' && (
+                      {/* Action buttons - show for all documents that are not actively processing */}
+                      {(!doc.processing_status || doc.processing_status === 'completed' || doc.processing_status === 'failed') && (
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
                             onClick={(e) => {
@@ -569,6 +516,13 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
                         </div>
                       )}
                     </div>
+
+                    {/* Abstract preview */}
+                    {doc.metadata_?.abstract && (
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        <p className="line-clamp-2">{doc.metadata_.abstract}</p>
+                      </div>
+                    )}
 
                     {/* Processing Status */}
                     {doc.processing_status && doc.processing_status !== 'completed' && (
@@ -615,14 +569,6 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
         )}
       </div>
 
-      {/* Pagination Controls */}
-      {pagination && onPageChange && onLimitChange && documents.length > 0 && (
-        <PaginationControls
-          pagination={pagination}
-          onPageChange={onPageChange}
-          onLimitChange={onLimitChange}
-        />
-      )}
 
       {/* Delete Confirmation Modal */}
       <DeleteConfirmationModal

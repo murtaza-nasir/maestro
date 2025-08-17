@@ -4,7 +4,8 @@ from datetime import datetime, timedelta
 import os
 import secrets
 
-SECRET_KEY = os.getenv("SECRET_KEY", "a_very_secret_key")
+# Try JWT_SECRET_KEY first (new standard), fall back to SECRET_KEY for compatibility
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", os.getenv("SECRET_KEY", "a_very_secret_key"))
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REMEMBER_ME_TOKEN_EXPIRE_DAYS = 30  # 30 days for remember me tokens

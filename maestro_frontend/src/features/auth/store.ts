@@ -15,7 +15,7 @@ interface AuthState {
   user: User | null
   isAuthenticated: boolean
   csrfToken: string | null
-  accessToken: string | null  // Add access token for WebSocket connections
+  accessToken: string | null
   login: (username: string, password: string, rememberMe?: boolean) => Promise<void>
   register: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
@@ -26,9 +26,11 @@ interface AuthState {
   checkAuth: () => Promise<void>
 }
 
+// @ts-ignore - Zustand v4/v5 TypeScript compatibility issues
 export const useAuthStore = create<AuthState>()(
+  // @ts-ignore
   persist(
-    (set) => ({
+    (set, get) => ({
       user: null,
       isAuthenticated: false,
       csrfToken: null,
@@ -36,7 +38,6 @@ export const useAuthStore = create<AuthState>()(
 
       login: async (username: string, password: string, rememberMe?: boolean) => {
         try {
-          // Create form data for OAuth2PasswordRequestForm
           const formData = new FormData()
           formData.append('username', username)
           formData.append('password', password)
@@ -45,39 +46,23 @@ export const useAuthStore = create<AuthState>()(
             'Content-Type': 'application/x-www-form-urlencoded',
           }
           
-          // Add remember me header if requested
           if (rememberMe) {
             headers['X-Remember-Me'] = 'true'
           }
+
+          const response = await apiClient.post('/api/auth/login', 
+            new URLSearchParams(formData as any), 
+            { headers }
+          )
           
-          const response = await apiClient.post('/api/auth/login', formData, {
-            headers,
-          })
-          
-          const { csrf_token, access_token } = response.data
-          
-          // Store access token in localStorage for WebSocket connections
-          if (access_token) {
-            localStorage.setItem('access_token', access_token)
-          }
-          
-          // Get user info after successful login
-          const userResponse = await apiClient.get('/api/auth/me')
-          
-          set({
-            user: userResponse.data,
-            isAuthenticated: true,
-            csrfToken: csrf_token,
-            accessToken: access_token || null,
-          })
-          
-          // Load user settings immediately after login
-          try {
-            const { useSettingsStore } = await import('./components/SettingsStore')
-            const settingsStore = useSettingsStore.getState()
-            await settingsStore.loadSettings()
-          } catch (error) {
-            console.error('Failed to load settings after login:', error)
+          if (response.data.access_token) {
+            set({ 
+              user: response.data.user,
+              isAuthenticated: true,
+              accessToken: response.data.access_token
+            })
+            
+            apiClient.defaults.headers.common['Authorization'] = `Bearer ${response.data.access_token}`
           }
         } catch (error) {
           console.error('Login failed:', error)
@@ -87,36 +72,20 @@ export const useAuthStore = create<AuthState>()(
 
       register: async (username: string, password: string) => {
         try {
-          // First register the user
-          const registerResponse = await apiClient.post('/api/auth/register', {
+          const response = await apiClient.post('/api/auth/register', {
             username,
-            password,
+            password
           })
           
-          // Then log them in to get the session and CSRF token
-          const formData = new FormData()
-          formData.append('username', username)
-          formData.append('password', password)
-          
-          const loginResponse = await apiClient.post('/api/auth/login', formData, {
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-            },
-          })
-          
-          const { csrf_token, access_token } = loginResponse.data
-          
-          // Store access token in localStorage for WebSocket connections
-          if (access_token) {
-            localStorage.setItem('access_token', access_token)
+          if (response.data.access_token) {
+            set({ 
+              user: response.data.user,
+              isAuthenticated: true,
+              accessToken: response.data.access_token
+            })
+            
+            apiClient.defaults.headers.common['Authorization'] = `Bearer ${response.data.access_token}`
           }
-          
-          set({
-            user: registerResponse.data,
-            isAuthenticated: true,
-            csrfToken: csrf_token,
-            accessToken: access_token || null,
-          })
         } catch (error) {
           console.error('Registration failed:', error)
           throw error
@@ -127,84 +96,81 @@ export const useAuthStore = create<AuthState>()(
         try {
           await apiClient.post('/api/auth/logout')
         } catch (error) {
-          console.error('Logout failed:', error)
+          console.error('Logout request failed:', error)
         } finally {
-          // Clear access token from localStorage
-          localStorage.removeItem('access_token')
-          
-          set({
-            user: null,
+          set({ 
+            user: null, 
             isAuthenticated: false,
-            csrfToken: null,
-            accessToken: null,
+            accessToken: null
           })
+          
+          delete apiClient.defaults.headers.common['Authorization']
         }
       },
 
       setCsrfToken: (token: string) => {
         set({ csrfToken: token })
+        apiClient.defaults.headers.common['X-CSRF-Token'] = token
       },
-
+      
       setAccessToken: (token: string) => {
-        localStorage.setItem('access_token', token)
         set({ accessToken: token })
+        apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`
       },
       
       getAccessToken: () => {
-        // First try to get from state
-        const state = useAuthStore.getState() as AuthState
-        if (state.accessToken) {
-          return state.accessToken
-        }
-        
-        // Fallback to localStorage
-        return localStorage.getItem('access_token')
+        return (get() as AuthState).accessToken
       },
-
+      
       getCsrfToken: () => {
-        // Get from state
-        const state = useAuthStore.getState() as AuthState
-        return state.csrfToken
+        return (get() as AuthState).csrfToken
       },
 
       checkAuth: async () => {
         try {
-          const response = await apiClient.get('/api/auth/me')
-          if (response.status === 200) {
-            // If we can access the user endpoint, we're authenticated
+          const token = (get() as AuthState).accessToken
+          if (!token) {
+            set({ 
+              user: null, 
+              isAuthenticated: false 
+            })
+            return
+          }
+
+          const response = await apiClient.get('/api/auth/me', {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          })
+          
+          if (response.data) {
             set({ 
               user: response.data,
-              isAuthenticated: true,
-              // Keep existing tokens
-              accessToken: useAuthStore.getState().accessToken || null,
-              csrfToken: useAuthStore.getState().csrfToken || null,
+              isAuthenticated: true 
             })
-            
-            // Load user settings if authenticated
-            try {
-              const { useSettingsStore } = await import('./components/SettingsStore')
-              const settingsStore = useSettingsStore.getState()
-              await settingsStore.loadSettings()
-            } catch (error) {
-              console.error('Failed to load settings during auth check:', error)
-            }
+            apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`
+          } else {
+            set({ 
+              user: null, 
+              isAuthenticated: false,
+              accessToken: null
+            })
+            delete apiClient.defaults.headers.common['Authorization']
           }
         } catch (error) {
-          // Clear access token from localStorage
-          localStorage.removeItem('access_token')
-          
-          set({
-            user: null,
+          console.error('Auth check failed:', error)
+          set({ 
+            user: null, 
             isAuthenticated: false,
-            csrfToken: null,
-            accessToken: null,
+            accessToken: null
           })
+          delete apiClient.defaults.headers.common['Authorization']
         }
       },
     }),
     {
       name: 'auth-storage',
-      partialize: (state) => ({
+      partialize: (state: AuthState) => ({
         user: state.user,
         isAuthenticated: state.isAuthenticated,
         csrfToken: state.csrfToken,

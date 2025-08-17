@@ -13,29 +13,27 @@ import { apiClient } from '../../../config/api'
 import type { MissionContext } from '../types'
 interface ResearchTabsProps {
   missionId: string
+  isWebSocketConnected?: boolean
 }
 
 export const ResearchTabs: React.FC<ResearchTabsProps> = ({ missionId }) => {
-  const { activeTab, setActiveTab, ensureMissionInStore } = useMissionStore()
-  const [missionContext, setMissionContext] = useState<MissionContext | null>(null)
+  const { activeTab, setActiveTab, ensureMissionInStore, missionContexts, fetchMissionContext } = useMissionStore()
   const [activePlanTab, setActivePlanTab] = useState('outline')
+  
+  // Get mission context from store - will be updated via WebSocket
+  const missionContext = missionContexts[missionId] || null
 
   // Removed duplicate WebSocket connection - ResearchPanel already handles mission WebSocket
 
   useEffect(() => {
     if (missionId) {
       ensureMissionInStore(missionId)
-      const fetchContext = async () => {
-        try {
-          const response = await apiClient.get(`/api/missions/${missionId}/context`)
-          setMissionContext(response.data)
-        } catch (error) {
-          console.error('Failed to fetch mission context:', error)
-        }
+      // Only fetch context if we don't have it in the store yet
+      if (!missionContext) {
+        fetchMissionContext(missionId)
       }
-      fetchContext()
     }
-  }, [missionId, ensureMissionInStore])
+  }, [missionId, ensureMissionInStore, fetchMissionContext, missionContext])
 
   // Removed WebSocket message handling - ResearchPanel handles mission WebSocket updates
 

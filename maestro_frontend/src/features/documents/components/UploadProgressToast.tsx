@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { FileText, CheckCircle, AlertCircle, Loader2, ChevronUp, ChevronDown, X } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { FileText, CheckCircle, AlertCircle, Loader2, ChevronUp, ChevronDown, X, XCircle } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 import type { UploadFile } from './DocumentUploadZone';
 
 interface UploadProgressToastProps {
@@ -18,10 +19,27 @@ export const UploadProgressToast: React.FC<UploadProgressToastProps> = ({
   onDismissFile,
 }) => {
   const [isMinimized, setIsMinimized] = useState(false);
+  const location = useLocation();
+  
+  // Auto-dismiss duplicate detection errors after 5 seconds
+  useEffect(() => {
+    const duplicateFiles = uploadingFiles.filter(
+      f => f.status === 'error' && f.error?.includes('already been uploaded')
+    );
+    
+    if (duplicateFiles.length > 0) {
+      const timer = setTimeout(() => {
+        duplicateFiles.forEach(f => onDismissFile(f.id));
+      }, 5000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [uploadingFiles, onDismissFile]);
 
   if (uploadingFiles.length === 0) return null;
 
   const completedFiles = uploadingFiles.filter(f => f.status === 'completed');
+  const errorFiles = uploadingFiles.filter(f => f.status === 'error');
   const activeFiles = uploadingFiles.filter(f => 
     f.status === 'uploading' || f.status === 'processing' || f.status === 'pending'
   );
@@ -76,9 +94,14 @@ export const UploadProgressToast: React.FC<UploadProgressToastProps> = ({
     setIsMinimized(!isMinimized);
   };
 
+  // Determine position based on current route
+  // Documents page has pagination at the bottom, so we position higher
+  const isDocumentsPage = location.pathname === '/app/documents';
+  const bottomPosition = isDocumentsPage ? 'bottom-20' : 'bottom-4';
+  
   return (
-    <div className="fixed bottom-4 right-4 w-full max-w-md z-50">
-      <div className="bg-background rounded-lg shadow-sm border border-border flex flex-col max-h-[70vh]">
+    <div className={`fixed ${bottomPosition} right-4 w-full max-w-md z-50 transition-all duration-300`}>
+      <div className="bg-background rounded-lg shadow-sm border border-border flex flex-col max-h-[60vh]">
         {/* Header */}
         <div className="flex items-center justify-between p-3 border-b border-border cursor-pointer" onClick={handleToggleMinimize}>
           <div className="flex items-center space-x-3">
@@ -161,28 +184,52 @@ export const UploadProgressToast: React.FC<UploadProgressToastProps> = ({
                     </div>
                     
                     {/* Status Text */}
-                    <p className="text-xs text-text-secondary">{getStatusText(uploadFile)}</p>
+                    <div className="flex items-center justify-between">
+                      <p className={`text-xs flex-1 ${
+                        uploadFile.status === 'error' 
+                          ? uploadFile.error?.includes('already been uploaded')
+                            ? 'text-amber-600 dark:text-amber-500'
+                            : 'text-destructive'
+                          : 'text-text-secondary'
+                      }`}>{getStatusText(uploadFile)}</p>
+                      {uploadFile.status === 'error' && uploadFile.error?.includes('already been uploaded') && (
+                        <span className="text-xs text-muted-foreground ml-2 italic">(auto-dismiss)</span>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
             </div>
 
             {/* Footer */}
-            <div className="p-3 border-t border-border bg-background-alt flex items-center justify-between">
-              <button
-                onClick={onClearCompleted}
-                className="text-xs text-text-secondary hover:text-text-primary"
-                disabled={completedFiles.length === 0}
-              >
-                Clear Completed
-              </button>
-              <button
-                onClick={onCancelAll}
-                className="text-xs text-destructive hover:text-destructive/80"
-                disabled={activeFiles.length === 0}
-              >
-                Cancel All
-              </button>
+            <div className="p-3 border-t border-border bg-background-alt">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={onClearCompleted}
+                    className="text-xs text-text-secondary hover:text-text-primary transition-colors"
+                    disabled={completedFiles.length === 0}
+                  >
+                    Clear Completed
+                  </button>
+                  {errorFiles.length > 0 && (
+                    <button
+                      onClick={() => errorFiles.forEach(f => onDismissFile(f.id))}
+                      className="text-xs text-destructive hover:text-destructive/80 transition-colors flex items-center gap-1"
+                    >
+                      <XCircle className="h-3 w-3" />
+                      Clear {errorFiles.length} Error{errorFiles.length !== 1 ? 's' : ''}
+                    </button>
+                  )}
+                </div>
+                <button
+                  onClick={onCancelAll}
+                  className="text-xs text-destructive hover:text-destructive/80 transition-colors"
+                  disabled={activeFiles.length === 0}
+                >
+                  Cancel All
+                </button>
+              </div>
             </div>
           </>
         )}

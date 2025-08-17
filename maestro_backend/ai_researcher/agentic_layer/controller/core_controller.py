@@ -92,6 +92,10 @@ class AgentController:
             self.semaphore = None
             logger.info("LLM request concurrency is unlimited.")
         self.maybe_semaphore = MaybeSemaphore(self.semaphore)
+        
+        # Task registry for tracking running asyncio tasks
+        self.mission_tasks: Dict[str, asyncio.Task] = {}  # Main task per mission
+        self.mission_subtasks: Dict[str, Set[asyncio.Task]] = {}  # Subtasks per mission
 
         # Store core components
         self.model_dispatcher = model_dispatcher
@@ -260,78 +264,112 @@ class AgentController:
             "valid": True,
             "reason": None
         }
-    async def run_mission(
+    async def resume_mission(
         self,
         mission_id: str,
         log_queue: Optional[queue.Queue] = None,
         update_callback: Optional[Callable[[queue.Queue, Any], None]] = None
     ):
         """
-        Runs the full research mission using the workflow.
-        Accepts optional queue and callback function to report execution steps and UI feedback.
+        Resumes a mission from where it left off based on completed phases.
         """
-        logger.info(f"Executing mission {mission_id} with new workflow...")
-        self.context_manager.update_mission_status(mission_id, "running")
-
-        # Initialize query components with user-specific models for this mission
-        self._initialize_query_components(mission_id)
-
-        # Get Mission Context
-        mission_context = self.context_manager.get_mission_context(mission_id)
-        if not mission_context:
-            logger.error(f"Mission context not found for {mission_id} at the start of run_mission. Aborting.")
-            if update_callback and log_queue:
-                error_log = ExecutionLogEntry(
-                    mission_id=mission_id, agent_name="AgentController", action="Run Mission Start",
-                    status="failure", error_message="Mission context not found."
-                )
-                update_callback(log_queue, error_log)
-            self.context_manager.update_mission_status(mission_id, "failed", "Mission context not found at start.")
+        # Get the next phase to execute
+        next_phase = self.context_manager.get_next_phase(mission_id)
+        
+        if next_phase == "completed":
+            logger.info(f"Mission {mission_id} is already completed")
             return
         
-        user_request = mission_context.user_request
-
-        # Main Execution Block with Top-Level Error Handling
+        logger.info(f"Resuming mission {mission_id} from phase: {next_phase}")
+        
+        # Call run_mission which will now check for completed phases
+        await self.run_mission(mission_id, log_queue, update_callback, resume_from_phase=next_phase)
+    
+    async def run_mission(
+        self,
+        mission_id: str,
+        log_queue: Optional[queue.Queue] = None,
+        update_callback: Optional[Callable[[queue.Queue, Any], None]] = None,
+        resume_from_phase: Optional[str] = None
+    ):
+        """
+        Runs the full research mission using the workflow.
+        Accepts optional queue and callback function to report execution steps and UI feedback.
+        Can resume from a specific phase if provided.
+        """
         try:
-            # Step 1: Initial Request Analysis
-            analysis_result = await self.user_interaction_manager.analyze_request_type(
-                mission_id=mission_id,
-                user_request=user_request,
-                log_queue=log_queue,
-                update_callback=update_callback
-            )
-
-            # Step 2: Goal Pad & Thought Pad Initialization
-            initial_thought_content = f"Starting mission. Core user request: {user_request[:150]}..."
-            self.context_manager.add_thought(mission_id, "AgentController", initial_thought_content)
-            logger.info(f"Added initial focus thought to thought_pad for mission {mission_id}.")
-
-            if analysis_result:
-                logger.info(f"Initializing goal pad for mission {mission_id} based on analysis.")
-                try:
-                    # Add original request as a goal
-                    self.context_manager.add_goal(mission_id, user_request)
-                    # Add analysis results as goals
-                    self.context_manager.add_goal(mission_id, f"Request Type is {analysis_result.request_type}")
-                    self.context_manager.add_goal(mission_id, f"Target Tone is {analysis_result.target_tone}")
-                    self.context_manager.add_goal(mission_id, f"Target Audience is {analysis_result.target_audience}")
-                    self.context_manager.add_goal(mission_id, f"Requested Length is {analysis_result.requested_length}")
-                    self.context_manager.add_goal(mission_id, f"Requested Format is {analysis_result.requested_format}")
-                    # Add preferred source types as a goal if present
-                    if analysis_result.preferred_source_types:
-                        self.context_manager.add_goal(mission_id, f"Preferred Source Types: {analysis_result.preferred_source_types}")
-                        logger.info(f"Added preferred source types '{analysis_result.preferred_source_types}' to goal pad.")
-                    logger.info("Added analysis results to goal pad.")
-                except Exception as goal_exc:
-                    logger.error(f"Failed to add analysis results to goal pad for mission {mission_id}: {goal_exc}", exc_info=True)
-                    self.context_manager.log_execution_step(
-                        mission_id, "AgentController", "Initialize Goal Pad",
-                        status="warning", error_message=f"Failed to add goals: {goal_exc}",
-                        log_queue=log_queue, update_callback=update_callback
-                    )
+            if resume_from_phase:
+                logger.info(f"Resuming mission {mission_id} from phase: {resume_from_phase}")
             else:
-                logger.warning(f"Request analysis failed for mission {mission_id}. Proceeding without analysis goals.")
-                self.context_manager.add_goal(mission_id, user_request)
+                logger.info(f"Executing mission {mission_id} with new workflow...")
+            
+            self.context_manager.update_mission_status(mission_id, "running")
+
+            # Initialize query components with user-specific models for this mission
+            self._initialize_query_components(mission_id)
+
+            # Get Mission Context
+            mission_context = self.context_manager.get_mission_context(mission_id)
+            if not mission_context:
+                logger.error(f"Mission context not found for {mission_id} at the start of run_mission. Aborting.")
+                if update_callback and log_queue:
+                    error_log = ExecutionLogEntry(
+                        mission_id=mission_id, agent_name="AgentController", action="Run Mission Start",
+                        status="failure", error_message="Mission context not found."
+                    )
+                    update_callback(log_queue, error_log)
+                self.context_manager.update_mission_status(mission_id, "failed", "Mission context not found at start.")
+                return
+            
+            user_request = mission_context.user_request
+            
+            # Step 1: Initial Request Analysis
+            if "initial_analysis" not in mission_context.completed_phases:
+                self.context_manager.update_execution_phase(mission_id, "initial_analysis")
+                
+                analysis_result = await self.user_interaction_manager.analyze_request_type(
+                    mission_id=mission_id,
+                    user_request=user_request,
+                    log_queue=log_queue,
+                    update_callback=update_callback
+                )
+
+                # Step 2: Goal Pad & Thought Pad Initialization
+                initial_thought_content = f"Starting mission. Core user request: {user_request[:150]}..."
+                self.context_manager.add_thought(mission_id, "AgentController", initial_thought_content)
+                logger.info(f"Added initial focus thought to thought_pad for mission {mission_id}.")
+
+                if analysis_result:
+                    logger.info(f"Initializing goal pad for mission {mission_id} based on analysis.")
+                    try:
+                        # Add original request as a goal
+                        self.context_manager.add_goal(mission_id, user_request)
+                        # Add analysis results as goals
+                        self.context_manager.add_goal(mission_id, f"Request Type is {analysis_result.request_type}")
+                        self.context_manager.add_goal(mission_id, f"Target Tone is {analysis_result.target_tone}")
+                        self.context_manager.add_goal(mission_id, f"Target Audience is {analysis_result.target_audience}")
+                        self.context_manager.add_goal(mission_id, f"Requested Length is {analysis_result.requested_length}")
+                        self.context_manager.add_goal(mission_id, f"Requested Format is {analysis_result.requested_format}")
+                        # Add preferred source types as a goal if present
+                        if analysis_result.preferred_source_types:
+                            self.context_manager.add_goal(mission_id, f"Preferred Source Types: {analysis_result.preferred_source_types}")
+                            logger.info(f"Added preferred source types '{analysis_result.preferred_source_types}' to goal pad.")
+                        logger.info("Added analysis results to goal pad.")
+                    except Exception as goal_exc:
+                        logger.error(f"Failed to add analysis results to goal pad for mission {mission_id}: {goal_exc}", exc_info=True)
+                        self.context_manager.log_execution_step(
+                            mission_id, "AgentController", "Initialize Goal Pad",
+                            status="warning", error_message=f"Failed to add goals: {goal_exc}",
+                            log_queue=log_queue, update_callback=update_callback
+                        )
+                else:
+                    logger.warning(f"Request analysis failed for mission {mission_id}. Proceeding without analysis goals.")
+                    self.context_manager.add_goal(mission_id, user_request)
+                
+                # Mark initial analysis as completed
+                self.context_manager.mark_phase_completed(mission_id, "initial_analysis")
+            else:
+                logger.info(f"Skipping initial_analysis phase - already completed for mission {mission_id}")
 
             # Create Mission-Specific Feedback Callback
             mission_feedback_callback = None
@@ -662,6 +700,24 @@ class AgentController:
             final_status = self.context_manager.get_mission_context(mission_id).status
             logger.info(f"Mission {mission_id} execution finished with final status: {final_status}")
 
+        except asyncio.CancelledError:
+            # Handle task cancellation gracefully
+            logger.info(f"Mission {mission_id} was cancelled")
+            mission_context = self.context_manager.get_mission_context(mission_id)
+            if mission_context and mission_context.status not in ["stopped", "paused"]:
+                self.context_manager.update_mission_status(mission_id, "stopped", "Mission cancelled by user")
+            if update_callback and log_queue:
+                try:
+                    cancel_log = ExecutionLogEntry(
+                        mission_id=mission_id, agent_name="AgentController", 
+                        action="Mission Cancelled",
+                        status="success", 
+                        output_summary="Mission was successfully cancelled"
+                    )
+                    update_callback(log_queue, cancel_log)
+                except Exception as cb_err:
+                    logger.error(f"Failed to log mission cancellation via callback: {cb_err}")
+            raise  # Re-raise to properly propagate cancellation
         except Exception as e:
             err_msg = f"Critical error during mission execution: {e}"
             logger.error(err_msg, exc_info=True)
@@ -677,17 +733,65 @@ class AgentController:
                 except Exception as cb_err:
                     logger.error(f"Failed to log top-level mission error via callback: {cb_err}")
 
+    def register_mission_task(self, mission_id: str, task: asyncio.Task):
+        """Register the main task for a mission."""
+        self.mission_tasks[mission_id] = task
+        logger.debug(f"Registered main task for mission {mission_id}")
+    
+    def unregister_mission_task(self, mission_id: str):
+        """Unregister the main task for a mission."""
+        if mission_id in self.mission_tasks:
+            del self.mission_tasks[mission_id]
+            logger.debug(f"Unregistered main task for mission {mission_id}")
+    
+    def add_mission_subtask(self, mission_id: str, task: asyncio.Task):
+        """Add a subtask for a mission."""
+        if mission_id not in self.mission_subtasks:
+            self.mission_subtasks[mission_id] = set()
+        self.mission_subtasks[mission_id].add(task)
+        logger.debug(f"Added subtask for mission {mission_id}, total: {len(self.mission_subtasks[mission_id])}")
+    
+    def remove_mission_subtask(self, mission_id: str, task: asyncio.Task):
+        """Remove a subtask for a mission."""
+        if mission_id in self.mission_subtasks:
+            self.mission_subtasks[mission_id].discard(task)
+            if not self.mission_subtasks[mission_id]:
+                del self.mission_subtasks[mission_id]
+            logger.debug(f"Removed subtask for mission {mission_id}")
+    
     def stop_mission(self, mission_id: str):
-        """Stops a running mission."""
+        """Stops a running mission and cancels all associated tasks."""
         logger.info(f"Stopping mission {mission_id}...")
+        
+        # First update the status to prevent new tasks from starting
         self.context_manager.update_mission_status(mission_id, "stopped")
+        
+        # Cancel the main task if it exists
+        if mission_id in self.mission_tasks:
+            main_task = self.mission_tasks[mission_id]
+            if not main_task.done():
+                logger.info(f"Cancelling main task for mission {mission_id}")
+                main_task.cancel()
+            del self.mission_tasks[mission_id]
+        
+        # Cancel all subtasks if they exist
+        if mission_id in self.mission_subtasks:
+            subtasks = self.mission_subtasks[mission_id]
+            cancelled_count = 0
+            for task in subtasks:
+                if not task.done():
+                    task.cancel()
+                    cancelled_count += 1
+            logger.info(f"Cancelled {cancelled_count} subtasks for mission {mission_id}")
+            del self.mission_subtasks[mission_id]
+        
         self.context_manager.log_execution_step(
             mission_id=mission_id,
             agent_name="AgentController",
             action="Stop Mission",
             status="success"
         )
-        logger.info(f"Mission {mission_id} stopped.")
+        logger.info(f"Mission {mission_id} stopped and all tasks cancelled.")
 
     def pause_mission(self, mission_id: str):
         """Pauses a running mission."""

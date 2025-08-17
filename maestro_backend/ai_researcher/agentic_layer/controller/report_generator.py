@@ -4,6 +4,7 @@ import queue
 import re
 import datetime
 import json
+import hashlib
 
 from ai_researcher.config import THOUGHT_PAD_CONTEXT_LIMIT
 from ai_researcher.agentic_layer.context_manager import ExecutionLogEntry
@@ -210,11 +211,10 @@ CRITICAL: Do NOT include formatting like "**Title:**", "Title:", markdown, or an
         doc_id = None
         
         if source_type == "document":
-            # Extract base doc_id from source_id (e.g., 'doc_abc_123' -> 'abc')
-            doc_id = source_id_full.split('_')[0]
+            # For documents, source_id is the full UUID
+            doc_id = source_id_full
         elif source_type == "web":
             # Generate a stable ID for web sources
-            import hashlib
             url_str = str(source_id_full)
             doc_id = hashlib.sha1(url_str.encode()).hexdigest()[:8]
         elif source_type == "internal":
@@ -271,11 +271,13 @@ CRITICAL: Do NOT include formatting like "**Title:**", "Title:", markdown, or an
         # Initial call to the recursive function
         build_draft_recursive(mission_context.plan.report_outline)
 
-        # Regex to find placeholders like [id1] or [id1, id2, id3] or [note_id1]
+        # Regex to find placeholders like [id1] or [id1, id2, id3] or [note_id1] or [UUID]
         # It captures the full content inside the brackets.
-        placeholder_pattern = re.compile(r'\[((?:[a-f0-9]{8}|note_[a-f0-9]{8})(?:\s*,\s*(?:[a-f0-9]{8}|note_[a-f0-9]{8}))*)\]')
-        # Regex to extract individual 8-char hex IDs or note_IDs from the content within brackets
-        id_pattern = re.compile(r'([a-f0-9]{8}|note_[a-f0-9]{8})')
+        # Now supports both 8-char hex IDs and full UUIDs
+        uuid_or_hex = r'(?:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|[a-f0-9]{8})'
+        placeholder_pattern = re.compile(r'\[((?:' + uuid_or_hex + r'|note_[a-f0-9]{8})(?:\s*,\s*(?:' + uuid_or_hex + r'|note_[a-f0-9]{8}))*)\]')
+        # Regex to extract individual UUIDs, 8-char hex IDs, or note_IDs from the content within brackets
+        id_pattern = re.compile(r'([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|[a-f0-9]{8}|note_[a-f0-9]{8})')
 
         # Build doc_metadata_source (mapping doc_id -> Note object for metadata lookup)
         all_notes = self.controller.context_manager.get_notes(mission_id)
@@ -287,9 +289,8 @@ CRITICAL: Do NOT include formatting like "**Title:**", "Title:", markdown, or an
             source_type = note.source_type
             lookup_key = ""
             if source_type == "document":
-                lookup_key = source_id_full.split('_')[0]  # Use base doc_id
+                lookup_key = source_id_full  # Use full UUID as doc_id
             elif source_type == "web":
-                import hashlib
                 url_str = str(source_id_full)
                 lookup_key = hashlib.sha1(url_str.encode()).hexdigest()[:8]
             elif source_type == "internal":
@@ -370,36 +371,66 @@ CRITICAL: Do NOT include formatting like "**Title:**", "Title:", markdown, or an
                     # Handle different metadata structure - check if it's a Pydantic model or dict
                     metadata_dict = metadata.dict() if hasattr(metadata, 'dict') else metadata
                     
-                    if source_type == "document":
-                        # Document Source Handling - try overlapping_chunks first, then fallback
+                    if source_type == "document" or source_type == "document_window":
+                        # Document Source Handling - fetch from PostgreSQL database
                         title = None
                         year = None
                         authors = None
                         journal = None
                         
-                        if 'overlapping_chunks' in metadata_dict and metadata_dict['overlapping_chunks']:
-                            # Extract from overlapping_chunks metadata
-                            chunk_metadata = metadata_dict['overlapping_chunks'][0]
-                            title = chunk_metadata.get('title')
-                            year = chunk_metadata.get('publication_year')
-                            authors = chunk_metadata.get('authors')
-                            journal = chunk_metadata.get('journal_or_source')
-                            
-                            logger.debug(f"Document metadata from overlapping_chunks for '{doc_id}': title='{title}', authors='{authors}', year='{year}', journal='{journal}'")
-                        else:
-                            # Fallback: try to extract from top-level metadata fields
-                            logger.warning(f"Document '{doc_id}' missing or empty overlapping_chunks metadata. Trying fallback extraction.")
-                            
-                            title = metadata_dict.get('title') or metadata_dict.get('original_filename', f'Document {doc_id}')
-                            year = metadata_dict.get('publication_year') or metadata_dict.get('year')
-                            authors = metadata_dict.get('authors')
-                            journal = metadata_dict.get('journal_or_source')
-                            
-                            # Remove file extension from title if it's a filename
-                            if title and title.endswith('.pdf'):
-                                title = title[:-4]
-                            
-                            logger.debug(f"Document fallback metadata for '{doc_id}': title='{title}', authors='{authors}', year='{year}', journal='{journal}'")
+                        # First try to get from PostgreSQL if doc_id looks like a UUID
+                        uuid_pattern = re.compile(r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$', re.IGNORECASE)
+                        
+                        if uuid_pattern.match(doc_id):
+                            # Fetch document from PostgreSQL
+                            from database.database import get_db
+                            from database.models import Document
+                            db = next(get_db())
+                            try:
+                                doc = db.query(Document).filter(Document.id == doc_id).first()
+                                if doc and doc.metadata_:
+                                    title = doc.metadata_.get('title')
+                                    year = doc.metadata_.get('publication_year') or doc.metadata_.get('year')
+                                    authors = doc.metadata_.get('authors')
+                                    journal = doc.metadata_.get('journal_or_source') or doc.metadata_.get('journal')
+                                    
+                                    # Fallback to filename if no title
+                                    if not title:
+                                        title = doc.original_filename or doc.filename
+                                        if title and title.endswith('.pdf'):
+                                            title = title[:-4]
+                                    
+                                    logger.debug(f"Document metadata from PostgreSQL for '{doc_id}': title='{title}', authors='{authors}', year='{year}', journal='{journal}'")
+                                else:
+                                    logger.warning(f"Document '{doc_id}' not found in PostgreSQL database.")
+                            finally:
+                                db.close()
+                        
+                        # If not found in PostgreSQL or not a UUID, try metadata from Note (legacy support)
+                        if not title and not year and not authors:
+                            if 'overlapping_chunks' in metadata_dict and metadata_dict['overlapping_chunks']:
+                                # Extract from overlapping_chunks metadata (legacy)
+                                chunk_metadata = metadata_dict['overlapping_chunks'][0]
+                                title = chunk_metadata.get('title')
+                                year = chunk_metadata.get('publication_year')
+                                authors = chunk_metadata.get('authors')
+                                journal = chunk_metadata.get('journal_or_source')
+                                
+                                logger.debug(f"Document metadata from overlapping_chunks for '{doc_id}': title='{title}', authors='{authors}', year='{year}', journal='{journal}'")
+                            else:
+                                # Fallback: try to extract from top-level metadata fields
+                                logger.warning(f"Document '{doc_id}' missing or empty overlapping_chunks metadata. Trying fallback extraction.")
+                                
+                                title = metadata_dict.get('title') or metadata_dict.get('original_filename', f'Document {doc_id}')
+                                year = metadata_dict.get('publication_year') or metadata_dict.get('year')
+                                authors = metadata_dict.get('authors')
+                                journal = metadata_dict.get('journal_or_source')
+                                
+                                # Remove file extension from title if it's a filename
+                                if title and title.endswith('.pdf'):
+                                    title = title[:-4]
+                                
+                                logger.debug(f"Document fallback metadata for '{doc_id}': title='{title}', authors='{authors}', year='{year}', journal='{journal}'")
 
                         # Process authors only if available and not the default placeholder
                         authors_str = None

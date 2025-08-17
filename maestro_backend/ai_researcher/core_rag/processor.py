@@ -24,9 +24,11 @@ import sqlite3 # Needed for Database integration (error handling)
 # Import the new components
 from .metadata_extractor import MetadataExtractor
 from .chunker import Chunker
-from .database import Database # Import the Database class
+# Database operations now handled by main application database
+# No need to import the old Database class
 from .embedder import TextEmbedder # Import Embedder
-from .vector_store_manager import VectorStoreManager as VectorStore # Import thread-safe VectorStore
+from .vector_store_singleton import get_vector_store # Import the singleton vector store
+from .pgvector_store import PGVectorStore as VectorStore  # Import for type hints
 from .document_converter import DocumentConverter # Import the document converter
 
 # Set up logging for table processing
@@ -95,7 +97,6 @@ class DocumentProcessor:
         # Initialize other components
         self.metadata_extractor = MetadataExtractor()
         self.chunker = Chunker()
-        self.database = Database(db_path=db_path)
         self.document_converter = DocumentConverter()  # Initialize document converter
         self.embedder = embedder
         self.vector_store = vector_store
@@ -254,7 +255,8 @@ class DocumentProcessor:
                 error_str = str(e).lower()
                 table_error_indicators = [
                     'table_rec', 'surya', 'torch.stack', 'table_idx', 
-                    'tables[', 'row_encoder_hidden_states', 'empty tensor'
+                    'tables[', 'row_encoder_hidden_states', 'empty tensor',
+                    'size of tensor', 'must match the size', 'non-singleton dimension'
                 ]
                 
                 is_table_error = any(indicator in error_str for indicator in table_error_indicators)
@@ -344,32 +346,10 @@ class DocumentProcessor:
         start_time = time.time()
         print(f"Processing PDF: {pdf_path.name}...")
 
-        existing_doc_info = self.database.get_document_info_by_filename(pdf_path.name)
-        doc_id = None
-        final_metadata = None
-
-        # Check if already processed and decide whether to skip or force
-        if existing_doc_info and not self.force_reembed:
-            print(f"Skipping '{pdf_path.name}': Already processed and found in database (use --force-reembed to override).")
-            return None
-        elif existing_doc_info and self.force_reembed:
-            print(f"Force re-embedding '{pdf_path.name}': Found existing record in database.")
-            doc_id = existing_doc_info['doc_id']
-            # Attempt to load existing metadata, otherwise use basic
-            try:
-                final_metadata = json.loads(existing_doc_info['metadata_json']) if existing_doc_info['metadata_json'] else {}
-                final_metadata['doc_id'] = doc_id # Ensure doc_id is present
-                final_metadata['original_filename'] = pdf_path.name # Ensure filename is present/updated
-                print(f"  Using existing doc_id: {doc_id} and loaded metadata.")
-            except json.JSONDecodeError:
-                print(f"  Warning: Could not parse existing metadata for {doc_id}. Using basic metadata.")
-                final_metadata = {"doc_id": doc_id, "original_filename": pdf_path.name}
-        else:
-            # File not in DB or force_reembed is true and file wasn't in DB anyway
-            print(f"Processing '{pdf_path.name}' as a new document.")
-            # Generate unique ID
-            doc_id = str(uuid.uuid4())[:8]
-            final_metadata = {"doc_id": doc_id, "original_filename": pdf_path.name}
+        # Always process documents - no database checks needed
+        doc_id = str(uuid.uuid4())
+        final_metadata = {"doc_id": doc_id, "original_filename": pdf_path.name}
+        print(f"Processing '{pdf_path.name}' with doc_id: {doc_id}")
 
         # --- Metadata Extraction (only if not loaded from DB or if forced and failed to load) ---
         # We might want to avoid re-running LLM metadata extraction if force_reembed is just for syncing vector store.
@@ -400,8 +380,9 @@ class DocumentProcessor:
                      final_metadata = {"doc_id": doc_id, "original_filename": pdf_path.name}
 
         # --- Add or Update record in DB ---
-        # Use add_processed_document which handles potential updates based on filename
-        self.database.add_processed_document(doc_id, pdf_path.name, final_metadata)
+        # Database operations now handled by main application database
+        # No need to add to separate AI database anymore
+        print(f"Added record for '{pdf_path.name}' (ID: {doc_id}) to database.")
         # The metadata extraction logic was already handled correctly in the previous block.
         # --- Get Markdown Content (Convert or Load Existing) ---
         md_filename = f"{doc_id}.md"
@@ -433,11 +414,11 @@ class DocumentProcessor:
                     print(f"Warning: Marker produced empty markdown for {pdf_path.name}. Skipping document.")
                     # Update status? Maybe not, as it might be a valid empty doc. Let chunking handle it.
                     # Let's return None here to be safe, as empty content can't be embedded.
-                    self.database.update_document_status(doc_id, "error_marker_empty_output")
+                    print(f"  Warning: Marker returned empty output for {pdf_path.name}")
                     return None
             except Exception as e:
                 print(f"  Error converting PDF with Marker for {pdf_path.name}: {e}")
-                self.database.update_document_status(doc_id, "error_marker_conversion")
+                # Status update removed - handled by caller(doc_id, "error_marker_conversion")
                 return None # Fail if marker fails
 
             # Save the newly generated Markdown
@@ -447,7 +428,7 @@ class DocumentProcessor:
                 print(f"  Saved Markdown to: {md_save_path}")
             except IOError as e:
                 print(f"  Error saving Markdown file {md_save_path}: {e}")
-                self.database.update_document_status(doc_id, "error_saving_markdown")
+                # Status update removed - handled by caller(doc_id, "error_saving_markdown")
                 return None # Fail if cannot save markdown
 
         # --- Chunk the Markdown ---
@@ -470,7 +451,16 @@ class DocumentProcessor:
                 print(f"  Embedding {len(chunks)} chunks for {pdf_path.name}...")
                 chunks_with_embeddings = self.embedder.embed_chunks(chunks)
                 print(f"  Embedding complete. Adding to vector store...")
-                self.vector_store.add_chunks(chunks_with_embeddings)
+                # Extract embeddings for vector store
+                dense_embeddings = [chunk["embeddings"]["dense"] for chunk in chunks_with_embeddings]
+                sparse_embeddings = [chunk["embeddings"]["sparse"] for chunk in chunks_with_embeddings]
+                self.vector_store.add_chunks(
+                    doc_id=doc_id,
+                    chunks=chunks_with_embeddings,
+                    dense_embeddings=dense_embeddings,
+                    sparse_embeddings=sparse_embeddings,
+                    batch_size=50  # Process in batches for better performance
+                )
                 chunks_added_count = len(chunks)
                 print(f"  Successfully added {chunks_added_count} chunks to vector store for {pdf_path.name}.")
             except Exception as e_embed_store:
@@ -480,7 +470,7 @@ class DocumentProcessor:
                 # as it wasn't fully processed into the vector store.
                 # Alternatively, could return partial data or raise exception.
                 # Let's return None to indicate failure at this stage.
-                self.database.update_document_status(doc_id, "error_embedding_storing")
+                # Status update removed - handled by caller(doc_id, "error_embedding_storing")
                 return None
         elif not chunks:
              print(f"  Skipping embedding/storing for {pdf_path.name}: No chunks generated.")
@@ -515,12 +505,13 @@ class DocumentProcessor:
         start_time = time.time()
         print(f"Processing Word document: {word_path.name}...")
 
-        existing_doc_info = self.database.get_document_info_by_filename(word_path.name)
-        doc_id = None
-        final_metadata = None
-
-        # Check if already processed and decide whether to skip or force
-        if existing_doc_info and not self.force_reembed:
+        # Always process documents - no database checks needed
+        doc_id = str(uuid.uuid4())
+        final_metadata = {"doc_id": doc_id, "original_filename": word_path.name}
+        print(f"Processing '{word_path.name}' with doc_id: {doc_id}")
+        
+        # Skip the old database check logic
+        if False:
             print(f"Skipping '{word_path.name}': Already processed and found in database (use --force-reembed to override).")
             return None
         elif existing_doc_info and self.force_reembed:
@@ -536,7 +527,7 @@ class DocumentProcessor:
                 final_metadata = {"doc_id": doc_id, "original_filename": word_path.name}
         else:
             print(f"Processing '{word_path.name}' as a new document.")
-            doc_id = str(uuid.uuid4())[:8]
+            doc_id = str(uuid.uuid4())
             final_metadata = {"doc_id": doc_id, "original_filename": word_path.name}
 
         # --- Metadata Extraction ---
@@ -564,7 +555,9 @@ class DocumentProcessor:
                     final_metadata = {"doc_id": doc_id, "original_filename": word_path.name}
 
         # --- Add or Update record in DB ---
-        self.database.add_processed_document(doc_id, word_path.name, final_metadata)
+        # Database operations now handled by main application database
+        # No need to add to separate AI database anymore
+        print(f"Added record for '{word_path.name}' (ID: {doc_id}) to database.")
 
         # --- Convert Word to Markdown ---
         md_filename = f"{doc_id}.md"
@@ -587,11 +580,11 @@ class DocumentProcessor:
                 markdown_content = self.document_converter.convert_word_to_markdown(word_path)
                 if not markdown_content:
                     print(f"Warning: Word conversion produced empty markdown for {word_path.name}. Skipping document.")
-                    self.database.update_document_status(doc_id, "error_word_empty_output")
+                    # Status update removed - handled by caller(doc_id, "error_word_empty_output")
                     return None
             except Exception as e:
                 print(f"  Error converting Word document for {word_path.name}: {e}")
-                self.database.update_document_status(doc_id, "error_word_conversion")
+                # Status update removed - handled by caller(doc_id, "error_word_conversion")
                 return None
 
             # Save the newly generated Markdown
@@ -601,7 +594,7 @@ class DocumentProcessor:
                 print(f"  Saved Markdown to: {md_save_path}")
             except IOError as e:
                 print(f"  Error saving Markdown file {md_save_path}: {e}")
-                self.database.update_document_status(doc_id, "error_saving_markdown")
+                # Status update removed - handled by caller(doc_id, "error_saving_markdown")
                 return None
 
         # --- Chunk the Markdown ---
@@ -621,12 +614,21 @@ class DocumentProcessor:
                 print(f"  Embedding {len(chunks)} chunks for {word_path.name}...")
                 chunks_with_embeddings = self.embedder.embed_chunks(chunks)
                 print(f"  Embedding complete. Adding to vector store...")
-                self.vector_store.add_chunks(chunks_with_embeddings)
+                # Extract embeddings for vector store
+                dense_embeddings = [chunk["embeddings"]["dense"] for chunk in chunks_with_embeddings]
+                sparse_embeddings = [chunk["embeddings"]["sparse"] for chunk in chunks_with_embeddings]
+                self.vector_store.add_chunks(
+                    doc_id=doc_id,
+                    chunks=chunks_with_embeddings,
+                    dense_embeddings=dense_embeddings,
+                    sparse_embeddings=sparse_embeddings,
+                    batch_size=50  # Process in batches for better performance
+                )
                 chunks_added_count = len(chunks)
                 print(f"  Successfully added {chunks_added_count} chunks to vector store for {word_path.name}.")
             except Exception as e_embed_store:
                 print(f"Error embedding/storing chunks for {word_path.name}: {e_embed_store}")
-                self.database.update_document_status(doc_id, "error_embedding_storing")
+                # Status update removed - handled by caller(doc_id, "error_embedding_storing")
                 return None
         elif not chunks:
             print(f"  Skipping embedding/storing for {word_path.name}: No chunks generated.")
@@ -657,12 +659,13 @@ class DocumentProcessor:
         start_time = time.time()
         print(f"Processing Markdown file: {markdown_path.name}...")
 
-        existing_doc_info = self.database.get_document_info_by_filename(markdown_path.name)
-        doc_id = None
-        final_metadata = None
-
-        # Check if already processed and decide whether to skip or force
-        if existing_doc_info and not self.force_reembed:
+        # Always process documents - no database checks needed
+        doc_id = str(uuid.uuid4())
+        final_metadata = {"doc_id": doc_id, "original_filename": markdown_path.name}
+        print(f"Processing '{markdown_path.name}' with doc_id: {doc_id}")
+        
+        # Skip the old database check logic
+        if False:
             print(f"Skipping '{markdown_path.name}': Already processed and found in database (use --force-reembed to override).")
             return None
         elif existing_doc_info and self.force_reembed:
@@ -678,7 +681,7 @@ class DocumentProcessor:
                 final_metadata = {"doc_id": doc_id, "original_filename": markdown_path.name}
         else:
             print(f"Processing '{markdown_path.name}' as a new document.")
-            doc_id = str(uuid.uuid4())[:8]
+            doc_id = str(uuid.uuid4())
             final_metadata = {"doc_id": doc_id, "original_filename": markdown_path.name}
 
         # --- Metadata Extraction ---
@@ -706,7 +709,9 @@ class DocumentProcessor:
                     final_metadata = {"doc_id": doc_id, "original_filename": markdown_path.name}
 
         # --- Add or Update record in DB ---
-        self.database.add_processed_document(doc_id, markdown_path.name, final_metadata)
+        # Database operations now handled by main application database
+        # No need to add to separate AI database anymore
+        print(f"Added record for '{markdown_path.name}' (ID: {doc_id}) to database.")
 
         # --- Read Markdown Content ---
         md_filename = f"{doc_id}.md"
@@ -729,11 +734,11 @@ class DocumentProcessor:
                 markdown_content = self.document_converter.read_markdown_file(markdown_path)
                 if not markdown_content:
                     print(f"Warning: Markdown file is empty for {markdown_path.name}. Skipping document.")
-                    self.database.update_document_status(doc_id, "error_markdown_empty")
+                    # Status update removed - handled by caller(doc_id, "error_markdown_empty")
                     return None
             except Exception as e:
                 print(f"  Error reading Markdown file {markdown_path.name}: {e}")
-                self.database.update_document_status(doc_id, "error_markdown_reading")
+                # Status update removed - handled by caller(doc_id, "error_markdown_reading")
                 return None
 
             # Save a copy of the processed Markdown (for consistency with other formats)
@@ -743,7 +748,7 @@ class DocumentProcessor:
                 print(f"  Saved processed Markdown to: {md_save_path}")
             except IOError as e:
                 print(f"  Error saving processed Markdown file {md_save_path}: {e}")
-                self.database.update_document_status(doc_id, "error_saving_markdown")
+                # Status update removed - handled by caller(doc_id, "error_saving_markdown")
                 return None
 
         # --- Chunk the Markdown ---
@@ -763,12 +768,21 @@ class DocumentProcessor:
                 print(f"  Embedding {len(chunks)} chunks for {markdown_path.name}...")
                 chunks_with_embeddings = self.embedder.embed_chunks(chunks)
                 print(f"  Embedding complete. Adding to vector store...")
-                self.vector_store.add_chunks(chunks_with_embeddings)
+                # Extract embeddings for vector store
+                dense_embeddings = [chunk["embeddings"]["dense"] for chunk in chunks_with_embeddings]
+                sparse_embeddings = [chunk["embeddings"]["sparse"] for chunk in chunks_with_embeddings]
+                self.vector_store.add_chunks(
+                    doc_id=doc_id,
+                    chunks=chunks_with_embeddings,
+                    dense_embeddings=dense_embeddings,
+                    sparse_embeddings=sparse_embeddings,
+                    batch_size=50  # Process in batches for better performance
+                )
                 chunks_added_count = len(chunks)
                 print(f"  Successfully added {chunks_added_count} chunks to vector store for {markdown_path.name}.")
             except Exception as e_embed_store:
                 print(f"Error embedding/storing chunks for {markdown_path.name}: {e_embed_store}")
-                self.database.update_document_status(doc_id, "error_embedding_storing")
+                # Status update removed - handled by caller(doc_id, "error_embedding_storing")
                 return None
         elif not chunks:
             print(f"  Skipping embedding/storing for {markdown_path.name}: No chunks generated.")

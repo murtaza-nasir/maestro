@@ -244,6 +244,13 @@ class ResearchManager:
 
                 task = asyncio.create_task(explore_task_coro(current_question, current_depth, questions_explored_count, current_scratchpad))
                 running_tasks.add(task)
+                # Register subtask with controller for cancellation tracking
+                self.controller.add_mission_subtask(mission_id, task)
+                
+                # Add cleanup callback
+                def cleanup_subtask(fut):
+                    self.controller.remove_mission_subtask(mission_id, fut)
+                task.add_done_callback(cleanup_subtask)
 
                 if can_launch != float('inf'):
                     can_launch -= 1

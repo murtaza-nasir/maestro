@@ -174,8 +174,9 @@ class WritingAgent(BaseAgent):
 
         notes_by_source: Dict[str, List[Note]] = {}
         for note in notes:
-            source_id = note.source_id # Group by the unique source ID (e.g., 'f28769c8_68' -> 'f28769c8')
-            doc_id = source_id.split('_')[0] if '_' in source_id else source_id # Extract base document ID
+            source_id = note.source_id # Group by the unique source ID
+            # For documents, source_id is already the full UUID, no need to split
+            doc_id = source_id
             if doc_id not in notes_by_source:
                 notes_by_source[doc_id] = []
             notes_by_source[doc_id].append(note)
@@ -230,7 +231,8 @@ class WritingAgent(BaseAgent):
         for note in notes:
             if note.source_type in ["document", "web"]:
                 # Group by original source ID (doc_id or URL)
-                source_id = note.source_id.split('_')[0] if note.source_type == "document" else note.source_id
+                # For documents, source_id is the full UUID; for web, it's the URL
+                source_id = note.source_id
                 if source_id not in notes_by_original_source:
                     notes_by_original_source[source_id] = []
                 notes_by_original_source[source_id].append(note)

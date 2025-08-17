@@ -9,6 +9,7 @@ import { ReflectionAgentLog } from './ReflectionAgentLog.tsx';
 import { DefaultLogRenderer } from './DefaultLogRenderer.tsx';
 
 export interface ExecutionLogEntry {
+  log_id?: string;  // Unique identifier for each log entry
   timestamp: Date;
   agent_name: string;
   action: string;

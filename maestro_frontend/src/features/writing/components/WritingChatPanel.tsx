@@ -18,23 +18,28 @@ import { getDocumentGroups } from '../../documents/api'
 import type { DocumentGroup } from '../../documents/types'
 import { MessageBubble } from './MessageBubble'
 import { useTheme } from '../../../contexts/ThemeContext'
+import { useSettingsStore } from '../../auth/components/SettingsStore'
 // import { ensureDate } from '../../../utils/timezone'
 
 export const WritingChatPanel: React.FC = () => {
   const [message, setMessage] = useState('')
   const [documentGroups, setDocumentGroups] = useState<DocumentGroup[]>([])
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
-  const [useWebSearch, setUseWebSearch] = useState<boolean>(true)
-  const [deepSearch, setDeepSearch] = useState<boolean>(false)
   const [showCustomPromptModal, setShowCustomPromptModal] = useState(false)
   const [showSearchSettingsModal, setShowSearchSettingsModal] = useState(false)
+  
+  // Get user settings for defaults
+  const { settings: userSettings } = useSettingsStore()
+  const userParams = userSettings?.research_parameters
+  
+  // Single source of truth for all search settings - initialized with user preferences
   const [searchSettings, setSearchSettings] = useState({
-    useWebSearch: true,
+    useWebSearch: false,  // Default to off
     deepSearch: false,
-    maxIterations: 1,
-    maxQueries: 3,
-    deepSearchIterations: 3,
-    deepSearchQueries: 10,
+    maxIterations: userParams?.writing_search_max_iterations ?? 1,
+    maxQueries: userParams?.writing_search_max_queries ?? 3,
+    deepSearchIterations: userParams?.writing_deep_search_iterations ?? 3,
+    deepSearchQueries: userParams?.writing_deep_search_queries ?? 5,
   })
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const { addToast } = useToast()
@@ -76,23 +81,11 @@ export const WritingChatPanel: React.FC = () => {
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+  
 
   // Listen for chat title updates from WebSocket
-  useEffect(() => {
-    const handleChatTitleUpdate = (event: CustomEvent) => {
-      const { chatId, title } = event.detail
-      console.log('Received chat title update in chat panel:', chatId, title)
-      
-      // The store will handle updating the activeChat title via WebSocket
-      // This effect is just for logging/debugging
-    }
-
-    window.addEventListener('writingChatTitleUpdate', handleChatTitleUpdate as EventListener)
-    
-    return () => {
-      window.removeEventListener('writingChatTitleUpdate', handleChatTitleUpdate as EventListener)
-    }
-  }, [])
+  // Note: This is now handled by WritingChatSidebar to avoid duplicate handlers
+  // The store already updates the activeChat title via WebSocket
 
   // Load document groups on component mount
   useEffect(() => {
@@ -221,21 +214,22 @@ export const WritingChatPanel: React.FC = () => {
   return (
     <div className="h-full flex flex-col bg-background">
       {/* Chat Header */}
-      <div className="bg-header-background border-b border-border px-4 py-3 min-h-[88px]">
-        <div className="flex items-center justify-between h-full">
-          <div className="flex-1 min-w-0">
-            <div className="min-w-0 flex-1">
-              <h3 className="text-base font-semibold text-text-primary truncate">
-                {activeChat?.title || 'Writing Chat'}
-              </h3>
-              <p className="text-xs text-text-secondary mt-0.5">
-                {messages.length === 0
-                  ? 'Start the conversation'
-                  : `${messages.length} messages`}
-              </p>
-            </div>
-          </div>
-          <div className="flex-shrink-0 ml-4">
+      <div className="bg-header-background border-b border-border px-4 py-4 min-h-[88px] flex items-center">
+        <div className="flex flex-col w-full">
+          {/* Title */}
+          <h3 className="text-base font-semibold text-text-primary">
+            {activeChat?.title || 'Writing Chat'}
+          </h3>
+          
+          {/* Message count and buttons on same line */}
+          <div className="flex items-center justify-between mt-1">
+            <p className="text-xs text-text-secondary">
+              {messages.length === 0
+                ? 'Start the conversation'
+                : `${messages.length} messages`}
+            </p>
+            
+            {/* Action buttons */}
             <div className="flex items-center space-x-2">
               <Button
                 variant="outline"
@@ -366,7 +360,7 @@ export const WritingChatPanel: React.FC = () => {
                     <div className="flex items-center space-x-1.5 min-w-0">
                       <label className="text-xs text-muted-foreground whitespace-nowrap">Document Group:</label>
                       <Select
-                        value={selectedGroupId || ''}
+                        value={selectedGroupId || 'none'}
                         onValueChange={(value) => {
                           if (value === "none") {
                             setSelectedGroupId(null);
@@ -394,43 +388,47 @@ export const WritingChatPanel: React.FC = () => {
                       <label className="text-xs text-muted-foreground whitespace-nowrap">Web Search:</label>
                       <button
                         type="button"
-                        onClick={() => setUseWebSearch(!useWebSearch)}
+                        onClick={() => {
+                          setSearchSettings(prev => ({ ...prev, useWebSearch: !prev.useWebSearch }))
+                        }}
                         disabled={isLoading}
                         className={`relative inline-flex h-3.5 w-6 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 ${
-                          useWebSearch ? 'bg-primary' : 'bg-secondary'
+                          searchSettings.useWebSearch ? 'bg-primary' : 'bg-secondary'
                         } ${isLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                       >
                         <span
                           className={`inline-block h-2 w-2 transform rounded-full bg-white transition-transform ${
-                            useWebSearch ? 'translate-x-3' : 'translate-x-0.5'
+                            searchSettings.useWebSearch ? 'translate-x-3' : 'translate-x-0.5'
                           }`}
                         />
                       </button>
-                      <span className={`text-xs ${useWebSearch ? 'text-primary' : 'text-muted-foreground'}`}>
-                        {useWebSearch ? 'On' : 'Off'}
+                      <span className={`text-xs ${searchSettings.useWebSearch ? 'text-primary' : 'text-muted-foreground'}`}>
+                        {searchSettings.useWebSearch ? 'On' : 'Off'}
                       </span>
                     </div>
                     
                     {/* Deep Search Toggle */}
-                    {useWebSearch && (
+                    {searchSettings.useWebSearch && (
                       <div className="flex items-center space-x-1.5">
                         <label className="text-xs text-muted-foreground whitespace-nowrap">Deep Search:</label>
                         <button
                           type="button"
-                          onClick={() => setDeepSearch(!deepSearch)}
-                          disabled={isLoading || !useWebSearch}
+                          onClick={() => {
+                            setSearchSettings(prev => ({ ...prev, deepSearch: !prev.deepSearch }))
+                          }}
+                          disabled={isLoading || !searchSettings.useWebSearch}
                           className={`relative inline-flex h-3.5 w-6 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 ${
-                            deepSearch ? 'bg-primary' : 'bg-secondary'
-                          } ${isLoading || !useWebSearch ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                            searchSettings.deepSearch ? 'bg-primary' : 'bg-secondary'
+                          } ${isLoading || !searchSettings.useWebSearch ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                         >
                           <span
                             className={`inline-block h-2 w-2 transform rounded-full bg-white transition-transform ${
-                              deepSearch ? 'translate-x-3' : 'translate-x-0.5'
+                              searchSettings.deepSearch ? 'translate-x-3' : 'translate-x-0.5'
                             }`}
                           />
                         </button>
-                        <span className={`text-xs ${deepSearch ? 'text-primary' : 'text-muted-foreground'}`}>
-                          {deepSearch ? 'On' : 'Off'}
+                        <span className={`text-xs ${searchSettings.deepSearch ? 'text-primary' : 'text-muted-foreground'}`}>
+                          {searchSettings.deepSearch ? 'On' : 'Off'}
                         </span>
                       </div>
                     )}
@@ -459,8 +457,6 @@ export const WritingChatPanel: React.FC = () => {
         settings={searchSettings}
         onSave={(newSettings) => {
           setSearchSettings(newSettings)
-          setUseWebSearch(newSettings.useWebSearch)
-          setDeepSearch(newSettings.deepSearch)
         }}
       />
     </div>

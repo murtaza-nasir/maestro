@@ -9,7 +9,6 @@ import { useMissionStore, type Note } from '../store'
 import { useToast } from '../../../components/ui/toast'
 import { Search, BookOpen, Filter, Calendar, ExternalLink, FileText } from 'lucide-react'
 import { apiClient } from '../../../config/api'
-import { useMissionWebSocket } from '../../../services/websocket'
 import { formatFullDateTime } from '../../../utils/timezone'
 
 interface NotesTabProps {
@@ -30,9 +29,7 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const lastScrollPosition = useRef<number>(0)
   const initialLoadDone = useRef(false)
-
-  // WebSocket connection for real-time updates
-  const { isConnected, subscribe } = useMissionWebSocket(missionId)
+  const previousMissionId = useRef<string | null>(null)
 
   // Store scroll position before updates
   const preserveScrollPosition = useCallback(() => {
@@ -56,6 +53,15 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
 
   // Initial load
   const loadInitialNotes = useCallback(async () => {
+    // Reset if mission changed
+    if (previousMissionId.current !== missionId) {
+      initialLoadDone.current = false
+      previousMissionId.current = missionId
+      setNotes([])
+      setTotalNotesCount(0)
+      setNewNotesCount(0)
+    }
+    
     if (initialLoadDone.current) return
     
     setIsLoading(true)
@@ -129,52 +135,66 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
     loadInitialNotes()
   }, [loadInitialNotes])
 
-  // Handle WebSocket notes updates
+  // WebSocket updates are now handled by ResearchPanel
+  // Listen for changes in the store and sync properly
   useEffect(() => {
-    if (!isConnected) return
-
-    const unsubscribe = subscribe('notes_update', (message: any) => {
-      if (message.mission_id === missionId) {
-        preserveScrollPosition()
+    // Only process if we're looking at the same mission and initial load is done
+    if (activeMission?.notes && activeMission.id === missionId && initialLoadDone.current) {
+      const storeNotes = activeMission.notes
+      
+      // Check if this is the same mission we were already viewing
+      if (previousMissionId.current === missionId) {
+        // Check if there are new notes by comparing the last note IDs
+        const currentLastNoteId = notes.length > 0 ? notes[notes.length - 1].note_id : null
+        const storeLastNoteId = storeNotes.length > 0 ? storeNotes[storeNotes.length - 1].note_id : null
         
-        if (message.action === 'append' && message.data) {
-          appendMissionNotes(missionId, message.data)
-          setNotes(prev => {
-            const existingIds = new Set(prev.map(note => note.note_id))
-            const newNotes = message.data.filter((note: Note) => !existingIds.has(note.note_id))
-            if (newNotes.length > 0) {
-              setNewNotesCount(prev => prev + newNotes.length)
-              if (newNotes.length >= 5) {
-                setTimeout(() => {
-                  addToast({
-                    type: 'info',
-                    title: 'New Research Notes',
-                    message: `${newNotes.length} new note${newNotes.length > 1 ? 's' : ''} added`,
-                  })
-                }, 500)
-              }
-            }
-            const allNotes = [...prev, ...newNotes]
-            return allNotes.slice(-500) // Keep only last 500 notes
-          })
-        } else if (message.action === 'replace' && message.data) {
-          const limitedData = message.data.slice(-500)
-          setNotes(limitedData)
-          setMissionNotes(missionId, limitedData)
+        // Update if we have new notes or if the notes have changed
+        if (storeNotes.length !== notes.length || currentLastNoteId !== storeLastNoteId) {
+          preserveScrollPosition()
+          
+          // Calculate new notes count for notification
+          const newNotesCount = Math.max(0, storeNotes.length - notes.length)
+          // Only show toast if we actually have NEW notes arriving via WebSocket
+          // The newNotesCount >= 5 check ensures we only notify for significant updates
+          // The initialLoadDone check ensures we don't notify during initial data load
+          if (newNotesCount >= 5) {
+            // Additional check: only show toast if the new notes weren't part of initial load
+            // This happens when WebSocket sends new notes while user is viewing the tab
+            setTimeout(() => {
+              addToast({
+                type: 'info',
+                title: 'New Research Notes',
+                message: `${newNotesCount} new note${newNotesCount > 1 ? 's' : ''} added`,
+              })
+            }, 500)
+          }
+          
+          // Update the local state with all notes from the store
+          setNotes(storeNotes)
+          setTotalNotesCount(storeNotes.length)
+          
+          setTimeout(restoreScrollPosition, 50)
         }
-        
-        setTimeout(restoreScrollPosition, 50)
+      } else {
+        // Mission changed - update our ref but don't show notification
+        // This happens when switching between missions
+        if (storeNotes.length > 0) {
+          setNotes(storeNotes)
+          setTotalNotesCount(storeNotes.length)
+        }
       }
-    })
+    }
+  }, [activeMission?.notes, activeMission?.id, missionId, notes.length, preserveScrollPosition, restoreScrollPosition, addToast])
 
-    return unsubscribe
-  }, [isConnected, subscribe, missionId, appendMissionNotes, setMissionNotes, preserveScrollPosition, restoreScrollPosition, addToast])
-
-  // Sync with store when activeMission notes change
+  // Initial sync with store when component mounts or mission changes
   useEffect(() => {
     if (activeMission?.notes && activeMission.id === missionId && !initialLoadDone.current) {
-      setNotes(activeMission.notes)
-      setTotalNotesCount(activeMission.notes.length)
+      // If we have notes in the store but haven't loaded from API yet,
+      // use the store notes as initial state
+      if (activeMission.notes.length > 0) {
+        setNotes(activeMission.notes)
+        setTotalNotesCount(activeMission.notes.length)
+      }
     }
   }, [activeMission?.notes, activeMission?.id, missionId])
 

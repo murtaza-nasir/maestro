@@ -88,10 +88,31 @@ export const WritingSessionStats: React.FC<WritingSessionStatsProps> = ({
     }
   }, [sessionId, isClearing]);
 
+  // Track processed updates to prevent duplicates
+  const processedUpdatesRef = React.useRef(new Set<string>());
+  
   // Handle WebSocket stats updates
   const handleStatsUpdate = useCallback((update: WritingUpdate) => {
     if (update.type === 'stats_update' && update.session_id === sessionId && update.data) {
-      console.log('Received stats update via WebSocket:', update.data);
+      // Create unique key for this update
+      const updateKey = `${update.type}_${update.timestamp || Date.now()}_${JSON.stringify(update.data)}`;
+      
+      // Skip if already processed
+      if (processedUpdatesRef.current.has(updateKey)) {
+        // console.log('Skipping duplicate stats update');
+        return;
+      }
+      
+      // Mark as processed
+      processedUpdatesRef.current.add(updateKey);
+      
+      // Clean up old entries to prevent memory leak (keep last 50)
+      if (processedUpdatesRef.current.size > 50) {
+        const entries = Array.from(processedUpdatesRef.current);
+        entries.slice(0, entries.length - 50).forEach(key => processedUpdatesRef.current.delete(key));
+      }
+      
+      // console.log('Received stats update via WebSocket:', update.data);
       setStats(prev => prev ? { ...prev, ...update.data } : update.data);
     }
   }, [sessionId]);
@@ -101,7 +122,15 @@ export const WritingSessionStats: React.FC<WritingSessionStatsProps> = ({
     if (!sessionId) return;
 
     const unsubscribe = writingWebSocketService.onStatusUpdate(handleStatsUpdate);
-    return unsubscribe;
+    
+    // Clear processed updates when session changes
+    processedUpdatesRef.current.clear();
+    
+    return () => {
+      unsubscribe();
+      // Clear processed updates on cleanup
+      processedUpdatesRef.current.clear();
+    };
   }, [sessionId, handleStatsUpdate]);
 
   // Fetch initial stats when session changes

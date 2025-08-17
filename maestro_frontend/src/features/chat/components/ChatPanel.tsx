@@ -70,7 +70,11 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
     : null
   
   // Determine if the chat should be disabled
-  const isChatDisabled = isLoading || (currentMission?.status === 'running')
+  const isChatDisabled = isLoading || 
+    (currentMission?.status === 'running') || 
+    (currentMission?.status === 'completed') ||
+    (currentMission?.status === 'failed') ||
+    (currentMission?.status === 'stopped')
 
   // Find the current chat - prioritize activeChat if it matches the chatId
   const currentChat = chatId 
@@ -244,14 +248,14 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
       
       if (targetChatId) {
         // Add AI response
-        addMessage(targetChatId, {
+        await addMessage(targetChatId, {
           content: data.response,
           role: 'assistant'
         })
 
         // Update chat title if it was changed by the backend
         if (data.updated_title) {
-          updateChatTitle(targetChatId, data.updated_title)
+          await updateChatTitle(targetChatId, data.updated_title)
         }
 
         // Handle MessengerAgent actions
@@ -277,7 +281,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
       }
       
       if (targetChatId) {
-        addMessage(targetChatId, {
+        await addMessage(targetChatId, {
           content: errorMessage,
           role: 'assistant'
         })
@@ -600,7 +604,51 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
       {/* Message Input */}
       <div className="bg-card border-t border-border p-4">
         <div className="max-w-4xl mx-auto">
-          <Card>
+          {/* Mission Status Banners */}
+          {currentMission?.status === 'completed' && (
+            <div className="mb-3 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                <p className="text-sm text-green-600 dark:text-green-400 font-medium">
+                  Research mission completed successfully
+                </p>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                View the results in the Research Panel. Additional features coming soon.
+              </p>
+            </div>
+          )}
+          {currentMission?.status === 'failed' && (
+            <div className="mb-3 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                <p className="text-sm text-red-600 dark:text-red-400 font-medium">
+                  Research mission failed
+                </p>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Please review the error logs and try again with a new mission.
+              </p>
+            </div>
+          )}
+          {currentMission?.status === 'stopped' && (
+            <div className="mb-3 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                <p className="text-sm text-yellow-600 dark:text-yellow-400 font-medium">
+                  Research mission stopped
+                </p>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                The mission was manually stopped. You can resume it from the Research Panel.
+              </p>
+            </div>
+          )}
+          <Card className={
+            (currentMission?.status === 'completed' || 
+             currentMission?.status === 'failed' || 
+             currentMission?.status === 'stopped') ? 'opacity-60' : ''
+          }>
             <CardContent className="p-4">
               <div className="flex flex-col">
                 <div className="flex space-x-4">
@@ -608,7 +656,13 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     onKeyPress={handleKeyPress}
-                    placeholder={isChatDisabled ? "Mission is running..." : "Type your message or research request..."}
+                    placeholder={
+                      currentMission?.status === 'completed' ? "Mission completed - Chat disabled" :
+                      currentMission?.status === 'failed' ? "Mission failed - Chat disabled" :
+                      currentMission?.status === 'stopped' ? "Mission stopped - Chat disabled" :
+                      currentMission?.status === 'running' ? "Mission is running..." :
+                      "Type your message or research request..."
+                    }
                     className="flex-1 resize-none border-0 focus:ring-0 focus:outline-none text-xs min-h-[18px] max-h-28 bg-transparent"
                     rows={1}
                     disabled={isChatDisabled}

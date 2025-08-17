@@ -12,13 +12,15 @@ from sqlalchemy.orm import Session
 from database import models
 from database.database import get_db
 from services.background_document_processor import background_processor
+from services.websocket_manager import websocket_manager
 from api.utils import _make_serializable
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# Legacy ConnectionManager - kept for backward compatibility during migration
 class ConnectionManager:
-    """Manages WebSocket connections."""
+    """Legacy connection manager - now delegates to WebSocketManager."""
     
     def __init__(self):
         self.active_connections: Dict[str, List[WebSocket]] = {}
@@ -73,7 +75,9 @@ manager = ConnectionManager()
 async def websocket_document_updates(websocket: WebSocket, user_id: str):
     """
     WebSocket endpoint for real-time document processing updates.
+    Uses the centralized WebSocketManager to prevent duplicate connections.
     """
+    connection_id = None
     try:
         # Extract and validate JWT token from query parameters
         token = websocket.query_params.get("token")
@@ -110,7 +114,15 @@ async def websocket_document_updates(websocket: WebSocket, user_id: str):
         finally:
             db.close()
         
-        await manager.connect(websocket, user_id)
+        await websocket.accept()
+        
+        # Register with WebSocketManager
+        connection_id = await websocket_manager.connect(
+            websocket=websocket,
+            user_id=user_id,
+            connection_type='document'
+        )
+        logger.info(f"Document WebSocket connected for user {user_id} (connection: {connection_id})")
         
         # Send initial connection confirmation
         await websocket.send_text(json.dumps({
@@ -147,128 +159,195 @@ async def websocket_document_updates(websocket: WebSocket, user_id: str):
     except Exception as e:
         logger.error(f"WebSocket connection error: {e}")
     finally:
-        manager.disconnect(websocket, user_id)
-
-# Mission connection manager
-mission_manager = ConnectionManager()
-
-@router.websocket("/api/ws/missions/{mission_id}")
-async def websocket_mission_updates(websocket: WebSocket, mission_id: str):
-    """
-    WebSocket endpoint for real-time mission execution updates.
-    """
-    try:
-        # Extract and validate JWT token from query parameters or cookies
-        token = websocket.query_params.get("token")
-        token_source = "query parameter"
-        
-        if not token:
-            # Fallback to cookies for backward compatibility
-            cookies = websocket.cookies
-            token = cookies.get("access_token")
-            token_source = "cookie"
-            
-        # Enhanced logging for authentication debugging
-        if token:
-            token_preview = token[:10] + "..." if len(token) > 10 else token
-            logger.debug(f"WebSocket {token_source} token: {token_preview}")
+        if connection_id:
+            await websocket_manager.disconnect(connection_id)
         else:
-            logger.debug(f"No token found in query parameters or cookies")
-        
-        # Log detailed authentication attempt for debugging
-        logger.debug(f"WebSocket auth attempt details:")
-        logger.debug(f"  Mission ID: {mission_id}")
-        logger.debug(f"  Token present: {bool(token)}")
-        logger.debug(f"  Token source: {token_source}")
-        logger.debug(f"  Headers: {dict(websocket.headers)}")
-        logger.debug(f"  Cookies: {dict(websocket.cookies)}")
-        logger.debug(f"  Client host: {websocket.client.host}")
-        logger.debug(f"  Query parameters: {dict(websocket.query_params)}")
-        
+            manager.disconnect(websocket, user_id)
+
+# Research connection manager - single connection for all missions
+research_manager = ConnectionManager()
+
+@router.websocket("/api/ws/research")
+async def websocket_research_updates(websocket: WebSocket):
+    """
+    Single WebSocket endpoint for ALL research functionality.
+    Handles updates for all missions using the centralized WebSocketManager.
+    """
+    connection_id = None
+    try:
+        # Extract and validate JWT token
+        token = websocket.query_params.get("token")
         if not token:
-            logger.debug(f"WebSocket connection rejected: No authentication token for mission {mission_id}")
-            await websocket.close(code=1008, reason="Authentication required")
+            token = websocket.cookies.get("access_token")
+            
+        if not token:
+            await websocket.close(code=1008, reason="Missing authentication token")
             return
-        
-        # Verify the token with enhanced logging BEFORE accepting connection
+            
+        # Validate token and get user
         from auth.security import verify_token
         try:
-            logger.debug(f"Verifying token: {token}")
             username = verify_token(token)
             if username is None:
-                logger.debug(f"WebSocket connection rejected: Token verification returned None for mission {mission_id}")
+                logger.debug(f"WebSocket connection rejected: Token verification failed")
                 await websocket.close(code=1008, reason="Invalid token")
                 return
             logger.debug(f"WebSocket token verification successful for user: {username}")
         except Exception as e:
-            logger.debug(f"WebSocket token verification error: {str(e)}")
-            await websocket.close(code=1008, reason="Token verification error")
+            logger.error(f"Token validation failed: {e}")
+            await websocket.close(code=1008, reason="Invalid token")
             return
         
-        # Verify user exists in database BEFORE accepting connection
+        # Verify user exists in database
         from database.database import SessionLocal
         db = SessionLocal()
         try:
             from database import crud
             user = crud.get_user_by_username(db, username=username)
             if user is None:
-                logger.debug(f"WebSocket connection rejected: User not found for mission {mission_id}")
+                logger.debug(f"WebSocket connection rejected: User not found")
                 await websocket.close(code=1008, reason="User not found")
                 return
+            user_id = str(user.id)
         finally:
             db.close()
-        
-        # Accept the connection ONLY after successful authentication
+            
         await websocket.accept()
-        logger.debug(f"WebSocket connection accepted for mission {mission_id}, user: {username}")
         
-        # Add to mission manager
-        if mission_id not in mission_manager.active_connections:
-            mission_manager.active_connections[mission_id] = []
-        mission_manager.active_connections[mission_id].append(websocket)
+        # Register with WebSocketManager
+        connection_id = await websocket_manager.connect(
+            websocket=websocket,
+            user_id=user_id,
+            connection_type='research'
+        )
+        logger.info(f"Research WebSocket connected for user {username} (connection: {connection_id})")
         
         # Send initial connection confirmation
         await websocket.send_text(json.dumps({
             "type": "connection_established",
-            "message": f"Connected to mission {mission_id} updates",
-            "mission_id": mission_id
+            "message": "Connected to research updates",
+            "connection_id": connection_id
         }))
         
-        # Keep connection alive and handle incoming messages
-        while True:
-            try:
-                data = await websocket.receive_text()
-                message = json.loads(data)
-                
-                if message.get("type") == "ping":
+        # Heartbeat setup
+        last_heartbeat = time.time()
+        
+        async def send_heartbeat():
+            while True:
+                try:
+                    await asyncio.sleep(30)
                     await websocket.send_text(json.dumps({
-                        "type": "pong",
-                        "timestamp": message.get("timestamp")
+                        "type": "heartbeat",
+                        "timestamp": time.time()
                     }))
-                elif message.get("type") == "subscribe":
-                    # Handle subscription to specific update types
-                    await websocket.send_text(json.dumps({
-                        "type": "subscribed",
-                        "event_types": message.get("event_types", [])
-                    }))
+                except Exception:
+                    break
                     
-            except WebSocketDisconnect:
-                break
-            except Exception as e:
-                logger.error(f"Mission WebSocket error: {e}")
-                break
+        heartbeat_task = asyncio.create_task(send_heartbeat())
+        
+        try:
+            while True:
+                try:
+                    data = await asyncio.wait_for(websocket.receive_text(), timeout=60.0)
+                    message = json.loads(data)
+                    last_heartbeat = time.time()
+                    
+                    msg_type = message.get("type")
+                    
+                    if msg_type == "ping":
+                        await websocket_manager.handle_ping(connection_id)
+                        await websocket.send_text(json.dumps({
+                            "type": "pong",
+                            "timestamp": message.get("timestamp")
+                        }))
+                    elif msg_type == "heartbeat_ack":
+                        await websocket_manager.handle_ping(connection_id)
+                        logger.debug("Heartbeat acknowledged")
+                    elif msg_type == "subscribe":
+                        # Subscribe to updates for a specific mission
+                        mission_id = message.get("mission_id")
+                        if mission_id:
+                            await websocket_manager.subscribe_to_mission(connection_id, mission_id)
+                            logger.info(f"User {username} subscribed to mission {mission_id}")
+                            
+                            # Send a test message directly to confirm WebSocket works
+                            await websocket.send_text(json.dumps({
+                                "type": "test_direct_message",
+                                "message": f"Direct test for mission {mission_id}",
+                                "timestamp": time.time()
+                            }))
+                            
+                            # Send initial data for this mission
+                            await send_initial_mission_data(websocket, mission_id, username)
+                    elif msg_type == "unsubscribe":
+                        # Unsubscribe from a mission
+                        mission_id = message.get("mission_id")
+                        if mission_id:
+                            await websocket_manager.unsubscribe_from_mission(connection_id, mission_id)
+                            logger.info(f"User {username} unsubscribed from mission {mission_id}")
+                    elif msg_type == "get_logs":
+                        # Request logs for a specific mission
+                        mission_id = message.get("mission_id")
+                        if mission_id:
+                            await send_mission_logs(websocket, mission_id, username)
+                            
+                except asyncio.TimeoutError:
+                    if time.time() - last_heartbeat > 120:
+                        logger.warning(f"Research WebSocket timeout for {username}")
+                        break
+                    continue
+                except WebSocketDisconnect:
+                    logger.info(f"Research WebSocket disconnected for {username}")
+                    break
+                except Exception as e:
+                    logger.error(f"Error in research WebSocket: {e}")
+                    break
+                    
+        finally:
+            heartbeat_task.cancel()
+            if connection_id:
+                await websocket_manager.disconnect(connection_id)
                 
     except Exception as e:
-        logger.error(f"Mission WebSocket connection error: {e}")
-    finally:
-        # Remove from mission manager
-        if mission_id in mission_manager.active_connections:
-            try:
-                mission_manager.active_connections[mission_id].remove(websocket)
-                if not mission_manager.active_connections[mission_id]:
-                    del mission_manager.active_connections[mission_id]
-            except ValueError:
-                pass
+        logger.error(f"Research WebSocket error: {e}")
+        await websocket.close(code=1011, reason="Internal error")
+
+async def send_initial_mission_data(websocket: WebSocket, mission_id: str, username: str):
+    """Send initial data when subscribing to a mission."""
+    try:
+        db = next(get_db())
+        try:
+            # Get mission logs
+            logs = db.query(models.MissionExecutionLog).filter(
+                models.MissionExecutionLog.mission_id == mission_id
+            ).order_by(models.MissionExecutionLog.timestamp.desc()).limit(100).all()
+            
+            logs_data = [{
+                "timestamp": log.timestamp.isoformat() if log.timestamp else None,
+                "agent_name": log.agent_name,
+                "action": log.action,
+                "status": log.status,
+                "output_summary": log.output_summary,
+                "error_message": log.error_message
+            } for log in reversed(logs)]
+            
+            await websocket.send_text(json.dumps({
+                "type": "logs_update",
+                "mission_id": mission_id,
+                "action": "replace",
+                "data": logs_data,
+                "timestamp": time.time()
+            }))
+            
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Failed to send initial mission data: {e}")
+
+async def send_mission_logs(websocket: WebSocket, mission_id: str, username: str):
+    """Send logs for a specific mission."""
+    await send_initial_mission_data(websocket, mission_id, username)
+
 
 # Utility functions for sending updates
 async def send_document_update(user_id: str, update: Dict):
@@ -284,9 +363,9 @@ async def send_document_update(user_id: str, update: Dict):
         "user_id": user_id,
         "timestamp": update.get("timestamp")
     }
-    logger.debug(f"Sending WebSocket message to user {user_id}: {message}")
-    logger.debug(f"Active connections for user {user_id}: {len(manager.active_connections.get(user_id, []))}")
-    logger.debug(f"All active connections: {list(manager.active_connections.keys())}")
+    # Use WebSocketManager for document updates
+    await websocket_manager.send_to_user(user_id, message)
+    # Also try legacy manager for backward compatibility
     await manager.send_personal_message(json.dumps(message), user_id)
 
 async def send_job_update(user_id: str, update: Dict):
@@ -295,111 +374,97 @@ async def send_job_update(user_id: str, update: Dict):
 
 # Mission update utility functions
 async def send_mission_update(mission_id: str, update: Dict):
-    """Send a mission update to all connected clients for this mission."""
-    if mission_id in mission_manager.active_connections:
-        disconnected = []
-        message = json.dumps(_make_serializable(update))
-        for websocket in mission_manager.active_connections[mission_id]:
-            try:
-                await websocket.send_text(message)
-            except:
-                disconnected.append(websocket)
-        
-        # Remove disconnected websockets
-        for websocket in disconnected:
-            try:
-                mission_manager.active_connections[mission_id].remove(websocket)
-                if not mission_manager.active_connections[mission_id]:
-                    del mission_manager.active_connections[mission_id]
-            except ValueError:
-                pass
+    """Send a mission update to all research WebSocket clients subscribed to this mission."""
+    # Use the centralized WebSocketManager
+    serialized_update = _make_serializable(update)
+    await websocket_manager.send_to_mission(mission_id, serialized_update)
 
 async def send_notes_update(mission_id: str, new_notes: List[Dict], action: str = "append"):
-    """Send notes update to mission WebSocket clients."""
+    """Send notes update to research WebSocket clients."""
     await send_mission_update(mission_id, {
         "type": "notes_update",
-        "mission_id": mission_id,
+        "mission_id": mission_id,  # Always include mission_id for routing
         "action": action,  # "append", "replace", "update"
         "data": new_notes,
         "timestamp": time.time()
     })
 
 async def send_plan_update(mission_id: str, plan_data: Dict, action: str = "update"):
-    """Send plan update to mission WebSocket clients."""
+    """Send plan update to research WebSocket clients."""
     await send_mission_update(mission_id, {
         "type": "plan_update",
-        "mission_id": mission_id,
+        "mission_id": mission_id,  # Always include mission_id for routing
         "action": action,
         "data": plan_data,
         "timestamp": time.time()
     })
 
 async def send_draft_update(mission_id: str, draft_data: str, action: str = "update"):
-    """Send draft update to mission WebSocket clients."""
+    """Send draft update to research WebSocket clients."""
     await send_mission_update(mission_id, {
         "type": "draft_update",
-        "mission_id": mission_id,
+        "mission_id": mission_id,  # Always include mission_id for routing
         "action": action,
         "data": draft_data,
         "timestamp": time.time()
     })
 
 async def send_logs_update(mission_id: str, new_logs: List[Dict], action: str = "append"):
-    """Send logs update to mission WebSocket clients."""
+    """Send logs update to research WebSocket clients."""
     logger.debug(f"Transmitting 'logs_update' message for mission {mission_id} with {len(new_logs)} new logs.")
     await send_mission_update(mission_id, {
         "type": "logs_update",
-        "mission_id": mission_id,
+        "mission_id": mission_id,  # Always include mission_id for routing
         "action": action,
         "data": new_logs,
         "timestamp": time.time()
     })
 
 async def send_status_update(mission_id: str, status: str, metadata: Dict = None):
-    """Send status update to mission WebSocket clients."""
+    """Send status update to research WebSocket clients."""
     await send_mission_update(mission_id, {
         "type": "status_update",
-        "mission_id": mission_id,
+        "mission_id": mission_id,  # Always include mission_id for routing
         "status": status,
         "metadata": metadata or {},
         "timestamp": time.time()
     })
 
 async def send_context_update(mission_id: str, context_data: Dict, action: str = "update"):
-    """Send mission context update to mission WebSocket clients."""
+    """Send mission context update to research WebSocket clients."""
     await send_mission_update(mission_id, {
         "type": "context_update",
-        "mission_id": mission_id,
+        "mission_id": mission_id,  # Always include mission_id for routing
         "action": action,
         "data": context_data,
         "timestamp": time.time()
     })
 
 async def send_goal_pad_update(mission_id: str, goals: List[Dict], action: str = "update"):
-    """Send goal pad update to mission WebSocket clients."""
+    """Send goal pad update to research WebSocket clients."""
     await send_mission_update(mission_id, {
         "type": "goal_pad_update",
-        "mission_id": mission_id,
+        "mission_id": mission_id,  # Always include mission_id for routing
         "action": action,
         "data": goals,
         "timestamp": time.time()
     })
 
 async def send_thought_pad_update(mission_id: str, thoughts: List[Dict], action: str = "update"):
-    """Send thought pad update to mission WebSocket clients."""
+    """Send thought pad update to research WebSocket clients."""
     await send_mission_update(mission_id, {
         "type": "thought_pad_update",
-        "mission_id": mission_id,
+        "mission_id": mission_id,  # Always include mission_id for routing
         "action": action,
         "data": thoughts,
         "timestamp": time.time()
     })
 
 async def send_scratchpad_update(mission_id: str, scratchpad_content: str, action: str = "update"):
-    """Send scratchpad update to mission WebSocket clients."""
+    """Send scratchpad update to research WebSocket clients."""
     await send_mission_update(mission_id, {
         "type": "scratchpad_update",
-        "mission_id": mission_id,
+        "mission_id": mission_id,  # Always include mission_id for routing
         "action": action,
         "data": scratchpad_content,
         "timestamp": time.time()
@@ -412,7 +477,9 @@ writing_manager = ConnectionManager()
 async def websocket_writing_updates(websocket: WebSocket, session_id: str):
     """
     WebSocket endpoint for real-time writing session updates.
+    Uses the centralized WebSocketManager to prevent duplicate connections.
     """
+    connection_id = None
     try:
         # Extract and validate JWT token from query parameters
         token = websocket.query_params.get("token")
@@ -460,18 +527,23 @@ async def websocket_writing_updates(websocket: WebSocket, session_id: str):
                 logger.debug(f"WebSocket connection rejected: Writing session {session_id} not found or not owned by user {username}")
                 await websocket.close(code=1008, reason="Writing session not found or access denied")
                 return
+            
+            user_id = str(user.id)
                 
         finally:
             db.close()
         
         # Accept the connection ONLY after successful authentication
         await websocket.accept()
-        logger.debug(f"WebSocket connection accepted for writing session {session_id}, user: {username}")
         
-        # Add to writing manager
-        if session_id not in writing_manager.active_connections:
-            writing_manager.active_connections[session_id] = []
-        writing_manager.active_connections[session_id].append(websocket)
+        # Register with WebSocketManager - will close duplicates automatically
+        connection_id = await websocket_manager.connect(
+            websocket=websocket,
+            user_id=user_id,
+            connection_type='writing',
+            session_id=session_id
+        )
+        logger.debug(f"WebSocket connection accepted for writing session {session_id}, user: {username}, connection: {connection_id}")
         
         # Send initial connection confirmation
         await websocket.send_text(json.dumps({
@@ -526,35 +598,16 @@ async def websocket_writing_updates(websocket: WebSocket, session_id: str):
     except Exception as e:
         logger.debug(f"Writing WebSocket connection error: {e}")
     finally:
-        # Remove from writing manager
-        if session_id in writing_manager.active_connections:
-            try:
-                writing_manager.active_connections[session_id].remove(websocket)
-                if not writing_manager.active_connections[session_id]:
-                    del writing_manager.active_connections[session_id]
-            except ValueError:
-                pass
+        # Disconnect from WebSocketManager
+        if connection_id:
+            await websocket_manager.disconnect(connection_id)
 
 # Writing session update utility functions
 async def send_writing_update(session_id: str, update: Dict):
     """Send a writing update to all connected clients for this session."""
-    if session_id in writing_manager.active_connections:
-        disconnected = []
-        message = json.dumps(_make_serializable(update))
-        for websocket in writing_manager.active_connections[session_id]:
-            try:
-                await websocket.send_text(message)
-            except:
-                disconnected.append(websocket)
-        
-        # Remove disconnected websockets
-        for websocket in disconnected:
-            try:
-                writing_manager.active_connections[session_id].remove(websocket)
-                if not writing_manager.active_connections[session_id]:
-                    del writing_manager.active_connections[session_id]
-            except ValueError:
-                pass
+    # Use the centralized WebSocketManager
+    serialized_update = _make_serializable(update)
+    await websocket_manager.send_to_session(session_id, serialized_update)
 
 async def send_agent_status_update(session_id: str, status: str, details: str = ""):
     """Send agent status update to writing session WebSocket clients."""

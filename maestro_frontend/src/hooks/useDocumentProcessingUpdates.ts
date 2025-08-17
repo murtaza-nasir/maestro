@@ -20,7 +20,7 @@ export const useDocumentProcessingUpdates = ({ onDocumentUpdate }: UseDocumentPr
   // We'll keep it for compatibility but it won't create additional connections
   
   useEffect(() => {
-    console.log('useDocumentProcessingUpdates: Hook initialized but using existing UploadService WebSocket');
+    // console.log('useDocumentProcessingUpdates: Hook initialized but using existing UploadService WebSocket');
     // No additional WebSocket connection needed - UploadService handles this
   }, [onDocumentUpdate]);
 };

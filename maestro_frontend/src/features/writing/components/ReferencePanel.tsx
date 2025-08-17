@@ -46,18 +46,18 @@ export const ReferencePanel: React.FC<ReferencePanelProps> = ({ references }) =>
   const handleCopyCitation = (citation: string) => {
     navigator.clipboard.writeText(citation)
     // TODO: Show toast notification
-    console.log('Citation copied to clipboard')
+    // console.log('Citation copied to clipboard')
   }
 
   const handleAddReference = () => {
     // TODO: Implement add reference functionality
-    console.log('Adding new reference...')
+    // console.log('Adding new reference...')
     setShowAddForm(true)
   }
 
   const handleDeleteReference = (refId: string) => {
     // TODO: Implement delete reference functionality
-    console.log('Deleting reference:', refId)
+    // console.log('Deleting reference:', refId)
   }
 
   return (

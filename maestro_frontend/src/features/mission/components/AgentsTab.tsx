@@ -17,6 +17,12 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({ missionId }) => {
 
   // Get logs from the store (shared with ResearchPanel)
   const logs = missionLogs[missionId] || [];
+  
+  // Debug logging to understand what's happening
+  useEffect(() => {
+    // console.log(`AgentsTab: missionId=${missionId}, logs.length=${logs.length}`);
+    // console.log('AgentsTab: First few logs:', logs.slice(0, 3));
+  }, [missionId, logs]);
 
   // Memoize logs to prevent unnecessary re-renders
   const memoizedLogs = useMemo(() => {

@@ -88,6 +88,7 @@ async def chat_with_ai(
                 
                 if hasattr(update_data, 'agent_name') and hasattr(update_data, 'action'):
                     log_entry_dict = {
+                        "log_id": getattr(update_data, 'log_id', None),  # Include the unique log ID
                         "timestamp": update_data.timestamp.isoformat(),
                         "agent_name": update_data.agent_name,
                         "action": update_data.action,

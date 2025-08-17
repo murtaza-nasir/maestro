@@ -541,10 +541,28 @@ Output ONLY a single JSON object conforming EXACTLY to the RequestAnalysisOutput
                 
                 # Wrapper to run the background task with preserved context
                 def run_with_context():
-                    return ctx.run(lambda: asyncio.create_task(run_research_background(), name=f"research_mission_{mission_id}"))
+                    task = asyncio.create_task(run_research_background(), name=f"research_mission_{mission_id}")
+                    # Register the task with the controller for proper cancellation
+                    self.controller.register_mission_task(mission_id, task)
+                    
+                    # Add a done callback to clean up when the task completes
+                    def cleanup_task(future):
+                        try:
+                            self.controller.unregister_mission_task(mission_id)
+                            if future.cancelled():
+                                logger.info(f"Mission {mission_id} task was cancelled")
+                            elif future.exception():
+                                logger.error(f"Mission {mission_id} task failed with exception: {future.exception()}")
+                            else:
+                                logger.info(f"Mission {mission_id} task completed successfully")
+                        except Exception as e:
+                            logger.error(f"Error in task cleanup for mission {mission_id}: {e}")
+                    
+                    task.add_done_callback(cleanup_task)
+                    return task
                 
                 # Start the research execution as a background task with preserved context
-                run_with_context()
+                ctx.run(run_with_context)
                 
                 # Update the response to confirm research is starting
                 agent_output["response"] = f"{agent_output['response']}\n\nGreat! I'll now start the research process with the approved questions. You can monitor the progress in the research tabs."

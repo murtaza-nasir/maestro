@@ -33,7 +33,7 @@ except NameError:
 try:
     from ai_researcher.agentic_layer.context_manager import ExecutionLogEntry # Import for type hint
     from ai_researcher.core_rag.embedder import TextEmbedder
-    from ai_researcher.core_rag.vector_store import VectorStore
+    from ai_researcher.core_rag.pgvector_store import PGVectorStore as VectorStore
     from ai_researcher.core_rag.reranker import TextReranker
     from ai_researcher.core_rag.retriever import Retriever
     from ai_researcher.agentic_layer.model_dispatcher import ModelDispatcher
@@ -97,7 +97,7 @@ def initialize_components():
     logger.info("Initializing AI Researcher components for Streamlit app...")
     try:
         embedder = TextEmbedder(model_name=EMBEDDING_MODEL)
-        vector_store = VectorStore(persist_directory=VECTOR_STORE_PATH)
+        vector_store = VectorStore()
         reranker = TextReranker(model_name=RERANKER_MODEL) # Optional
         retriever = Retriever(embedder=embedder, vector_store=vector_store, reranker=reranker)
         model_dispatcher = ModelDispatcher() # Uses env var for API key

@@ -15,6 +15,14 @@ import { useDebounce } from '../../../hooks/useDebounce';
 import * as writingApi from '../api';
 import { WritingSessionStats } from './WritingSessionStats';
 import { useTheme } from '../../../contexts/ThemeContext';
+import { apiClient } from '../../../config/api';
+import { useToast } from '../../../components/ui/toast';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../../../components/ui/dropdown-menu';
 
 export const DraftPanel: React.FC = () => {
   const [activeTab, setActiveTab] = useState('editor');
@@ -34,6 +42,10 @@ export const DraftPanel: React.FC = () => {
   // Copy feedback state
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'success' | 'error'>('idle');
   
+  // Add loading state for Word export
+  const [isExporting, setIsExporting] = useState(false);
+  const { addToast } = useToast();
+  
   // Editor instance and cursor position preservation
   const editorInstanceRef = useRef<any>(null);
   const lastCursorPositionRef = useRef<{ line: number; ch: number } | null>(null);
@@ -52,16 +64,16 @@ export const DraftPanel: React.FC = () => {
   
   // Get loading state for current session
   const isLoading = currentSession ? getSessionLoading(currentSession.id) : false;
-  const { theme } = useTheme();
+  const { theme, getThemeClasses } = useTheme();
 
   // Initialize local content and title when draft changes
   useEffect(() => {
     if (currentDraft) {
-      console.log('Draft changed, updating local state:', currentDraft.id);
+      // console.log('Draft changed, updating local state:', currentDraft.id);
       
       // Force update content when draft changes to ensure proper isolation
       const newContent = currentDraft.content || '';
-      console.log('Updating local content from draft:', newContent.length, 'characters');
+      // console.log('Updating local content from draft:', newContent.length, 'characters');
       setLocalContent(newContent);
       setHasUnsavedChanges(false);
       setIsUserEditing(false); // Reset editing state when draft changes
@@ -69,12 +81,12 @@ export const DraftPanel: React.FC = () => {
       // Always update title when draft changes (unless user is editing title)
       if (!isEditingTitle) {
         const newTitle = currentDraft.title || 'Untitled Document';
-        console.log('Updating local title from draft:', newTitle);
+        // console.log('Updating local title from draft:', newTitle);
         setLocalTitle(newTitle);
       }
     } else {
       // Clear local state when no draft is selected
-      console.log('No current draft, clearing local state');
+      // console.log('No current draft, clearing local state');
       setLocalContent('');
       setHasUnsavedChanges(false);
       setIsUserEditing(false);
@@ -88,7 +100,7 @@ export const DraftPanel: React.FC = () => {
   const handleSaveDraft = useCallback(async (content: string, title?: string) => {
     if (!currentDraft || !currentSession || isSaving) return;
     
-    console.log('Saving draft...');
+    // console.log('Saving draft...');
     setIsSaving(true);
     
     try {
@@ -103,7 +115,7 @@ export const DraftPanel: React.FC = () => {
       // Update the store optimistically without triggering editor re-render
       setCurrentDraft({ ...currentDraft, content, title: title || currentDraft.title });
       
-      console.log('Draft saved successfully');
+      // console.log('Draft saved successfully');
     } catch (error) {
       console.error('Failed to save draft:', error);
     } finally {
@@ -150,7 +162,7 @@ export const DraftPanel: React.FC = () => {
     if (hasUnsavedChanges && debouncedContent && currentDraft && currentSession && !isUserEditing) {
       // Only auto-save if the content actually belongs to the current draft
       // and the user is not actively editing (to prevent race conditions)
-      console.log('Auto-saving due to debounced content change for draft:', currentDraft.id);
+      // console.log('Auto-saving due to debounced content change for draft:', currentDraft.id);
       handleSaveDraft(debouncedContent);
     }
   }, [debouncedContent, hasUnsavedChanges, currentDraft?.id, currentSession?.id, isUserEditing, handleSaveDraft]);
@@ -196,16 +208,16 @@ export const DraftPanel: React.FC = () => {
       editorInstanceRef.current = editor;
       const cm = editor.codemirror;
       
-      console.log('Editor mounted and CodeMirror instance stored');
+      // console.log('Editor mounted and CodeMirror instance stored');
       
       // Set up event listeners for user interaction detection
       cm.on('focus', () => {
-        console.log('Editor focused - user is editing');
+        // console.log('Editor focused - user is editing');
         setIsUserEditing(true);
       });
       
       cm.on('blur', () => {
-        console.log('Editor blurred - user stopped editing');
+        // console.log('Editor blurred - user stopped editing');
         setIsUserEditing(false);
         
         // Save immediately on blur if there are unsaved changes
@@ -247,7 +259,7 @@ export const DraftPanel: React.FC = () => {
       // Try modern clipboard API first
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(localContent);
-        console.log('Content copied to clipboard using modern API');
+        // console.log('Content copied to clipboard using modern API');
       } else {
         // Fallback to legacy method
         const textArea = document.createElement('textarea');
@@ -265,7 +277,7 @@ export const DraftPanel: React.FC = () => {
         if (!successful) {
           throw new Error('Legacy copy method failed');
         }
-        console.log('Content copied to clipboard using legacy method');
+        // console.log('Content copied to clipboard using legacy method');
       }
       
       // Show success feedback
@@ -287,8 +299,8 @@ export const DraftPanel: React.FC = () => {
     }
   }, [localContent]);
 
-  // Export draft
-  const handleExportDraft = useCallback(() => {
+  // Export draft as Markdown
+  const handleExportMarkdown = useCallback(() => {
     if (!currentDraft) return;
     
     let content = `# ${currentDraft.title || 'Untitled Document'}\n\n`;
@@ -303,7 +315,97 @@ export const DraftPanel: React.FC = () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [currentDraft, localContent]);
+    
+    addToast({
+      type: 'success',
+      title: 'Document Downloaded',
+      message: 'Document has been downloaded as Markdown.'
+    });
+  }, [currentDraft, localContent, addToast]);
+
+  // Export draft as Word document
+  const handleExportWord = useCallback(async () => {
+    if (!currentDraft || !currentSession) {
+      addToast({
+        type: 'warning',
+        title: 'No Content',
+        message: 'There is no draft content to download.'
+      });
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      let content = `# ${currentDraft.title || 'Untitled Document'}\n\n`;
+      content += localContent || '';
+      
+      const response = await apiClient.post(
+        `/api/writing/sessions/${currentSession.id}/draft/docx`,
+        { 
+          markdown_content: content,
+          filename: currentDraft.title || 'document'
+        },
+        { 
+          responseType: 'blob',
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        }
+      );
+
+      // Check if the response is actually a blob
+      if (response.data instanceof Blob) {
+        const url = URL.createObjectURL(response.data);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${currentDraft.title || 'document'}.docx`;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        addToast({
+          type: 'success',
+          title: 'Document Downloaded',
+          message: 'Document has been downloaded as a Word document.'
+        });
+      } else {
+        throw new Error('Invalid response format');
+      }
+    } catch (error: any) {
+      console.error('Failed to download Word document:', error);
+      
+      // More detailed error handling
+      let errorMessage = 'Failed to download the document as a Word file. Please try again.';
+      if (error?.response) {
+        if (error.response.status === 404) {
+          errorMessage = 'Download endpoint not found. Please contact support.';
+        } else if (error.response.status === 500) {
+          errorMessage = 'Server error occurred while generating the document.';
+        }
+      } else if (error?.request) {
+        errorMessage = 'Network error. Please check your connection and try again.';
+      }
+      
+      addToast({
+        type: 'error',
+        title: 'Download Failed',
+        message: errorMessage,
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  }, [currentDraft, currentSession, localContent, addToast]);
+
+  // Handle export in different formats
+  const handleExport = useCallback((format: 'md' | 'docx') => {
+    if (format === 'md') {
+      handleExportMarkdown();
+    } else {
+      handleExportWord();
+    }
+  }, [handleExportMarkdown, handleExportWord]);
 
   // Refresh draft
   const handleRefreshDraft = useCallback(async () => {
@@ -375,11 +477,11 @@ export const DraftPanel: React.FC = () => {
   // Global save function for chat switching
   const saveCurrentChanges = useCallback(async () => {
     if (hasUnsavedChanges && currentDraft && currentSession && localContent) {
-      console.log('Saving current changes before chat switch...');
+      // console.log('Saving current changes before chat switch...');
       try {
         await saveDraftChanges(localContent, localTitle);
         setHasUnsavedChanges(false);
-        console.log('Changes saved successfully before chat switch');
+        // console.log('Changes saved successfully before chat switch');
         return true;
       } catch (error) {
         console.error('Failed to save changes before chat switch:', error);
@@ -507,16 +609,29 @@ export const DraftPanel: React.FC = () => {
                 >
                   <Save className="h-3 w-3" />
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleExportDraft}
-                  disabled={!currentDraft}
-                  className="h-6 w-6 p-0 text-text-secondary hover:text-text-primary hover:bg-muted rounded"
-                  title="Export as markdown"
-                >
-                  <Download className="h-3 w-3" />
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={!currentDraft || isExporting}
+                      className="h-6 w-6 p-0 text-text-secondary hover:text-text-primary hover:bg-muted rounded"
+                      title="Export document"
+                    >
+                      <Download className="h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => handleExport('md')}>
+                      <FileText className="mr-2 h-4 w-4" />
+                      Download as Markdown
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleExport('docx')}>
+                      <FileText className="mr-2 h-4 w-4" />
+                      Download as Word
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
             
@@ -582,7 +697,7 @@ export const DraftPanel: React.FC = () => {
           <div className="flex-1 overflow-hidden">
             <TabsContent value="editor" className="h-full m-0 relative overflow-hidden">
               {currentDraft ? (
-                <div className={`absolute inset-0 editor-container ${theme}`} style={{ top: 0 }}>
+                <div className={`absolute inset-0 editor-container ${getThemeClasses()}`} style={{ top: 0 }}>
                   <SimpleMDE
                     key={currentDraft.id} // Force re-mount when draft changes
                     value={localContent}

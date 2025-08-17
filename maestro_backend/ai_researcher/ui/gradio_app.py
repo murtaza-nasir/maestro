@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from ai_researcher.agentic_layer.context_manager import ContextManager, ExecutionLogEntry, MissionContext
     from ai_researcher.agentic_layer.schemas.planning import SimplifiedPlan, ReportSection, PlanStep
     from ai_researcher.core_rag.embedder import TextEmbedder
-    from ai_researcher.core_rag.vector_store import VectorStore
+    from ai_researcher.core_rag.pgvector_store import PGVectorStore as VectorStore
     from ai_researcher.core_rag.reranker import TextReranker
     from ai_researcher.core_rag.retriever import Retriever
     from ai_researcher.agentic_layer.model_dispatcher import ModelDispatcher
@@ -53,7 +53,7 @@ try:
     from ai_researcher.agentic_layer.context_manager import ExecutionLogEntry, MissionContext
     from ai_researcher.agentic_layer.schemas.planning import SimplifiedPlan, ReportSection, PlanStep
     from ai_researcher.core_rag.embedder import TextEmbedder
-    from ai_researcher.core_rag.vector_store import VectorStore
+    from ai_researcher.core_rag.pgvector_store import PGVectorStore as VectorStore
     from ai_researcher.core_rag.reranker import TextReranker
     from ai_researcher.core_rag.retriever import Retriever
     from ai_researcher.agentic_layer.model_dispatcher import ModelDispatcher
@@ -172,7 +172,7 @@ def initialize_components():
         try:
             # Reuse initialization logic from Streamlit app if possible
             embedder = TextEmbedder(model_name=EMBEDDING_MODEL)
-            vector_store = VectorStore(persist_directory=VECTOR_STORE_PATH)
+            vector_store = VectorStore()
             reranker = TextReranker(model_name=RERANKER_MODEL)
             retriever = Retriever(embedder=embedder, vector_store=vector_store, reranker=reranker)
             model_dispatcher = ModelDispatcher()

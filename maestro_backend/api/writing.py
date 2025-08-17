@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime
 import uuid
 import logging
@@ -805,9 +806,242 @@ async def update_reference(
     return schemas.Reference.from_orm(reference)
 
 
-# Enhanced Writing Chat Endpoint
+# Enhanced Writing Chat Endpoint - Non-blocking version
 
-@router.post("/enhanced-chat", response_model=schemas.WritingAgentResponse)
+@router.post("/enhanced-chat-stream")
+async def enhanced_writing_chat_stream(
+    request: schemas.EnhancedWritingChatRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user_from_cookie)
+):
+    """
+    Non-blocking version of enhanced chat that processes in background and streams via WebSocket.
+    Returns immediately with a task ID.
+    """
+    # Verify that the draft exists and the user has access to it.
+    draft = db.query(models.Draft).join(
+        models.WritingSession, models.Draft.writing_session_id == models.WritingSession.id
+    ).join(
+        models.Chat, models.WritingSession.chat_id == models.Chat.id
+    ).filter(
+        models.Draft.id == request.draft_id,
+        models.Chat.user_id == current_user.id
+    ).first()
+
+    if not draft:
+        raise HTTPException(status_code=404, detail="Draft not found or access denied")
+
+    # Generate a task ID for tracking
+    task_id = str(uuid.uuid4())
+    
+    # Get the writing session
+    writing_session = draft.writing_session
+    session_id = writing_session.id
+    
+    # Save initial user message immediately
+    user_message = models.Message(
+        id=str(uuid.uuid4()),
+        chat_id=draft.writing_session.chat_id,
+        role="user",
+        content=request.message,
+        created_at=datetime.utcnow()
+    )
+    db.add(user_message)
+    db.commit()
+    
+    # Don't send any immediate updates - let the agent handle all status updates
+    
+    # Add the actual processing to background tasks
+    background_tasks.add_task(
+        process_writing_chat_in_background,
+        task_id=task_id,
+        request=request,
+        draft_id=draft.id,
+        session_id=session_id,
+        chat_id=draft.writing_session.chat_id,
+        user_id=current_user.id,
+        user_message_id=user_message.id
+    )
+    
+    # Return immediately with task ID
+    return JSONResponse(
+        status_code=202,  # Accepted
+        content={
+            "task_id": task_id,
+            "status": "processing",
+            "message": "Your request is being processed. Updates will be streamed via WebSocket."
+        }
+    )
+
+async def process_writing_chat_in_background(
+    task_id: str,
+    request: schemas.EnhancedWritingChatRequest,
+    draft_id: str,
+    session_id: str,
+    chat_id: str,
+    user_id: int,
+    user_message_id: str
+):
+    """
+    Process writing chat in background and send updates via WebSocket.
+    """
+    from api.websockets import send_agent_status_update, send_draft_content_update
+    from database.database import SessionLocal
+    
+    db = SessionLocal()
+    try:
+        # Get user and draft
+        current_user = db.query(models.User).filter(models.User.id == user_id).first()
+        draft = db.query(models.Draft).filter(models.Draft.id == draft_id).first()
+        writing_session = db.query(models.WritingSession).filter(models.WritingSession.id == session_id).first()
+        
+        if not current_user or not draft or not writing_session:
+            await send_streaming_chunk_update(session_id, "\n❌ Error: Session data not found.\n")
+            return
+        
+        # Set user context
+        set_current_user(current_user)
+        
+        # Determine settings (same logic as original endpoint)
+        document_group_id = request.document_group_id
+        if document_group_id == "" or document_group_id == "none":
+            document_group_id = None
+        elif document_group_id is None:
+            document_group_id = writing_session.document_group_id
+        
+        use_web_search = request.use_web_search
+        if use_web_search is None:
+            use_web_search = writing_session.use_web_search
+        
+        # Get the WritingController
+        writing_controller = await WritingController.get_instance(current_user)
+        agent = SimplifiedWritingAgent(model_dispatcher=writing_controller.model_dispatcher)
+        
+        # Get chat history
+        chat_history = db.query(models.Message).filter(
+            models.Message.chat_id == chat_id
+        ).order_by(models.Message.created_at.asc()).all()
+        
+        chat_history_str = "\n".join([f"{msg.role}: {msg.content}" for msg in chat_history])
+        
+        # Prepare context
+        custom_system_prompt = None
+        if current_user.settings and isinstance(current_user.settings, dict):
+            writing_settings = current_user.settings.get("writing_settings", {})
+            if isinstance(writing_settings, dict):
+                custom_system_prompt = writing_settings.get("custom_system_prompt")
+        
+        user_research_params = current_user.settings.get("research_parameters", {}) if current_user.settings else {}
+        user_search_settings = current_user.settings.get("search", {}) if current_user.settings else {}
+        
+        if request.deep_search:
+            default_iterations = user_research_params.get("writing_deep_search_iterations", 3)
+            default_queries = user_research_params.get("writing_deep_search_queries", 5)
+        else:
+            default_iterations = user_research_params.get("writing_search_max_iterations", 1)
+            default_queries = user_research_params.get("writing_search_max_queries", 3)
+        
+        context_info = {
+            "document_group_id": document_group_id,
+            "use_web_search": use_web_search,
+            "operation_mode": request.operation_mode or "balanced",
+            "user_profile": {
+                "full_name": current_user.full_name,
+                "location": current_user.location,
+                "job_title": current_user.job_title,
+            },
+            "session_id": session_id,
+            "custom_system_prompt": custom_system_prompt,
+            "search_config": {
+                "deep_search": request.deep_search or False,
+                "max_iterations": request.max_search_iterations or default_iterations,
+                "max_decomposed_queries": request.max_decomposed_queries or default_queries,
+                "max_results": user_search_settings.get("max_results", 5)
+            }
+        }
+        
+        # Create status callback for agent updates
+        async def status_callback(status: str, details: str = ""):
+            """Send status updates via WebSocket."""
+            try:
+                # Map agent status to user-friendly messages
+                status_map = {
+                    "analyzing": "analyzing",
+                    "router_thinking": "thinking",
+                    "router_decision": "planning",
+                    "searching_web": "searching",
+                    "searching_documents": "searching",
+                    "generating_response": "writing",
+                    "finalizing": "finalizing"
+                }
+                
+                mapped_status = status_map.get(status, status)
+                await send_agent_status_update(session_id, mapped_status, details)
+                
+                # Don't stream status messages as content chunks
+                logger.debug(f"Status update: {status} - {details}")
+            except Exception as e:
+                logger.warning(f"Failed to send status update: {e}")
+        
+        # Don't send initial status - let the agent handle it
+        
+        # Run the agent with status callback (not streaming callback)
+        result = await agent.run(
+            prompt=request.message,
+            draft_content=draft.content,
+            chat_history=chat_history_str,
+            context_info=context_info,
+            status_callback=status_callback
+        )
+        
+        # Save the assistant response
+        agent_response_msg = models.Message(
+            id=str(uuid.uuid4()),
+            chat_id=chat_id,
+            role="assistant",
+            content=result["chat_response"],
+            sources=result.get("sources", []),
+            created_at=datetime.utcnow()
+        )
+        db.add(agent_response_msg)
+        db.commit()
+        
+        # Send the complete response via WebSocket (not as streaming chunks)
+        await send_agent_status_update(session_id, "completed", "Response generated successfully")
+        
+        # Send the full response message with sources
+        await send_draft_content_update(session_id, {
+            "message": result["chat_response"],
+            "sources": result.get("sources", []),
+            "task_id": task_id
+        }, "complete")
+        
+        # Update chat title if needed
+        try:
+            title_service = ChatTitleService(writing_controller.model_dispatcher)
+            await title_service.update_title_if_needed(
+                db=db,
+                chat_id=chat_id,
+                user_id=user_id,
+                user_message=request.message,
+                ai_response=result["chat_response"]
+            )
+        except Exception as e:
+            logger.warning(f"Failed to update chat title: {e}")
+            
+    except Exception as e:
+        logger.error(f"Error in background writing chat processing: {e}", exc_info=True)
+        try:
+            await send_streaming_chunk_update(session_id, f"\n❌ Error: {str(e)}\n")
+            await send_agent_status_update(session_id, "error", str(e))
+        except:
+            pass
+    finally:
+        db.close()
+
+# Keep original endpoint for backward compatibility but mark as deprecated
+@router.post("/enhanced-chat", response_model=schemas.WritingAgentResponse, deprecated=True)
 async def enhanced_writing_chat(
     request: schemas.EnhancedWritingChatRequest,
     db: Session = Depends(get_db),
@@ -832,15 +1066,29 @@ async def enhanced_writing_chat(
     # Get the writing session to access settings
     writing_session = draft.writing_session
 
-    # Determine document group to use (request override or session default)
+    # Log the incoming request values for debugging
+    logger.info(f"Enhanced chat request - document_group_id: {request.document_group_id}, use_web_search: {request.use_web_search}")
+    logger.info(f"Writing session defaults - document_group_id: {writing_session.document_group_id}, use_web_search: {writing_session.use_web_search}")
+    
+    # Determine document group to use
+    # If explicitly set to empty string or "none", use None (no document group)
+    # If not provided (None), use session default
+    # Otherwise use the provided value
     document_group_id = request.document_group_id
-    if document_group_id is None:
+    if document_group_id == "" or document_group_id == "none":
+        document_group_id = None
+    elif document_group_id is None:
         document_group_id = writing_session.document_group_id
 
-    # Determine web search setting (request override or session default)
+    # Determine web search setting
+    # If explicitly provided (True or False), use that value
+    # If not provided (None), use session default
     use_web_search = request.use_web_search
     if use_web_search is None:
         use_web_search = writing_session.use_web_search
+    # Otherwise use the provided value (could be False)
+    
+    logger.info(f"Final values - document_group_id: {document_group_id}, use_web_search: {use_web_search}")
 
     # Verify document group access if specified
     if document_group_id:
@@ -885,7 +1133,7 @@ async def enhanced_writing_chat(
     # Determine defaults based on deep search mode
     if request.deep_search:
         default_iterations = user_research_params.get("writing_deep_search_iterations", 3)
-        default_queries = user_research_params.get("writing_deep_search_queries", 10)
+        default_queries = user_research_params.get("writing_deep_search_queries", 5)
     else:
         default_iterations = user_research_params.get("writing_search_max_iterations", 1)
         default_queries = user_research_params.get("writing_search_max_queries", 3)
@@ -1030,6 +1278,14 @@ async def enhanced_writing_chat(
         full_document=True
     )
 
+    # Send final status update to ensure WebSocket clears loading state
+    try:
+        from api.websockets import send_agent_status_update
+        await send_agent_status_update(writing_session.id, "idle", "")
+        logger.info(f"Sent final idle status for session {writing_session.id}")
+    except Exception as ws_error:
+        logger.warning(f"Failed to send final status update: {ws_error}")
+    
     return schemas.WritingAgentResponse(
         message=result["chat_response"],
         sources=result.get("sources", []),  # Include sources from the agent
@@ -1075,3 +1331,80 @@ async def update_session_settings(
     db.refresh(writing_session)
     
     return writing_session
+
+
+# Word Document Export Endpoint
+from pydantic import BaseModel
+import pypandoc
+import tempfile
+import os
+from fastapi.responses import FileResponse, Response
+
+class MarkdownContent(BaseModel):
+    markdown_content: str
+    filename: Optional[str] = None
+
+@router.post("/sessions/{session_id}/draft/docx")
+async def export_draft_as_docx(
+    session_id: str,
+    content: MarkdownContent,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user_from_cookie)
+):
+    """Export a writing draft as a Word document."""
+    
+    # Verify the user has access to this writing session
+    writing_session = db.query(models.WritingSession).join(
+        models.Chat, models.WritingSession.chat_id == models.Chat.id
+    ).filter(
+        models.WritingSession.id == session_id,
+        models.Chat.user_id == current_user.id
+    ).first()
+    
+    if not writing_session:
+        raise HTTPException(status_code=404, detail="Writing session not found or access denied")
+    
+    try:
+        # Create a temporary file for the DOCX output
+        with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as temp_file:
+            temp_path = temp_file.name
+        
+        try:
+            # Convert markdown to DOCX using pypandoc with output file
+            pypandoc.convert_text(
+                content.markdown_content,
+                'docx',
+                format='md',
+                outputfile=temp_path,
+                extra_args=['--reference-doc=/app/reference.docx'] if os.path.exists('/app/reference.docx') else []
+            )
+            
+            # Read the generated file
+            with open(temp_path, 'rb') as docx_file:
+                docx_content = docx_file.read()
+            
+            # Clean up the temp file
+            os.unlink(temp_path)
+            
+            # Return the file response as bytes
+            filename = f"{content.filename or 'document'}.docx"
+            return Response(
+                content=docx_content,
+                media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                headers={
+                    'Content-Disposition': f'attachment; filename="{filename}"'
+                }
+            )
+            
+        except Exception as e:
+            # Clean up temp file on error
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise e
+            
+    except Exception as e:
+        logger.error(f"Failed to convert markdown to DOCX: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate Word document: {str(e)}"
+        )

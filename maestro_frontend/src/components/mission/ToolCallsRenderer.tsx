@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Settings, Search, ChevronDown, ChevronRight, CheckCircle, XCircle } from 'lucide-react';
 import type { ExecutionLogEntry } from './AgentActivityLog';
+import { themeColors } from './themeColors';
 
 interface ToolCallsRendererProps {
   log: ExecutionLogEntry;
@@ -72,26 +73,26 @@ export const ToolCallsRenderer: React.FC<ToolCallsRendererProps> = ({ log }) => 
     const isExpanded = expandedGroups.has(group.tool_name);
     
     return (
-      <div key={group.tool_name} className="bg-white border border-gray-200 rounded-lg">
+      <div key={group.tool_name} className={`${themeColors.contentCard} ${themeColors.contentBorder} border rounded-lg`}>
         {/* Group Header */}
         <div 
-          className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50"
+          className={`flex items-center justify-between p-3 cursor-pointer ${themeColors.contentHover}`}
           onClick={() => toggleGroup(group.tool_name)}
         >
           <div className="flex items-center space-x-2">
             {isExpanded ? 
-              <ChevronDown className="h-4 w-4 text-gray-400" /> : 
-              <ChevronRight className="h-4 w-4 text-gray-400" />
+              <ChevronDown className="h-4 w-4 text-muted-foreground" /> : 
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
             }
             {getToolIcon(group.tool_name)}
-            <span className="font-medium text-gray-900">{group.tool_name}</span>
-            <span className="text-sm text-gray-500">({group.calls.length})</span>
+            <span className={`font-medium ${themeColors.textPrimary}`}>{group.tool_name}</span>
+            <span className={`text-sm ${themeColors.textSecondary}`}>({group.calls.length})</span>
           </div>
           
           <div className="flex items-center space-x-2">
             {/* Show summary for document searches */}
             {group.tool_name === 'document_search' && group.totalResults! > 0 && (
-              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+              <span className={`text-xs ${themeColors.researchBg} ${themeColors.researchText} px-2 py-1 rounded`}>
                 {group.totalResults} total results
               </span>
             )}
@@ -101,7 +102,7 @@ export const ToolCallsRenderer: React.FC<ToolCallsRendererProps> = ({ log }) => 
 
         {/* Expanded Content */}
         {isExpanded && (
-          <div className="border-t border-gray-100 p-3 bg-gray-50">
+          <div className={`border-t ${themeColors.toolBorder} p-3 ${themeColors.toolBg}`}>
             {group.tool_name === 'document_search' ? 
               renderDocumentSearchGroup(group) : 
               renderGenericToolGroup(group)
@@ -117,30 +118,30 @@ export const ToolCallsRenderer: React.FC<ToolCallsRendererProps> = ({ log }) => 
       <div className="space-y-3">
         {/* Search Queries Summary */}
         <div>
-          <h5 className="text-sm font-medium text-gray-700 mb-2">Search Queries:</h5>
+          <h5 className={`text-sm font-medium ${themeColors.contentText} mb-2`}>Search Queries:</h5>
           <div className="space-y-2">
             {group.calls.map((call, index) => (
-              <div key={index} className="bg-white border border-gray-200 rounded p-2">
+              <div key={index} className={`${themeColors.contentCard} ${themeColors.contentBorder} border rounded p-2`}>
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <div className="text-xs text-gray-800 mb-1">
+                    <div className={`text-xs ${themeColors.textPrimary} mb-1`}>
                       <span className="font-medium">Query:</span> {call.arguments?.query || 'N/A'}
                     </div>
-                    <div className="text-xs text-gray-600">
+                    <div className={`text-xs ${themeColors.textSecondary}`}>
                       Results: {call.arguments?.n_results || 'N/A'} | 
                       Reranker: {call.arguments?.use_reranker ? 'Yes' : 'No'}
                     </div>
                   </div>
-                  <div className="text-xs text-gray-500 ml-2">
+                  <div className={`text-xs ${themeColors.contentMuted} ml-2`}>
                     {call.result_summary || 'No result'}
                   </div>
                 </div>
                 {call.error && (
                   <div className={`mt-2 text-xs p-2 rounded ${
-                    call.error_type === 'access_denied' ? 'text-yellow-700 bg-yellow-50' :
-                    call.error_type === 'not_found' ? 'text-orange-700 bg-orange-50' :
-                    call.error_type === 'timeout' ? 'text-blue-700 bg-blue-50' :
-                    'text-red-600 bg-red-50'
+                    call.error_type === 'access_denied' ? 'text-yellow-700 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-950/20' :
+                    call.error_type === 'not_found' ? 'text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-950/20' :
+                    call.error_type === 'timeout' ? 'text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/20' :
+                    'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20'
                   }`}>
                     <span className="font-medium">
                       {call.error_type === 'access_denied' ? 'Access Restricted:' :

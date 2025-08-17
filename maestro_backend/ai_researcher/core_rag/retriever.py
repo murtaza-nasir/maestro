@@ -2,7 +2,7 @@ import asyncio # <-- Import asyncio
 from typing import List, Dict, Any, Optional
 
 from .embedder import TextEmbedder
-from .vector_store_manager import VectorStoreManager as VectorStore
+from .pgvector_store import PGVectorStore as VectorStore
 from .reranker import TextReranker # Optional reranker
 
 class Retriever:
@@ -93,9 +93,8 @@ class Retriever:
         if not initial_results:
             print("No results found in vector store. Attempting to refresh client and retry...")
             
-            # Try refreshing the vector store client and retry once
+            # Try retry once without refresh_client (method doesn't exist)
             try:
-                self.vector_store.refresh_client()
                 initial_results = await asyncio.to_thread(
                     self.vector_store.query,
                     query_dense_embedding=query_dense,

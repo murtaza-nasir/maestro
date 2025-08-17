@@ -64,7 +64,7 @@ export const DropdownMenuTrigger: React.FC<DropdownMenuTriggerProps> = ({
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation()
-    console.log('DropdownMenuTrigger clicked, current isOpen:', isOpen)
+    // console.log('DropdownMenuTrigger clicked, current isOpen:', isOpen)
     setIsOpen(!isOpen)
   }
 
@@ -109,17 +109,17 @@ export const DropdownMenuItem: React.FC<DropdownMenuItemProps> = ({
   const { setIsOpen } = React.useContext(DropdownContext)
 
   const handleClick = (e: React.MouseEvent) => {
-    console.log('DropdownMenuItem clicked!', children)
+    // console.log('DropdownMenuItem clicked!', children)
     e.stopPropagation()
     
     // Execute the onClick handler first
     if (onClick) {
-      console.log('Executing onClick handler...')
+      // console.log('Executing onClick handler...')
       onClick(e)
     }
     
     // Then close the dropdown
-    console.log('Closing dropdown...')
+    // console.log('Closing dropdown...')
     setIsOpen(false)
   }
 

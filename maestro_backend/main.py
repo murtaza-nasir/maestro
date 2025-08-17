@@ -5,7 +5,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
 
-from database.database import SessionLocal
+from database.database import SessionLocal, test_connection, init_db
 from database import crud
 from api import auth, missions, system, chat, chats, documents, websockets, settings, writing, dashboard, admin
 from middleware import user_context_middleware
@@ -103,8 +103,32 @@ app.include_router(admin.router)
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize AI components and create first user on startup."""
+    """Initialize database, AI components and create first user on startup."""
     # Only log at ERROR level or higher based on LOG_LEVEL setting
+    
+    # Store the main event loop reference for WebSocket updates from background threads
+    from ai_researcher.agentic_layer.context_manager import set_main_event_loop
+    set_main_event_loop()
+    
+    # Initialize database connection and tables
+    try:
+        # Test database connection
+        if not test_connection():
+            logger.error("Failed to connect to database")
+            raise Exception("Database connection failed")
+        
+        # Initialize database tables
+        init_db()
+        logger.info("Database initialized successfully")
+        
+        # For PostgreSQL, ensure required extensions are available
+        if os.getenv("DATABASE_URL", "").startswith("postgresql"):
+            from database.init_postgres import ensure_extensions
+            ensure_extensions()
+            
+    except Exception as e:
+        logger.error(f"Database initialization failed: {e}", exc_info=True)
+        # Continue anyway, as tables might already exist
     
     # Create a configurable thread pool
     max_workers = int(os.getenv("MAX_WORKER_THREADS", "10"))
@@ -131,13 +155,17 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Error during AI component initialization: {e}", exc_info=True)
     
-    # Start document consistency monitoring (runs in background)
-    try:
-        from services.document_consistency_monitor import start_consistency_monitoring
-        asyncio.create_task(start_consistency_monitoring())
-        logger.info("Started document consistency monitoring")
-    except Exception as e:
-        logger.error(f"Error starting consistency monitoring: {e}", exc_info=True)
+    # DISABLED: Consistency check causes crashes at startup
+    # The consistency manager has complex dependencies that fail during initialization
+    # TODO: Fix the initialization order before re-enabling
+    # try:
+    #     from services.document_consistency_monitor import consistency_monitor
+    #     asyncio.create_task(consistency_monitor.force_consistency_check())
+    #     logger.info("Running one-time document consistency check at startup")
+    # except ImportError as e:
+    #     logger.warning(f"Could not import consistency monitor: {e}")
+    # except Exception as e:
+    #     logger.error(f"Failed to run consistency check: {e}", exc_info=True)
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -146,13 +174,8 @@ async def shutdown_event():
     if hasattr(app.state, "thread_pool"):
         app.state.thread_pool.shutdown(wait=True)
     
-    # Stop document consistency monitoring
-    try:
-        from services.document_consistency_monitor import stop_consistency_monitoring
-        stop_consistency_monitoring()
-        logger.info("Stopped document consistency monitoring")
-    except Exception as e:
-        logger.error(f"Error stopping consistency monitoring: {e}")
+    # No need to stop monitoring since we only run once at startup
+    pass
 
 @app.get("/")
 def read_root():

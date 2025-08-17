@@ -3,6 +3,7 @@ import { ChevronRight, ChevronDown } from 'lucide-react';
 import type { ExecutionLogEntry } from './AgentActivityLog';
 import { ActionParser } from './ActionParser';
 import { formatActivityLogTime } from '../../utils/timezone';
+import { getAgentIcon, getAgentColorClass } from './agentIcons';
 
 interface LogEntryCardProps {
   log: ExecutionLogEntry;
@@ -18,19 +19,6 @@ export const LogEntryCard: React.FC<LogEntryCardProps> = ({
   children
 }) => {
   // Removed redundant status icons since we have colored side indicators
-
-  const getAgentTypeIcon = (agentName: string) => {
-    const name = agentName.toLowerCase();
-    if (name.includes('planning')) return '📋';
-    if (name.includes('research')) return '🔍';
-    if (name.includes('writing')) return '✍️';
-    if (name.includes('reflection')) return '🤔';
-    if (name.includes('messenger')) return '💬';
-    if (name.includes('user')) return '👤';
-    if (name.includes('controller')) return '⚙️';
-    if (name.includes('assignment')) return '📝';
-    return '🤖';
-  };
 
   const getStatusBorderColor = (status: ExecutionLogEntry['status']) => {
     switch (status) {
@@ -64,8 +52,8 @@ export const LogEntryCard: React.FC<LogEntryCardProps> = ({
         </div>
 
         {/* Agent Icon */}
-        <div className="flex items-center flex-shrink-0">
-          <span className="text-sm">{getAgentTypeIcon(log.agent_name)}</span>
+        <div className={`flex items-center flex-shrink-0 ${getAgentColorClass(log.agent_name)}`}>
+          {getAgentIcon(log.agent_name)}
         </div>
 
         {/* Main Content */}

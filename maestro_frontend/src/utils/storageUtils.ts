@@ -354,7 +354,7 @@ class MissionDataDB {
           
           cursor.continue();
         } else {
-          console.log('Finished cleaning corrupted notes data');
+          // console.log('Finished cleaning corrupted notes data');
           resolve();
         }
       };
@@ -365,7 +365,7 @@ class MissionDataDB {
 
   async repairDatabase(): Promise<void> {
     try {
-      console.log('Starting IndexedDB repair...');
+      // console.log('Starting IndexedDB repair...');
       
       // Clear corrupted data
       await this.clearCorruptedData();
@@ -395,7 +395,7 @@ class MissionDataDB {
         }
       }
       
-      console.log('IndexedDB repair completed');
+      // console.log('IndexedDB repair completed');
     } catch (error) {
       console.error('Failed to repair IndexedDB:', error);
     }
@@ -425,7 +425,7 @@ export const clearOldStorageData = () => {
         // Clear only localStorage mission data after migration
         localStorage.removeItem('mission-storage');
         
-        console.log('Migrated mission data to IndexedDB due to localStorage quota');
+        // console.log('Migrated mission data to IndexedDB due to localStorage quota');
       }
     }
   } catch (error) {
@@ -460,7 +460,7 @@ const migrateMissionDataToIndexedDB = async () => {
       }
     }
     
-    console.log('Successfully migrated mission data to IndexedDB');
+    // console.log('Successfully migrated mission data to IndexedDB');
   } catch (error) {
     console.error('Failed to migrate mission data:', error);
   }
@@ -504,7 +504,7 @@ export const logStorageUsage = () => {
   // Warn if localStorage usage is high
   if (usage.totalSize > 5 * 1024 * 1024) { // 5MB
     console.warn('LocalStorage usage is high:', usage.totalSizeMB + 'MB');
-    console.log('Consider using IndexedDB for large data storage');
+    // console.log('Consider using IndexedDB for large data storage');
   }
 };
 
@@ -521,7 +521,7 @@ export const safeSetItem = (key: string, value: string): boolean => {
       if (key === 'mission-storage') {
         migrateMissionDataToIndexedDB().then(() => {
           localStorage.removeItem(key);
-          console.log('Mission data migrated to IndexedDB');
+          // console.log('Mission data migrated to IndexedDB');
         });
         return false; // Don't store in localStorage
       }
@@ -608,10 +608,10 @@ export const initHybridStorage = async () => {
     // Check if we need to migrate existing localStorage data
     const existingMissionData = localStorage.getItem('mission-storage');
     if (existingMissionData) {
-      console.log('Found existing mission data in localStorage, checking if migration is needed...');
+      // console.log('Found existing mission data in localStorage, checking if migration is needed...');
       const parsed = JSON.parse(existingMissionData);
       if (parsed.missions && parsed.missions.length > 0) {
-        console.log('Migrating existing mission data to IndexedDB...');
+        // console.log('Migrating existing mission data to IndexedDB...');
         await migrateMissionDataToIndexedDB();
       }
     }
@@ -619,7 +619,7 @@ export const initHybridStorage = async () => {
     // Check for and repair any corrupted data
     const shouldRepair = localStorage.getItem('indexeddb-needs-repair');
     if (shouldRepair === 'true') {
-      console.log('Repairing IndexedDB due to previous errors...');
+      // console.log('Repairing IndexedDB due to previous errors...');
       await missionDB.repairDatabase();
       localStorage.removeItem('indexeddb-needs-repair');
     }
@@ -627,7 +627,7 @@ export const initHybridStorage = async () => {
     logStorageUsage();
   } catch (error) {
     console.error('Failed to initialize hybrid storage:', error);
-    console.log('Falling back to localStorage only');
+    // console.log('Falling back to localStorage only');
     
     // Mark for repair on next load
     try {

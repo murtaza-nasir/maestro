@@ -18,9 +18,13 @@ import time
 from dataclasses import dataclass
 
 from ai_researcher.core_rag.processor import DocumentProcessor
-from ai_researcher.core_rag.vector_store_manager import VectorStoreManager as VectorStore
+from ai_researcher.core_rag.vector_store_singleton import get_vector_store
+from ai_researcher.core_rag.pgvector_store import PGVectorStore as VectorStore  # For type hints
 from ai_researcher.core_rag.embedder import TextEmbedder
-from ai_researcher.core_rag.database import Database
+try:
+    from ai_researcher.core_rag.unified_database import UnifiedDocumentDatabase as Database
+except ImportError:
+    from ai_researcher.core_rag.database import Database
 from database import crud, models
 from database.database import get_db
 
@@ -84,7 +88,7 @@ class BackgroundDocumentProcessor:
                         doc_id=document.id,
                         user_id=document.user_id,
                         file_path=Path(document.file_path),
-                        original_filename=document.original_filename,
+                        original_filename=document.filename,  # Changed to use filename field
                         created_at=document.created_at
                     )
                     self.current_job = job
@@ -92,14 +96,14 @@ class BackgroundDocumentProcessor:
                     print(f"[{job.doc_id}] Found queued document. Starting processing.")
                     
                     # Mark as processing
-                    crud.update_document_status(db, document.id, "processing", 0)
+                    crud.update_document_status(db, document.id, document.user_id, "processing", 0)
                     
                     # Process the document
                     success = self._process_document_sync(job)
                     
                     # Mark as completed or failed, with cleanup if failed
                     final_status = "completed" if success else "failed"
-                    crud.update_document_status(db, document.id, final_status, 100)
+                    crud.update_document_status(db, document.id, document.user_id, final_status, 100)
                     
                     # If processing failed, clean up any orphaned entries
                     if not success:
@@ -124,7 +128,7 @@ class BackgroundDocumentProcessor:
                 traceback.print_exc()
                 self.is_processing = False
                 if self.current_job:
-                    crud.update_document_status(db, self.current_job.doc_id, "failed", 0)
+                    crud.update_document_status(db, self.current_job.doc_id, self.current_job.user_id, "failed", 0)
                     # Also attempt cleanup for the failed job
                     try:
                         from database.crud_documents_improved import cleanup_failed_document_improved
@@ -145,8 +149,8 @@ class BackgroundDocumentProcessor:
         """Get or initialize the vector store (thread-safe)."""
         with self._components_lock:
             if self._vector_store is None:
-                print("Initializing VectorStore...")
-                self._vector_store = VectorStore(persist_directory=str(self.vector_store_path))
+                print("Initializing VectorStore singleton...")
+                self._vector_store = get_vector_store()
             return self._vector_store
     
     def _get_embedder(self) -> TextEmbedder:
@@ -423,15 +427,8 @@ class BackgroundDocumentProcessor:
                 json.dump(final_metadata, f, indent=2, ensure_ascii=False)
             print(f"[{doc_id}] Saved metadata to: {metadata_save_path}")
             
-            # Add to AI researcher database with our doc_id (with error handling)
-            ai_db = processor.database
-            try:
-                ai_db.add_processed_document(doc_id, original_filename, final_metadata)
-                print(f"[{doc_id}] Added to AI researcher database")
-            except Exception as e:
-                print(f"[{doc_id}] Warning: Failed to add to AI database: {e}")
-                # Continue processing but note the failure
-                # This will be caught and cleaned up if vector store also fails
+            # No separate AI database anymore - everything is in the main database
+            # The metadata was already saved to JSON file above for reference
             
             # Step 4: Generate embeddings (70% progress)
             print(f"[{doc_id}] Generating embeddings...")
@@ -452,14 +449,21 @@ class BackgroundDocumentProcessor:
             if processor.embedder and processor.vector_store and chunks:
                 print(f"[{doc_id}] Embedding {len(chunks)} chunks...")
                 chunks_with_embeddings = processor.embedder.embed_chunks(chunks)
-                print(f"[{doc_id}] Adding chunks to vector store...")
-                processor.vector_store.add_chunks(chunks_with_embeddings)
+                
+                # Extract embeddings from chunks for vector store
+                dense_embeddings = [chunk["embeddings"]["dense"] for chunk in chunks_with_embeddings]
+                sparse_embeddings = [chunk["embeddings"]["sparse"] for chunk in chunks_with_embeddings]
+                
+                print(f"[{doc_id}] Adding chunks to vector store in batches...")
+                processor.vector_store.add_chunks(
+                    doc_id=doc_id,
+                    chunks=chunks_with_embeddings,
+                    dense_embeddings=dense_embeddings,
+                    sparse_embeddings=sparse_embeddings,
+                    batch_size=50  # Process 50 chunks at a time for better performance
+                )
                 chunks_added_count = len(chunks)
                 print(f"[{doc_id}] Successfully added {chunks_added_count} chunks to vector store")
-                
-                # Refresh the vector store client to ensure new documents are accessible
-                print(f"[{doc_id}] Refreshing vector store client for immediate accessibility...")
-                processor.vector_store.refresh_client()
             else:
                 chunks_added_count = 0
                 print(f"[{doc_id}] Skipping embedding/storing: No embedder or vector store")
@@ -480,25 +484,66 @@ class BackgroundDocumentProcessor:
             self._update_job_progress_sync(job_id, user_id, 100, "completed")
             self._update_document_progress_sync(doc_id, user_id, 100, "completed")
             
+            # Update chunk count in the database
+            db_temp = next(get_db())
+            try:
+                crud.update_document_status(db_temp, doc_id, user_id, "completed", 100, 
+                                           chunk_count=chunks_added_count)
+            finally:
+                db_temp.close()
+            
             # Update document metadata with processing results
             db = next(get_db())
             try:
                 document = crud.get_document(db, doc_id=doc_id, user_id=user_id)
                 if document:
-                    # Add processing completion metadata
-                    metadata = document.metadata_ or {}
+                    # Get extracted metadata
                     extracted_metadata = processing_result.get('extracted_metadata', {})
                     
-                    # Merge extracted metadata with existing metadata
-                    metadata.update(extracted_metadata)
-                    metadata.update({
+                    # Preserve existing metadata (like file_hash) and merge with new metadata
+                    existing_metadata = document.metadata_ or {}
+                    
+                    # Format metadata for UI expectations
+                    formatted_metadata = {
+                        "title": extracted_metadata.get('title'),
+                        "authors": extracted_metadata.get('authors'),
+                        "publication_year": extracted_metadata.get('publication_year') or extracted_metadata.get('year'),
+                        "journal_or_source": extracted_metadata.get('journal_or_source') or extracted_metadata.get('journal'),
+                        "abstract": extracted_metadata.get('abstract'),
+                        "doi": extracted_metadata.get('doi'),
+                        "keywords": extracted_metadata.get('keywords'),
                         "processed_at": datetime.utcnow().isoformat(),
                         "processing_job_id": job_id,
                         "status": "completed",
                         "chunks_generated": processing_result.get('chunks_generated', 0),
                         "chunks_added_to_vector_store": processing_result.get('chunks_added_to_vector_store', 0)
-                    })
-                    document.metadata_ = metadata
+                    }
+                    
+                    # Merge existing metadata with new metadata, preserving important fields like file_hash
+                    merged_metadata = {**existing_metadata, **formatted_metadata}
+                    
+                    # Store in metadata_ field which UI expects
+                    document.metadata_ = merged_metadata
+                    
+                    # Debug: Print what we're saving
+                    print(f"[{doc_id}] Saving formatted metadata to database:")
+                    print(f"  - Title: {merged_metadata.get('title')}")
+                    print(f"  - Authors: {merged_metadata.get('authors')}")
+                    print(f"  - Journal: {merged_metadata.get('journal_or_source')}")
+                    print(f"  - Year: {merged_metadata.get('publication_year')}")
+                    print(f"  - File Hash: {merged_metadata.get('file_hash', 'NOT SET')}")
+                    
+                    # Also set title and authors at top level if columns exist (for schema compatibility)
+                    if hasattr(document, 'title') and formatted_metadata.get('title'):
+                        document.title = formatted_metadata['title']
+                    if hasattr(document, 'authors') and formatted_metadata.get('authors'):
+                        authors = formatted_metadata['authors']
+                        document.authors = json.dumps(authors) if isinstance(authors, list) else str(authors)
+                    
+                    # Update chunk_count with actual number of chunks added
+                    if hasattr(document, 'chunk_count'):
+                        document.chunk_count = processing_result.get('chunks_added_to_vector_store', 0)
+                    
                     db.commit()
                     print(f"[{doc_id}] Updated document metadata in database")
             except Exception as e:

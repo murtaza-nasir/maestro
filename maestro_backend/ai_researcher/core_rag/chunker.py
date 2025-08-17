@@ -77,8 +77,9 @@ class Chunker:
 
             # Create chunk metadata
             chunk_meta = {
-                "doc_id": doc_id,
-                "chunk_id": chunk_id_counter,
+                "doc_id": doc_id,  # CRITICAL: Must include doc_id for deletion to work!
+                "chunk_id": f"{doc_id}_chunk_{chunk_id_counter:04d}",  # Use string format for consistency
+                "chunk_index": chunk_id_counter,
                 # Add other relevant metadata if needed, e.g., start/end paragraph index
                 "start_paragraph_index": i,
                 "end_paragraph_index": min(end_index, len(paragraphs)) -1 # Inclusive index

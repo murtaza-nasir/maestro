@@ -58,7 +58,7 @@ export const StorageMonitor: React.FC = () => {
       if (missionData) {
         // Remove from localStorage to trigger migration
         localStorage.removeItem('mission-storage')
-        console.log('Mission data removed from localStorage, will be migrated to IndexedDB on next save')
+        // console.log('Mission data removed from localStorage, will be migrated to IndexedDB on next save')
       }
       
       setLastCleared(new Date())

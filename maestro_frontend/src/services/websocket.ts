@@ -1,162 +1,335 @@
 /**
- * WebSocket service for real-time mission updates
+ * Research WebSocket service - now uses UnifiedWebSocketService
+ * Maintains backward compatibility while delegating to unified service
  */
 import React from 'react'
-import { useAuthStore } from '../features/auth/store'
+import { unifiedWebSocketService, useUnifiedWebSocket } from './unifiedWebSocketService'
+import { useMissionStore, type Log } from '../features/mission/store'
+import { ensureDate } from '../utils/timezone'
 
 interface WebSocketMessage {
   type: string
+  mission_id?: string
   [key: string]: any
 }
 
-class MissionWebSocketService {
-  private ws: WebSocket | null = null
-  private reconnectAttempts = 0
-  private maxReconnectAttempts = 5
-  private reconnectDelay = 1000
+class ResearchWebSocketService {
+  private subscribedMissions: Set<string> = new Set()
+  private connectionKey: string | null = null
   private listeners: Map<string, Set<(data: any) => void>> = new Map()
-  private missionId: string | null = null
-  private isConnecting = false
-  private connectionPromise: Promise<void> | null = null
-  // private messageQueue: any[] = []
+  private missionHandlers: Map<string, () => void> = new Map() // Store cleanup functions for mission handlers
 
-  connect(missionId: string): Promise<void> {
-    // Connection pooling: reuse existing connection if same mission
-    if (this.ws?.readyState === WebSocket.OPEN && this.missionId === missionId) {
-      return Promise.resolve()
-    }
-
-    // Connection deduplication: return existing promise if already connecting to same mission
-    if (this.isConnecting && this.missionId === missionId && this.connectionPromise) {
-      return this.connectionPromise
-    }
-
-    // Create new connection promise
-    this.connectionPromise = new Promise((resolve, reject) => {
-      this.disconnect()
-      this.missionId = missionId
-      this.isConnecting = true
-
-      // Get WebSocket URL using nginx proxy (same origin)
-      let wsBaseUrl = import.meta.env.VITE_API_WS_URL;
-      if (!wsBaseUrl) {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        wsBaseUrl = `${protocol}//${window.location.host}`;
-      }
-      
-      // Only log in development mode
-      if (import.meta.env.DEV) {
-        console.log(`Using WebSocket base URL: ${wsBaseUrl}`)
-      }
-      
-      // Get JWT token from cookies for authentication
-      const token = this.getTokenFromCookie()
-      
-      if (!token && import.meta.env.DEV) {
-        console.warn('No authentication token found for WebSocket connection')
-      }
-      
-      // Always include token in URL to avoid relying on cookies being sent
-      const wsUrl = `${wsBaseUrl}/api/ws/missions/${missionId}?token=${encodeURIComponent(token || '')}`
-      
-      if (import.meta.env.DEV) {
-        console.log(`Attempting WebSocket connection to: ${wsUrl}`)
-      }
-
-      try {
-        this.ws = new WebSocket(wsUrl)
-
-        this.ws.onopen = () => {
-          if (import.meta.env.DEV) {
-            console.log(`Connected to mission WebSocket: ${missionId}`)
-          }
-          this.reconnectAttempts = 0
-          this.isConnecting = false
-          resolve()
-        }
-
-        this.ws.onmessage = (event) => {
-          try {
-            const message: WebSocketMessage = JSON.parse(event.data)
-            this.handleMessage(message)
-          } catch (error) {
-            console.error('Failed to parse WebSocket message:', error)
-          }
-        }
-
-        this.ws.onclose = (event) => {
-          if (import.meta.env.DEV) {
-            console.log('Mission WebSocket closed:', event.code, event.reason)
-          }
-          this.isConnecting = false
-          this.ws = null
-          
-          if (!event.wasClean && this.reconnectAttempts < this.maxReconnectAttempts) {
-            this.scheduleReconnect()
-          }
-        }
-
-        this.ws.onerror = (error) => {
-          console.error('Mission WebSocket error:', error)
-          this.isConnecting = false
-          reject(error)
-        }
-
-        // Connection timeout
-        setTimeout(() => {
-          if (this.isConnecting) {
-            this.isConnecting = false
-            reject(new Error('Connection timeout'))
-          }
-        }, 10000)
-
-      } catch (error) {
-        this.isConnecting = false
-        this.connectionPromise = null
-        reject(error)
+  async connect(): Promise<void> {
+    // console.log('ResearchWebSocketService.connect() called, existing key:', this.connectionKey)
+    
+    // Always update the connection to ensure message handler is current
+    this.connectionKey = await unifiedWebSocketService.getConnection({
+      endpoint: '/api/ws/research',
+      connectionType: 'research',
+      onMessage: (message) => {
+        // console.log('ResearchWebSocketService received message:', message.type, message.mission_id)
+        this.handleMessage(message)
       }
     })
-
-    return this.connectionPromise
+    // console.log('ResearchWebSocketService connected with key:', this.connectionKey)
+    
+    // Resubscribe to all missions after connection
+    if (this.subscribedMissions.size > 0) {
+      // console.log('Resubscribing to missions:', Array.from(this.subscribedMissions))
+      this.subscribedMissions.forEach(missionId => {
+        this.send({
+          type: 'subscribe',
+          mission_id: missionId
+        })
+      })
+    }
   }
 
   disconnect() {
-    if (this.ws) {
-      this.ws.close(1000, 'Client disconnect')
-      this.ws = null
-    }
-    this.missionId = null
-    this.isConnecting = false
-    this.connectionPromise = null
-    // this.messageQueue = []
+    // Mark as intentional disconnect
+    this.subscribedMissions.clear()
+    this.listeners.clear()
+    // Don't actually disconnect - let unified service manage
   }
 
-  private scheduleReconnect() {
-    this.reconnectAttempts++
-    const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1)
-    
-    console.log(`Scheduling WebSocket reconnect attempt ${this.reconnectAttempts} in ${delay}ms`)
-    
-    setTimeout(() => {
-      if (this.missionId && this.reconnectAttempts <= this.maxReconnectAttempts) {
-        this.connect(this.missionId).catch(console.error)
+  subscribeMission(missionId: string) {
+    if (this.subscribedMissions.has(missionId)) {
+      if (import.meta.env.DEV) {
+        // console.log(`Already subscribed to mission ${missionId}`)
       }
-    }, delay)
+      return
+    }
+    
+    this.subscribedMissions.add(missionId)
+    
+    // Set up persistent handlers for this mission at the service level
+    this.setupMissionHandlers(missionId)
+    
+    // Send subscription message through unified service
+    this.send({
+      type: 'subscribe',
+      mission_id: missionId
+    })
+    // console.log(`Subscribed to mission ${missionId}`)
+  }
+
+  unsubscribeMission(missionId: string) {
+    if (!this.subscribedMissions.has(missionId)) {
+      return
+    }
+    
+    this.subscribedMissions.delete(missionId)
+    
+    // Clean up mission handlers
+    const cleanup = this.missionHandlers.get(missionId)
+    if (cleanup) {
+      cleanup()
+      this.missionHandlers.delete(missionId)
+    }
+    
+    this.send({
+      type: 'unsubscribe',
+      mission_id: missionId
+    })
+    // console.log(`Unsubscribed from mission ${missionId}`)
+  }
+
+  private setupMissionHandlers(missionId: string) {
+    // Clean up any existing handlers for this mission
+    const existingCleanup = this.missionHandlers.get(missionId)
+    if (existingCleanup) {
+      existingCleanup()
+    }
+
+    const cleanupFunctions: (() => void)[] = []
+    
+    // Create a deduplication cache that persists across handler calls
+    // This prevents race conditions when multiple messages arrive simultaneously
+    const logKeyCache = new Set<string>()
+    let cacheInitialized = false
+    
+    // Create a processing queue to ensure sequential processing of log updates
+    let processingQueue = Promise.resolve()
+
+    // Helper function to create a unique key for a log entry
+    const getLogKey = (log: any) => {
+      // Use log_id if available (backend v2), otherwise fall back to composite key
+      if (log.log_id) {
+        return log.log_id
+      }
+      // Fallback for older logs without log_id
+      // Create a composite key from available fields
+      const timestamp = log.timestamp instanceof Date ? log.timestamp.toISOString() : String(log.timestamp)
+      const inputKey = log.input_summary ? `_${log.input_summary.substring(0, 100)}` : ''
+      const outputKey = log.output_summary ? `_${log.output_summary.substring(0, 50)}` : ''
+      const statusKey = log.status || 'unknown'
+      // Include more fields to ensure uniqueness
+      const key = `${timestamp}_${log.agent_name}_${log.action}${inputKey}${outputKey}_${statusKey}`
+      
+      // Debug logging for problematic messages
+      if (log.action && (log.action.includes('Rerank') || log.action.includes('Assigned'))) {
+        // console.log(`Key for ${log.action}: ${key}`, { log_id: log.log_id, timestamp, action: log.action })
+      }
+      
+      return key
+    }
+
+    // Handler for logs updates
+    const logsHandler = (message: any) => {
+      if (message.mission_id !== missionId) return
+      
+      // Queue the log processing to ensure sequential execution
+      processingQueue = processingQueue.then(() => {
+        const newLogs: Log[] = message.data.map((log: any) => ({
+          ...log,
+          timestamp: ensureDate(log.timestamp),
+        }))
+
+        const currentState = useMissionStore.getState()
+        const existingLogs = currentState.missionLogs[missionId] || []
+        
+        let updatedLogs: Log[]
+        if (message.action === 'replace') {
+          // Clear cache on replace
+          logKeyCache.clear()
+          cacheInitialized = true
+          newLogs.forEach(log => logKeyCache.add(getLogKey(log)))
+          updatedLogs = newLogs
+        } else {
+          // Initialize cache from existing logs only once per mission subscription
+          if (!cacheInitialized && existingLogs.length > 0) {
+            existingLogs.forEach(log => logKeyCache.add(getLogKey(log)))
+            cacheInitialized = true
+            // console.log(`Initialized cache with ${existingLogs.length} existing logs for mission ${missionId}`)
+          }
+          
+          // Filter out duplicates using the persistent cache
+          const uniqueNewLogs = newLogs.filter(log => {
+            const key = getLogKey(log)
+            if (logKeyCache.has(key)) {
+              // console.log(`Duplicate log detected and filtered: ${log.action}`, { key, log_id: log.log_id })
+              return false
+            }
+            // Add to cache immediately to prevent duplicates from same batch
+            logKeyCache.add(key)
+            return true
+          })
+          
+          updatedLogs = [...existingLogs, ...uniqueNewLogs].sort(
+            (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
+          )
+          if (uniqueNewLogs.length > 0) {
+            // console.log(`Appended ${uniqueNewLogs.length} new logs for mission ${missionId}`)
+          }
+        }
+        
+        currentState.setMissionLogs(missionId, updatedLogs)
+      }).catch(error => {
+        console.error('Error processing logs update:', error)
+      })
+    }
+
+    // Handler for status updates
+    const statusHandler = (message: any) => {
+      if (message.mission_id !== missionId) return
+      if (message.data) {
+        const { updateMissionStatus } = useMissionStore.getState()
+        updateMissionStatus(missionId, message.data.status)
+      }
+    }
+
+    // Handler for plan updates
+    const planHandler = (message: any) => {
+      if (message.mission_id !== missionId) return
+      if (message.data) {
+        const { setMissionPlan } = useMissionStore.getState()
+        setMissionPlan(missionId, message.data)
+      }
+    }
+
+    // Handler for notes updates
+    const notesHandler = (message: any) => {
+      if (message.mission_id !== missionId) return
+      if (message.data) {
+        const { setMissionNotes, appendMissionNotes } = useMissionStore.getState()
+        if (message.action === 'replace') {
+          setMissionNotes(missionId, message.data)
+        } else {
+          appendMissionNotes(missionId, message.data)
+        }
+      }
+    }
+
+    // Handler for draft updates
+    const draftHandler = (message: any) => {
+      if (message.mission_id !== missionId) return
+      if (message.data) {
+        const { setMissionDraft } = useMissionStore.getState()
+        setMissionDraft(missionId, message.data)
+      }
+    }
+
+    // Handler for scratchpad updates
+    const scratchpadHandler = (message: any) => {
+      if (message.mission_id !== missionId) return
+      if (message.data !== undefined) {
+        const { updateMissionContext } = useMissionStore.getState()
+        updateMissionContext(missionId, {
+          agent_scratchpad: message.data
+        })
+      }
+    }
+
+    // Handler for thought pad updates
+    const thoughtPadHandler = (message: any) => {
+      if (message.mission_id !== missionId) return
+      if (message.data) {
+        const { updateMissionContext } = useMissionStore.getState()
+        updateMissionContext(missionId, {
+          thought_pad: message.data
+        })
+      }
+    }
+
+    // Handler for goal pad updates
+    const goalPadHandler = (message: any) => {
+      if (message.mission_id !== missionId) return
+      if (message.data) {
+        const { updateMissionContext } = useMissionStore.getState()
+        updateMissionContext(missionId, {
+          goal_pad: message.data
+        })
+      }
+    }
+
+    // Subscribe all handlers
+    cleanupFunctions.push(this.subscribe('logs_update', logsHandler))
+    cleanupFunctions.push(this.subscribe('status_update', statusHandler))
+    cleanupFunctions.push(this.subscribe('plan_update', planHandler))
+    cleanupFunctions.push(this.subscribe('notes_update', notesHandler))
+    cleanupFunctions.push(this.subscribe('draft_update', draftHandler))
+    cleanupFunctions.push(this.subscribe('scratchpad_update', scratchpadHandler))
+    cleanupFunctions.push(this.subscribe('thought_pad_update', thoughtPadHandler))
+    cleanupFunctions.push(this.subscribe('goal_pad_update', goalPadHandler))
+
+    // Store combined cleanup function
+    this.missionHandlers.set(missionId, () => {
+      cleanupFunctions.forEach(cleanup => cleanup())
+      // Clear the deduplication cache
+      logKeyCache.clear()
+      cacheInitialized = false
+    })
+
+    // console.log(`Set up persistent handlers for mission ${missionId}`)
   }
 
   private handleMessage(message: WebSocketMessage) {
-    const { type } = message
+    const { type, mission_id } = message
+    // console.log(`ResearchWebSocketService.handleMessage: type=${type}, mission_id=${mission_id}, subscribedMissions=${Array.from(this.subscribedMissions)}, listenersCount=${this.listeners.size}`)
+
+    // Handle system messages
+    if (type === 'heartbeat') {
+      this.send({
+        type: 'heartbeat_ack',
+        timestamp: new Date().toISOString()
+      })
+      if (import.meta.env.DEV) {
+        // console.log('Heartbeat received and acknowledged')
+      }
+      return
+    }
+
+    if (type === 'pong') {
+      if (import.meta.env.DEV) {
+        // console.log('Pong received')
+      }
+      return
+    }
+
+    // Check if this is a mission-specific message
+    if (mission_id) {
+      // Only process if we're subscribed to this mission
+      if (!this.subscribedMissions.has(mission_id)) {
+        console.warn(`Ignoring message for unsubscribed mission ${mission_id}. Subscribed missions:`, Array.from(this.subscribedMissions))
+        return
+      }
+    }
 
     // Emit to specific listeners
     const typeListeners = this.listeners.get(type)
-    if (typeListeners) {
+    // console.log(`Listeners for type '${type}':`, typeListeners ? typeListeners.size : 0)
+    if (typeListeners && typeListeners.size > 0) {
+      // console.log(`Emitting to ${typeListeners.size} listeners for type '${type}'`)
       typeListeners.forEach(listener => {
         try {
           listener(message)
+          // console.log(`Successfully called listener for ${type}`)
         } catch (error) {
           console.error(`Error in WebSocket listener for ${type}:`, error)
         }
       })
+    } else {
+      console.warn(`No listeners registered for message type: ${type}. Available types:`, Array.from(this.listeners.keys()))
     }
 
     // Emit to 'all' listeners
@@ -201,120 +374,84 @@ class MissionWebSocketService {
   }
 
   send(message: any) {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(message))
+    if (this.connectionKey) {
+      unifiedWebSocketService.send(this.connectionKey, message)
     } else {
-      console.warn('WebSocket not connected, cannot send message:', message)
+      console.warn('Research WebSocket not connected, cannot send message:', message)
     }
   }
 
   isConnected(): boolean {
-    return this.ws?.readyState === WebSocket.OPEN
+    return this.connectionKey ? unifiedWebSocketService.isConnected(this.connectionKey) : false
   }
 
-  // Utility method to send ping
   ping() {
     this.send({
       type: 'ping',
       timestamp: new Date().toISOString()
     })
   }
-
-
-  // Helper method to get JWT token from auth store or cookies
-  private getTokenFromCookie(): string | null {
-    // First try to get token from auth store
-    const authToken = useAuthStore.getState().getAccessToken()
-    if (authToken) {
-      return authToken
-    }
-    
-    // Check cookies for token
-    const cookies = document.cookie.split(';')
-    for (let cookie of cookies) {
-      const [name, value] = cookie.trim().split('=')
-      if (name === 'access_token') {
-        return decodeURIComponent(value)
-      }
-    }
-    
-    // Try to get token from localStorage as fallback
-    const localToken = localStorage.getItem('access_token')
-    if (localToken) {
-      return localToken
-    }
-    
-    // Only warn in development mode
-    if (import.meta.env.DEV) {
-      console.warn('No authentication token found for WebSocket connection')
-    }
-    return null
-  }
 }
 
 // Create singleton instance
-export const missionWebSocket = new MissionWebSocketService()
+export const researchWebSocket = new ResearchWebSocketService()
 
-// React hook for using WebSocket in components
-export function useMissionWebSocket(missionId: string | null) {
+// React hook for using the research WebSocket
+export function useResearchWebSocket() {
   const [isConnected, setIsConnected] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
-  React.useEffect(() => {
-    if (!missionId) {
-      setIsConnected(false)
+  // Use unified WebSocket with research configuration
+  const unified = useUnifiedWebSocket({
+    endpoint: '/api/ws/research',
+    connectionType: 'research',
+    onConnect: () => {
+      setIsConnected(true)
       setError(null)
-      return
+    },
+    onDisconnect: () => {
+      setIsConnected(false)
+    },
+    onError: (err) => {
+      setError(err.message)
     }
+  })
 
-    let mounted = true
-
-    const connect = async () => {
-      try {
-        await missionWebSocket.connect(missionId)
-        if (mounted) {
-          setIsConnected(true)
-          setError(null)
-        }
-      } catch (err) {
-        if (mounted) {
-          setIsConnected(false)
-          setError(err instanceof Error ? err.message : 'Connection failed')
-        }
-      }
-    }
-
-    connect()
-
-    // Set up connection status monitoring
-    const checkConnection = () => {
-      if (mounted) {
-        setIsConnected(missionWebSocket.isConnected())
-      }
-    }
-
-    const interval = setInterval(checkConnection, 1000)
-
+  React.useEffect(() => {
+    // Ensure research service is connected
+    // console.log('useResearchWebSocket: Ensuring connection')
+    researchWebSocket.connect().catch(console.error)
+    
+    // Cleanup on unmount
     return () => {
-      mounted = false
-      clearInterval(interval)
+      // console.log('useResearchWebSocket: Component unmounting')
     }
-  }, [missionId])
+  }, [])
+
+  const subscribeMission = React.useCallback((missionId: string) => {
+    researchWebSocket.subscribeMission(missionId)
+  }, [])
+
+  const unsubscribeMission = React.useCallback((missionId: string) => {
+    researchWebSocket.unsubscribeMission(missionId)
+  }, [])
 
   const subscribe = React.useCallback((eventType: string, callback: (data: any) => void) => {
-    return missionWebSocket.subscribe(eventType, callback)
+    return researchWebSocket.subscribe(eventType, callback)
   }, [])
 
   const send = React.useCallback((message: any) => {
-    missionWebSocket.send(message)
+    researchWebSocket.send(message)
   }, [])
 
   return {
-    isConnected,
-    error,
+    isConnected: unified.isConnected,
+    error: unified.error?.message || null,
     subscribe,
-    send
+    send,
+    subscribeMission,
+    unsubscribeMission
   }
 }
 
-export default missionWebSocket
+export default researchWebSocket

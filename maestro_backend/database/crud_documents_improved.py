@@ -13,13 +13,20 @@ import logging
 
 from database import crud
 from database.models import Document
-from services.document_consistency_manager import DocumentConsistencyManager
 from ai_researcher.config import SERVER_TIMEZONE
 
 logger = logging.getLogger(__name__)
 
-# Global consistency manager instance
-consistency_manager = DocumentConsistencyManager()
+# Lazy-loaded consistency manager instance
+_consistency_manager = None
+
+def get_consistency_manager():
+    """Get or create the consistency manager instance (lazy initialization)."""
+    global _consistency_manager
+    if _consistency_manager is None:
+        from services.document_consistency_manager import DocumentConsistencyManager
+        _consistency_manager = DocumentConsistencyManager()
+    return _consistency_manager
 
 def get_current_time() -> datetime:
     """Returns the current time in the server's timezone."""
@@ -43,7 +50,7 @@ async def create_document_atomically(
     4. Adds to document group if specified
     5. Rolls back everything if any step fails
     """
-    doc_id = consistency_manager.generate_consistent_doc_id()
+    doc_id = get_consistency_manager().generate_consistent_doc_id()
     logger.info(f"Creating document {doc_id} with filename: {original_filename}")
     
     try:
@@ -52,11 +59,11 @@ async def create_document_atomically(
         filename_lower = original_filename.lower()
         
         if filename_lower.endswith('.pdf'):
-            file_dir = consistency_manager.pdf_dir
+            file_dir = get_consistency_manager().pdf_dir
         elif filename_lower.endswith(('.docx', '.doc')):
-            file_dir = consistency_manager.pdf_dir / 'word_documents'  # Store Word docs in subdirectory
+            file_dir = get_consistency_manager().pdf_dir / 'word_documents'  # Store Word docs in subdirectory
         elif filename_lower.endswith(('.md', '.markdown')):
-            file_dir = consistency_manager.pdf_dir / 'markdown_files'  # Store Markdown files in subdirectory
+            file_dir = get_consistency_manager().pdf_dir / 'markdown_files'  # Store Markdown files in subdirectory
         else:
             raise ValueError(f"Unsupported file format: {original_filename}")
             
@@ -121,7 +128,7 @@ async def create_document_atomically(
         logger.error(f"Failed to create document atomically: {e}")
         return None
 
-async def delete_document_atomically(
+def delete_document_atomically_sync(
     db: Session, 
     doc_id: str, 
     user_id: int
@@ -129,28 +136,119 @@ async def delete_document_atomically(
     """
     Delete a document atomically from all storage systems.
     
-    Uses the DocumentConsistencyManager to ensure the document
-    is removed from:
+    Directly handles deletion without using DocumentConsistencyManager to avoid async/sync issues.
+    Ensures document is removed from:
     1. ChromaDB vector store (dense and sparse collections)
-    2. AI researcher database (metadata.db)
-    3. Physical files (PDF, markdown, metadata JSON)
-    4. Main application database (last step)
+    2. Physical files (PDF, markdown, metadata JSON)
+    3. Main application database with all metadata (last step)
     """
     logger.info(f"Deleting document {doc_id} atomically")
     
     try:
-        success = await consistency_manager.delete_document_atomically(doc_id, user_id, db)
+        # Step 1: Verify document exists and user has permission
+        document = crud.get_document(db, doc_id, user_id)
+        if not document:
+            logger.warning(f"Document {doc_id} not found or user {user_id} lacks permission")
+            # Check if document exists but belongs to another user
+            from database.models import Document
+            any_doc = db.query(Document).filter(Document.id == doc_id).first()
+            if any_doc:
+                logger.warning(f"Document {doc_id} exists but belongs to another user")
+                return False
+            else:
+                logger.info(f"Document {doc_id} does not exist - may already be deleted")
+                return True
         
-        if success:
-            logger.info(f"Successfully deleted document {doc_id} from all systems")
-        else:
-            logger.warning(f"Document {doc_id} deletion completed with some failures")
+        # Step 2: Delete from ChromaDB vector store
+        try:
+            from ai_researcher.core_rag.vector_store_singleton import get_vector_store
+            vector_store = get_vector_store()
+            dense_deleted, sparse_deleted = vector_store.delete_document(doc_id)
             
-        return success
+            if dense_deleted > 0 or sparse_deleted > 0:
+                logger.info(f"Deleted {dense_deleted + sparse_deleted} chunks from vector store")
+            else:
+                logger.info(f"No chunks found in vector store for {doc_id}")
+        except Exception as e:
+            logger.error(f"Failed to delete from vector store: {e}")
+            # Continue with other deletions even if vector store fails
         
+        # Step 3: Delete physical files
+        import shutil
+        from pathlib import Path
+        
+        base_path = Path("/app/ai_researcher/data")
+        pdf_dir = base_path / "raw_pdfs"
+        markdown_dir = base_path / "processed" / "markdown"
+        metadata_dir = base_path / "processed" / "metadata"
+        
+        files_deleted = []
+        
+        # Delete PDF files
+        for pdf_file in pdf_dir.glob(f"{doc_id}_*"):
+            try:
+                pdf_file.unlink()
+                files_deleted.append(str(pdf_file))
+                logger.info(f"Deleted PDF file: {pdf_file}")
+            except Exception as e:
+                logger.error(f"Failed to delete PDF file {pdf_file}: {e}")
+        
+        # Delete markdown file
+        markdown_file = markdown_dir / f"{doc_id}.md"
+        if markdown_file.exists():
+            try:
+                markdown_file.unlink()
+                files_deleted.append(str(markdown_file))
+                logger.info(f"Deleted markdown file: {markdown_file}")
+            except Exception as e:
+                logger.error(f"Failed to delete markdown file: {e}")
+        
+        # Delete metadata file
+        metadata_file = metadata_dir / f"{doc_id}.json"
+        if metadata_file.exists():
+            try:
+                metadata_file.unlink()
+                files_deleted.append(str(metadata_file))
+                logger.info(f"Deleted metadata file: {metadata_file}")
+            except Exception as e:
+                logger.error(f"Failed to delete metadata file: {e}")
+        
+        if files_deleted:
+            logger.info(f"Deleted {len(files_deleted)} physical files")
+        
+        # Step 4: Delete from main database (last step - point of no return)
+        try:
+            db.delete(document)
+            db.commit()
+            logger.info(f"Document {doc_id} successfully deleted from all systems")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete from main database: {e}")
+            db.rollback()
+            return False
+            
     except Exception as e:
-        logger.error(f"Failed to delete document {doc_id}: {e}")
+        logger.error(f"Unexpected error during document deletion: {e}")
+        import traceback
+        traceback.print_exc()
         return False
+
+async def delete_document_atomically(
+    db: Session, 
+    doc_id: str, 
+    user_id: int
+) -> bool:
+    """
+    Async wrapper for delete_document_atomically_sync.
+    """
+    # Run the synchronous function in a thread pool to avoid blocking
+    import asyncio
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        None, 
+        delete_document_atomically_sync,
+        db, doc_id, user_id
+    )
 
 async def cleanup_failed_document(
     db: Session,
@@ -166,7 +264,7 @@ async def cleanup_failed_document(
     logger.info(f"Cleaning up failed document {doc_id}")
     
     try:
-        success = await consistency_manager.cleanup_failed_document(doc_id, user_id, db)
+        success = await get_consistency_manager().cleanup_failed_document(doc_id, user_id, db)
         
         if success:
             logger.info(f"Successfully cleaned up failed document {doc_id}")
@@ -192,7 +290,7 @@ def check_document_consistency(
     """
     logger.debug(f"Checking consistency for document {doc_id}")
     
-    exists = consistency_manager.check_document_exists(doc_id, user_id, db)
+    exists = get_consistency_manager().check_document_exists(doc_id, user_id, db)
     
     # Analyze consistency
     main_doc = crud.get_document(db, doc_id, user_id)
@@ -201,13 +299,12 @@ def check_document_consistency(
     issues = []
     
     if status == 'completed':
-        # Completed documents should exist everywhere
-        if not exists['ai_db']:
-            issues.append("Missing from AI database")
-        if not exists['vector_store']:
-            issues.append("Missing from vector store")
-        if not exists['markdown_file']:
-            issues.append("Missing markdown file")
+        # Completed documents should exist in at least AI DB or vector store
+        # CLI ingestion may not create markdown files, so we don't require them
+        # We only require that if a document is marked completed, it has SOME data
+        has_data = exists['ai_db'] or exists['vector_store']
+        if not has_data:
+            issues.append("Missing from both AI database and vector store")
             
     elif status == 'failed':
         # Failed documents should only exist in main database
@@ -251,10 +348,10 @@ async def cleanup_all_user_orphans(
     
     try:
         # Get orphan analysis
-        orphans = consistency_manager.find_orphaned_documents(user_id, db)
+        orphans = get_consistency_manager().find_orphaned_documents(user_id, db)
         
         # Perform cleanup
-        cleanup_stats = await consistency_manager.cleanup_all_orphans(user_id, db)
+        cleanup_stats = await get_consistency_manager().cleanup_all_orphans(user_id, db)
         
         result = {
             'orphans_found': orphans,
@@ -315,20 +412,19 @@ def get_document_processing_stats(db: Session, user_id: int) -> Dict[str, Any]:
         # Get storage system counts
         try:
             # AI database count
-            ai_db = consistency_manager._get_ai_db()
+            manager = get_consistency_manager()
+            ai_db = manager._get_ai_db()
             ai_doc_ids = ai_db.get_all_document_ids()
             user_ai_docs = [doc_id for doc_id in ai_doc_ids 
                           if any(d.id == doc_id for d in documents)]
             stats['storage_usage']['ai_db_records'] = len(user_ai_docs)
             
             # Vector store count
-            vector_store = consistency_manager._get_vector_store()
-            with vector_store._file_lock("read"):
-                client, dense_collection, sparse_collection = vector_store._get_client()
-                dense_results = dense_collection.get(include=['metadatas'])
-                user_chunks = [meta for meta in dense_results.get('metadatas', []) 
-                              if any(d.id == meta.get('doc_id') for d in documents)]
-                stats['storage_usage']['vector_store_chunks'] = len(user_chunks)
+            vector_store = manager._get_vector_store()
+            all_doc_ids = vector_store.get_all_document_ids()
+            user_doc_ids = {d.id for d in documents}
+            user_vector_docs = all_doc_ids.intersection(user_doc_ids)
+            stats['storage_usage']['vector_store_chunks'] = len(user_vector_docs)
             
         except Exception as e:
             logger.warning(f"Could not get storage system stats: {e}")

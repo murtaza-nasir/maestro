@@ -5,6 +5,15 @@
 # MAESTRO: Your Self-Hosted AI Research Assistant
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+[![Version](https://img.shields.io/badge/Version-2.1.0-green.svg)](https://github.com/yourusername/maestro/releases)
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://hub.docker.com/r/yourusername/maestro)
+
+> **⚠️ Version 0.1.3 - BREAKING CHANGE (08/15/2025)** 
+> 
+> Complete migration from SQLite/ChromaDB to PostgreSQL with pgvector. 
+> - **Action Required**: If upgrading, you must rebuild from scratch with `docker compose down -v`
+> - **New Requirements**: PostgreSQL with pgvector extension (included in Docker setup)
+> - **Security**: All credentials now configurable via environment variables 
 
 MAESTRO is an AI-powered research platform you can host on your own hardware. It's designed to manage complex research tasks from start to finish in a collaborative, multi-user environment. Plan your research, let AI agents carry it out, and watch as they generate detailed reports based on your documents and sources from the web.
 
@@ -199,9 +208,10 @@ This structured, reflective, and iterative process allows MAESTRO to move beyond
 MAESTRO is designed to be run as a containerized application using Docker.
 
 ### Prerequisites
-*   **Docker** and **Docker Compose**
+*   **Docker** and **Docker Compose** (v2.0+)
 *   **Git** for cloning the repository
-*   **Disk Space**: ~5GB for AI models (downloaded automatically on first run)
+*   **PostgreSQL with pgvector extension** (automatically provided via Docker)
+*   **Disk Space**: ~5GB for AI models + ~2GB for database
 
 #### Hardware Requirements
 *   **Recommended**: NVIDIA GPU with CUDA support for optimal performance
@@ -223,7 +233,17 @@ cd maestro
 docker compose up -d
 ```
 
-Access MAESTRO at **http://localhost** (default credentials: `admin` / `adminpass123`)
+**⚠️ First Run:** Initial startup takes 5-10 minutes to download AI models. Monitor progress with:
+```bash
+docker compose logs -f maestro-backend
+# Wait for: "Application startup complete"
+```
+
+Access MAESTRO at **http://localhost**
+
+**Default Credentials** (change immediately after first login):
+- Username: `admin`
+- Password: Generated during setup (check your `.env` file) or `admin123` if not using setup script
 
 ### Installation
 
@@ -252,6 +272,22 @@ Access MAESTRO at **http://localhost** (default credentials: `admin` / `adminpas
     # Or manually:
     docker compose up -d
     ```
+    
+    **⚠️ IMPORTANT - First-Time Startup:**
+    On the first run, the backend needs to download AI models (text embedders, etc.), which can take **5-10 minutes**. During this time:
+    - The frontend will be accessible but login will fail
+    - You'll see "Network Error" or login failures
+    - This is normal! The backend is still downloading required models
+    
+    **Monitor the startup progress:**
+    ```bash
+    # Watch the backend logs
+    docker compose logs -f maestro-backend
+    
+    # Wait for this message:
+    # "INFO:     Application startup complete."
+    # or "Uvicorn running on http://0.0.0.0:8000"
+    ```
 
 #### Windows
 1.  **Clone the Repository**
@@ -260,9 +296,10 @@ Access MAESTRO at **http://localhost** (default credentials: `admin` / `adminpas
     cd maestro
     ```
     
-    **Important for Windows Users:** Configure Git to use Unix-style line endings:
+    **Important for Windows/WSL Users:** If you encounter "bad interpreter" errors, run:
     ```powershell
-    git config core.autocrlf input
+    # Fix line endings before setup
+    .\fix-line-endings.ps1
     ```
 
 2.  **Configure Your Environment**
@@ -281,19 +318,35 @@ Access MAESTRO at **http://localhost** (default credentials: `admin` / `adminpas
 
 3.  **Start MAESTRO**
     ```powershell
-    # Recommended: Automatic GPU detection
-    .\start.sh
+    # For Windows/WSL without GPU:
+    docker compose -f docker-compose.cpu.yml up -d
     
-    # Or manually:
+    # Or with GPU support (if available):
     docker compose up -d
+    ```
+    
+    **⚠️ IMPORTANT - First-Time Startup:**
+    On the first run, the backend needs to download AI models (text embedders, etc.), which can take **5-10 minutes**. During this time:
+    - The frontend will be accessible but login will fail
+    - You'll see "Network Error" or login failures
+    - This is normal! The backend is still downloading required models
+    
+    **Monitor the startup progress:**
+    ```powershell
+    # Watch the backend logs
+    docker compose logs -f maestro-backend
+    
+    # Wait for this message:
+    # "INFO:     Application startup complete."
+    # or "Uvicorn running on http://0.0.0.0:8000"
     ```
 
 #### Access MAESTRO
-Once the containers are running, access the web interface at the address shown by the setup script (default: `http://localhost`). 
+Once the backend shows "Application startup complete", access the web interface at the address shown by the setup script (default: `http://localhost`). 
 
 **Default Login:**
 - Username: `admin`
-- Password: `adminpass123`
+- Password: `admin123`
 
 **Important:** Change the default password immediately after your first login via Settings → Profile.
 
@@ -316,6 +369,35 @@ MAESTRO now uses a **unified reverse proxy architecture** to eliminate CORS issu
 
 ### Troubleshooting
 
+**Windows/WSL: Backend won't start ("bad interpreter" error)?**
+- This is a line ending issue. Fix it with:
+  ```powershell
+  .\fix-line-endings.ps1
+  docker compose down
+  docker compose build --no-cache maestro-backend
+  docker compose up -d
+  ```
+
+**Can't log in with admin/admin123?**
+- Reset the admin password using the built-in script:
+  ```bash
+  # Run the reset script (already in the container)
+  docker exec -it maestro-backend python reset_admin_password.py
+  
+  # Or with a custom password:
+  docker exec -it maestro-backend python reset_admin_password.py YourNewPassword
+  
+  # Or using environment variable:
+  docker exec -it maestro-backend bash -c "ADMIN_PASSWORD=YourNewPassword python reset_admin_password.py"
+  ```
+
+**Using without a GPU?**
+- Use the CPU-only compose file:
+  ```powershell
+  docker compose -f docker-compose.cpu.yml up -d
+  ```
+  Always use `-f docker-compose.cpu.yml` for all Docker commands on Windows without GPU support.
+
 **Can't access from another device?**
 - Re-run setup script with "Network" option
 - Check firewall settings
@@ -331,13 +413,32 @@ MAESTRO now uses a **unified reverse proxy architecture** to eliminate CORS issu
 - See [Reverse Proxy Configuration](./DOCKER.md#reverse-proxy-timeout-issues) for detailed instructions
 - The app handles timeouts gracefully, but proper configuration improves user experience
 
-**Migration from older setups:**
-- Your existing `.env` file will continue to work
-- For cleaner setup, delete `.env` and re-run setup script
+**Migration from v0.1.2 or earlier (SQLite/ChromaDB):**
+- **IMPORTANT**: This is a breaking change - no automatic migration available
+- You must start fresh with `docker compose down -v` to remove old volumes
+- Re-run setup script to generate new `.env` with secure passwords
+- All data will be lost - backup any important documents first
+- After migration, all data is stored in PostgreSQL with pgvector
 
 ### GPU Support and Performance Optimization
 
 MAESTRO includes automatic GPU detection and configuration for optimal performance across different platforms.
+
+#### CPU-Only Mode
+
+For systems without GPU or when GPU support is problematic:
+
+**Option 1: Use CPU-only compose file (Recommended for Windows/WSL)**
+```bash
+# All platforms - forces CPU mode
+docker compose -f docker-compose.cpu.yml up -d
+```
+
+**Option 2: Set environment variable**
+```bash
+# In your .env file
+FORCE_CPU_MODE=true
+```
 
 #### Quick Start with GPU Detection
 ```bash
@@ -405,7 +506,7 @@ docker compose logs backend
   <summary><strong>Database Reset and Consistency Tools</strong></summary>
   <br>
   
-  MAESTRO uses a dual-database architecture that requires synchronized maintenance. The system includes powerful CLI tools for database management and consistency checking.
+  MAESTRO uses PostgreSQL with pgvector extension for all data storage including vector embeddings. The system includes powerful CLI tools for database management and consistency checking.
 
   ### Quick Database Operations
   ```bash
@@ -447,7 +548,7 @@ MAESTRO is built on a modern, decoupled architecture:
 *   **Backend**: A robust API built with **FastAPI** that handles user authentication, mission control, agentic logic, and the RAG pipeline.
 *   **Frontend**: A dynamic and responsive single-page application built with **React**, **Vite**, and **TypeScript**, using **Tailwind CSS** for styling.
 *   **Real-time Communication**: **WebSockets** stream live updates, logs, and status changes from the backend to the frontend.
-*   **Database**: **SQLAlchemy** and **SQLite** are used for database management.
+*   **Database**: **PostgreSQL** with **pgvector** extension for all data storage, **SQLAlchemy** ORM for database management.
 *   **Containerization**: **Docker Compose** orchestrates the multi-service application for reliable deployment.
 
 ### Fully Self-Hosted Operation

@@ -42,7 +42,7 @@ export const WritingSearchSettingsModal: React.FC<WritingSearchSettingsModalProp
       maxIterations: params?.writing_search_max_iterations ?? 1,
       maxQueries: params?.writing_search_max_queries ?? 3,
       deepSearchIterations: params?.writing_deep_search_iterations ?? 3,
-      deepSearchQueries: params?.writing_deep_search_queries ?? 10,
+      deepSearchQueries: params?.writing_deep_search_queries ?? 5,
     }
   }
 

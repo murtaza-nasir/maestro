@@ -6,6 +6,21 @@ import { ensureDate } from '../../utils/timezone'
 
 export type { Draft };
 
+// Generate UUID v4 for message IDs (compatible with PostgreSQL)
+function generateUUID(): string {
+  // Use crypto.randomUUID if available (modern browsers)
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  
+  // Fallback to manual UUID v4 generation
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
 // Chat interface for writing chats
 interface Chat {
   id: string
@@ -82,6 +97,7 @@ interface WritingState {
   // WebSocket management
   connectWebSocket: (sessionId: string) => Promise<void>
   disconnectWebSocket: () => void
+  currentTaskId?: string
 }
 
 export const useWritingStore = create<WritingState>((set, get) => ({
@@ -102,7 +118,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
   setCurrentSession: (session) => set({ currentSession: session }),
   setCurrentDraft: (draft) => set({ currentDraft: draft }),
   setSessionLoading: (sessionId: string, loading: boolean) => {
-    set((state) => ({
+    set((state: WritingState) => ({
       loadingStates: {
         ...state.loadingStates,
         [sessionId]: loading
@@ -116,7 +132,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
   clearError: () => set({ error: null }),
   setWebSocketConnected: (connected) => set({ isWebSocketConnected: connected }),
   setAgentStatus: (sessionId: string, status: string) => {
-    set((state) => ({
+    set((state: WritingState) => ({
       agentStatus: {
         ...state.agentStatus,
         [sessionId]: status
@@ -142,7 +158,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
     const chatId = state.activeChat?.id || state.currentSession?.chat_id
     if (!chatId) return
     
-    set((state) => ({
+    set((state: WritingState) => ({
       messagesByChat: {
         ...state.messagesByChat,
         [chatId]: [...(state.messagesByChat[chatId] || []), message]
@@ -156,7 +172,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
     
     if (!chatId) {
       // If no current chat, just clear UI
-      set((state) => ({
+      set((state: WritingState) => ({
         messagesByChat: {
           ...state.messagesByChat,
           [chatId || 'default']: []
@@ -169,7 +185,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
       // Clear messages from backend database
       await writingApi.clearChatMessages(chatId)
       // Clear messages from UI
-      set((state) => ({
+      set((state: WritingState) => ({
         messagesByChat: {
           ...state.messagesByChat,
           [chatId]: []
@@ -178,7 +194,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
     } catch (error) {
       console.error('Failed to clear chat messages:', error)
       // Still clear UI even if backend fails
-      set((state) => ({
+      set((state: WritingState) => ({
         messagesByChat: {
           ...state.messagesByChat,
           [chatId]: []
@@ -194,8 +210,8 @@ export const useWritingStore = create<WritingState>((set, get) => ({
     if (!chatId) {
       // If no current chat, just remove from UI
       const currentMessages = state.getCurrentMessages()
-      const filteredMessages = currentMessages.filter((msg) => msg.id !== messageId)
-      set((state) => ({
+      const filteredMessages = currentMessages.filter((msg: WritingMessageWithSources) => msg.id !== messageId)
+      set((state: WritingState) => ({
         messagesByChat: {
           ...state.messagesByChat,
           [chatId || 'default']: filteredMessages
@@ -233,7 +249,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
         }
         
         const filteredMessages = messages.filter((msg) => !messagesToRemove.includes(msg.id))
-        set((state) => ({
+        set((state: WritingState) => ({
           messagesByChat: {
             ...state.messagesByChat,
             [chatId]: filteredMessages
@@ -244,8 +260,8 @@ export const useWritingStore = create<WritingState>((set, get) => ({
       console.error('Failed to delete message pair:', error)
       // Still remove from UI even if backend fails - just remove the clicked message
       const currentMessages = state.getCurrentMessages()
-      const filteredMessages = currentMessages.filter((msg) => msg.id !== messageId)
-      set((state) => ({
+      const filteredMessages = currentMessages.filter((msg: WritingMessageWithSources) => msg.id !== messageId)
+      set((state: WritingState) => ({
         messagesByChat: {
           ...state.messagesByChat,
           [chatId]: filteredMessages
@@ -283,7 +299,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
     try {
       const newSession = await writingApi.createWritingSession(sessionData)
       
-      set((state) => ({
+      set((state: WritingState) => ({
         sessions: [newSession, ...state.sessions],
         currentSession: newSession
       }))
@@ -301,7 +317,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
       // Establish WebSocket connection for the new session
       try {
         await state.connectWebSocket(newSession.id)
-        console.log('WebSocket connected for new session:', newSession.id)
+        // console.log('WebSocket connected for new session:', newSession.id)
       } catch (wsError) {
         console.error('Failed to connect WebSocket for new session:', wsError)
         // Don't fail session creation if WebSocket connection fails
@@ -328,13 +344,22 @@ export const useWritingStore = create<WritingState>((set, get) => ({
       
       // Clear messages for the current chat when switching sessions
       const chatId = session.chat_id
-      set((state) => ({ 
+      set((state: WritingState) => ({ 
         currentSession: session,
         currentDraft: null, // Clear current draft when switching sessions
         messagesByChat: chatId ? {
           ...state.messagesByChat,
           [chatId]: []
-        } : state.messagesByChat
+        } : state.messagesByChat,
+        // Clear loading states when switching sessions
+        loadingStates: {
+          ...state.loadingStates,
+          [sessionId]: false
+        },
+        agentStatus: {
+          ...state.agentStatus,
+          [sessionId]: 'idle'
+        }
       }))
       
       // Load the draft for this session
@@ -408,7 +433,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
       })
       const newChat = response.data
       
-      set((state) => ({
+      set((state: WritingState) => ({
         chats: [newChat, ...state.chats],
         activeChat: newChat,
         messagesByChat: {
@@ -436,7 +461,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
     
     // Save current draft changes before switching chats
     if (typeof window !== 'undefined' && (window as any).saveCurrentDraftChanges) {
-      console.log('Saving current draft changes before switching chats...')
+      // console.log('Saving current draft changes before switching chats...')
       try {
         const saveSuccess = await (window as any).saveCurrentDraftChanges()
         if (!saveSuccess) {
@@ -452,7 +477,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
     const existingChat = state.chats.find(c => c.id === chatId)
     if (existingChat) {
       // Clear current state first to ensure clean slate
-      set((state) => ({ 
+      set((state: WritingState) => ({ 
         activeChat: existingChat, 
         error: null,
         messagesByChat: {
@@ -482,7 +507,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
           timestamp: ensureDate(msg.created_at),
           sources: msg.sources || []
         }))
-        set((state) => ({
+        set((state: WritingState) => ({
           messagesByChat: {
             ...state.messagesByChat,
             [chatId]: convertedMessages
@@ -508,14 +533,14 @@ export const useWritingStore = create<WritingState>((set, get) => ({
             }
           }
         } catch (sessionError) {
-          console.log('No writing session found for chat, will create when needed')
+          // console.log('No writing session found for chat, will create when needed')
         }
       } catch (error) {
         console.error('Failed to load chat data:', error)
         set({ error: error instanceof Error ? error.message : 'Failed to load chat data' })
       }
     } else {
-      set((state) => ({ 
+      set((state: WritingState) => ({ 
         error: 'Chat not found', 
         activeChat: null, 
         messagesByChat: {
@@ -591,7 +616,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
               timestamp: ensureDate(msg.created_at),
               sources: msg.sources || []
             }))
-            set((state) => ({
+            set((state: WritingState) => ({
               messagesByChat: {
                 ...state.messagesByChat,
                 [chatId]: convertedMessages
@@ -615,12 +640,12 @@ export const useWritingStore = create<WritingState>((set, get) => ({
   saveDraftChanges: async (content: string, title?: string) => {
     const state = get()
     if (!state.currentDraft || !state.currentSession) {
-      console.log('No current draft or session to save changes to')
+      // console.log('No current draft or session to save changes to')
       return
     }
 
     try {
-      console.log('Saving draft changes from store...')
+      // console.log('Saving draft changes from store...')
       await writingApi.updateSessionDraft(state.currentSession.id, {
         title: title || state.currentDraft.title,
         content: content,
@@ -635,7 +660,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
         }
       })
       
-      console.log('Draft changes saved successfully from store')
+      // console.log('Draft changes saved successfully from store')
     } catch (error) {
       console.error('Failed to save draft changes from store:', error)
       throw error
@@ -675,7 +700,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
           // Establish WebSocket connection for the new session
           try {
             await state.connectWebSocket(session!.id)
-            console.log('WebSocket connected for existing chat session:', session!.id)
+            // console.log('WebSocket connected for existing chat session:', session!.id)
           } catch (wsError) {
             console.error('Failed to connect WebSocket for new session:', wsError)
           }
@@ -691,7 +716,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
         console.error('Failed to auto-create session:', error)
         // Add error message to UI
         const errorMessage: WritingMessageWithSources = {
-          id: (Date.now() + 1).toString(),
+          id: generateUUID(),
           role: 'assistant',
           content: 'Failed to start a new session. Please try creating one manually.',
           timestamp: ensureDate(new Date()),
@@ -710,7 +735,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
     // Ensure WebSocket is connected for this session
     if (!state.isWebSocketConnected) {
       try {
-        console.log('Establishing WebSocket connection before sending message...')
+        // console.log('Establishing WebSocket connection before sending message...')
         await state.connectWebSocket(session.id)
       } catch (wsError) {
         console.error('Failed to establish WebSocket connection:', wsError)
@@ -720,7 +745,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
 
     // Add user message with timezone-aware timestamp
     const userMessage: WritingMessageWithSources = {
-      id: Date.now().toString(),
+      id: generateUUID(),
       role: 'user',
       content: message,
       timestamp: ensureDate(new Date()),
@@ -740,17 +765,20 @@ export const useWritingStore = create<WritingState>((set, get) => ({
       // Ensure we have a current draft - if not, load/create one
       let currentDraft = state.currentDraft
       if (!currentDraft) {
-        console.log('No current draft found, loading/creating one...')
-        await state.loadDraft(session.id)
-        currentDraft = get().currentDraft
+        // console.log('No current draft found, loading/creating one...')
+        // Don't call loadDraft as it sets its own loading state
+        // Instead, directly get the draft
+        const draft = await writingApi.getSessionDraft(session.id)
+        set({ currentDraft: draft })
+        currentDraft = draft
         
         if (!currentDraft) {
           throw new Error('Failed to load or create draft')
         }
       }
       
-      // Send to enhanced writing chat API with tool options
-      const response = await writingApi.sendWritingChatMessage({
+      // Use the new streaming endpoint that doesn't block
+      const taskResponse = await writingApi.sendWritingChatMessageStream({
         message,
         draft_id: currentDraft.id,
         operation_mode: 'balanced',
@@ -761,33 +789,41 @@ export const useWritingStore = create<WritingState>((set, get) => ({
         max_decomposed_queries: options?.maxQueries
       })
       
-      console.log('Received response from writing API:', response)
+      // console.log('Task initiated:', taskResponse)
       
-      // Add the assistant response
-      const assistantMessage: WritingMessageWithSources = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: response.message,
-        timestamp: ensureDate(new Date()),
-        sources: response.sources || []
-      }
+      // Store the task ID for tracking
+      set((state) => ({
+        currentTaskId: taskResponse.task_id
+      }))
       
-      console.log('Adding assistant message to UI:', assistantMessage)
-      state.addMessage(assistantMessage)
-      
-      // Clear loading state and reset agent status
-      if (loadingId) {
-        state.setSessionLoading(loadingId, false)
-        // Reset agent status to idle after successful response
-        state.setAgentStatus(loadingId, 'idle')
-      }
+      // Keep loading state active - it will be cleared when response completes
+      // The agent status updates will show what's happening
       
     } catch (error: any) {
       console.error('Failed to send message:', error)
       
+      // Handle timeout errors from busy backend
+      if (error?.message?.includes('Request timed out')) {
+        const timeoutMessage: WritingMessageWithSources = {
+          id: generateUUID(),
+          role: 'assistant',
+          content: '⚠️ The server is currently busy processing other tasks. Your message may still be processing in the background. Please try again in a moment or check back later.',
+          timestamp: ensureDate(new Date()),
+          sources: []
+        }
+        state.addMessage(timeoutMessage)
+        
+        // Clear loading states
+        if (loadingId) {
+          state.setSessionLoading(loadingId, false)
+          state.setAgentStatus(loadingId, 'idle')
+        }
+        return
+      }
+      
       // Check if it's a 504 Gateway Timeout
       if (error?.response?.status === 504) {
-        console.log('Received 504 Gateway Timeout - checking if response was processed...')
+        // console.log('Received 504 Gateway Timeout - checking if response was processed...')
         
         // Wait a moment for the backend to finish processing
         await new Promise(resolve => setTimeout(resolve, 2000))
@@ -805,17 +841,17 @@ export const useWritingStore = create<WritingState>((set, get) => ({
               .filter((msg: any) => msg.role === 'assistant')
               .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
             
-            if (lastAssistantMessage && !state.getCurrentMessages().find(m => m.content === lastAssistantMessage.content)) {
+            if (lastAssistantMessage && !state.getCurrentMessages().find((m: WritingMessageWithSources) => m.content === lastAssistantMessage.content)) {
               // We found a new assistant message that wasn't in our UI - add it
               const assistantMessage: WritingMessageWithSources = {
-                id: lastAssistantMessage.id || (Date.now() + 1).toString(),
+                id: lastAssistantMessage.id || generateUUID(),
                 role: 'assistant',
                 content: lastAssistantMessage.content,
                 timestamp: ensureDate(new Date(lastAssistantMessage.created_at)),
                 sources: lastAssistantMessage.sources || []
               }
               
-              console.log('Found completed response despite 504 timeout, adding to UI')
+              // console.log('Found completed response despite 504 timeout, adding to UI')
               state.addMessage(assistantMessage)
               
               // Clear loading state - request completed successfully
@@ -833,7 +869,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
         
         // If we couldn't find a completed response, show timeout-specific error
         const errorMessage: WritingMessageWithSources = {
-          id: (Date.now() + 1).toString(),
+          id: generateUUID(),
           role: 'assistant',
           content: 'The request timed out due to proxy limits, but may still be processing. Please refresh the page in a moment to see if the response completed.',
           timestamp: ensureDate(new Date()),
@@ -847,7 +883,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
       } else {
         // Handle other errors normally
         const errorMessage: WritingMessageWithSources = {
-          id: (Date.now() + 1).toString(),
+          id: generateUUID(),
           role: 'assistant',
           content: 'Sorry, I encountered an error while processing your message. Please try again.',
           timestamp: ensureDate(new Date()),
@@ -861,10 +897,27 @@ export const useWritingStore = create<WritingState>((set, get) => ({
       }
       
       // Clear loading state and reset agent status
-      if (loadingId) {
-        state.setSessionLoading(loadingId, false)
+      // Always try to clear loading, even if loadingId is somehow undefined
+      const idToClear = loadingId || session?.id || state.currentSession?.id || state.activeChat?.id
+      if (idToClear) {
+        state.setSessionLoading(idToClear, false)
         // Reset agent status to idle on error
-        state.setAgentStatus(loadingId, 'idle')
+        state.setAgentStatus(idToClear, 'idle')
+      } else {
+        console.warn('No session ID found to clear loading state after error')
+        // Fallback: try to clear all possible loading states
+        if (session?.id) {
+          state.setSessionLoading(session.id, false)
+          state.setAgentStatus(session.id, 'idle')
+        }
+        if (state.currentSession?.id) {
+          state.setSessionLoading(state.currentSession.id, false)
+          state.setAgentStatus(state.currentSession.id, 'idle')
+        }
+        if (state.activeChat?.id) {
+          state.setSessionLoading(state.activeChat.id, false)
+          state.setAgentStatus(state.activeChat.id, 'idle')
+        }
       }
     }
   },
@@ -912,7 +965,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
       
       // Update UI to show only messages up to the user message (excluding the assistant response)
       const messagesUpToUser = messages.slice(0, userMessageIndex + 1)
-      set((state) => ({
+      set((state: WritingState) => ({
         messagesByChat: {
           ...state.messagesByChat,
           [chatId]: messagesUpToUser
@@ -949,7 +1002,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
 
       // Add the new assistant response
       const assistantMessage: WritingMessageWithSources = {
-        id: (Date.now() + 1).toString(),
+        id: generateUUID(),
         role: 'assistant',
         content: response.message,
         timestamp: ensureDate(new Date()),
@@ -958,12 +1011,23 @@ export const useWritingStore = create<WritingState>((set, get) => ({
 
       state.addMessage(assistantMessage)
       
-      // Clear loading state and reset agent status
-      if (loadingId) {
-        state.setSessionLoading(loadingId, false)
-        // Reset agent status to idle after successful response
-        state.setAgentStatus(loadingId, 'idle')
-      }
+      // Clear loading state and reset agent status  
+      // Force clear ALL possible loading states to ensure spinner is removed
+      const idsToClean = new Set([
+        loadingId,
+        state.currentSession?.id,
+        state.activeChat?.id
+      ].filter(Boolean))
+      
+      // console.log('Clearing loading states for regeneration IDs:', Array.from(idsToClean))
+      
+      // Clear loading for all relevant IDs
+      idsToClean.forEach(id => {
+        if (id) {
+          state.setSessionLoading(id, false)
+          state.setAgentStatus(id, 'idle')
+        }
+      })
 
     } catch (error: any) {
       console.error('Failed to regenerate message:', error)
@@ -988,17 +1052,17 @@ export const useWritingStore = create<WritingState>((set, get) => ({
               .filter((msg: any) => msg.role === 'assistant')
               .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
             
-            if (lastAssistantMessage && !state.getCurrentMessages().find(m => m.content === lastAssistantMessage.content)) {
+            if (lastAssistantMessage && !state.getCurrentMessages().find((m: WritingMessageWithSources) => m.content === lastAssistantMessage.content)) {
               // We found a new assistant message that wasn't in our UI - add it
               const assistantMessage: WritingMessageWithSources = {
-                id: lastAssistantMessage.id || (Date.now() + 1).toString(),
+                id: lastAssistantMessage.id || generateUUID(),
                 role: 'assistant',
                 content: lastAssistantMessage.content,
                 timestamp: ensureDate(new Date(lastAssistantMessage.created_at)),
                 sources: lastAssistantMessage.sources || []
               }
               
-              console.log('Found completed regeneration despite 504 timeout, adding to UI')
+              // console.log('Found completed regeneration despite 504 timeout, adding to UI')
               state.addMessage(assistantMessage)
               
               // Clear loading state - regeneration completed successfully
@@ -1017,7 +1081,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
         
         // If we couldn't find a completed response, show timeout-specific error
         const errorMessage: WritingMessageWithSources = {
-          id: (Date.now() + 1).toString(),
+          id: generateUUID(),
           role: 'assistant',
           content: 'The regeneration request timed out due to proxy limits, but may still be processing. Please refresh the page in a moment.',
           timestamp: ensureDate(new Date()),
@@ -1031,7 +1095,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
       } else {
         // Handle other errors normally
         const errorMessage: WritingMessageWithSources = {
-          id: (Date.now() + 1).toString(),
+          id: generateUUID(),
           role: 'assistant',
           content: 'Sorry, I encountered an error while regenerating the response. Please try again.',
           timestamp: ensureDate(new Date()),
@@ -1060,8 +1124,28 @@ export const useWritingStore = create<WritingState>((set, get) => ({
       // Import the dedicated writing WebSocket service
       const { writingWebSocketService } = await import('./services/writingWebSocketService')
       
+      // Check if already connected to this session
+      if ((writingWebSocketService as any)._currentSessionId === sessionId && 
+          writingWebSocketService.isConnected()) {
+        // console.log('Already connected to session:', sessionId)
+        return
+      }
+      
+      // Clean up any existing subscription first
+      const existingUnsubscribe = (writingWebSocketService as any)._currentWritingUnsubscribe
+      if (existingUnsubscribe) {
+        existingUnsubscribe()
+        ;(writingWebSocketService as any)._currentWritingUnsubscribe = null
+      }
+      
       // Connect to the writing session WebSocket
       await writingWebSocketService.connectToSession(sessionId)
+      
+      // Track current session to prevent duplicate connections
+      ;(writingWebSocketService as any)._currentSessionId = sessionId
+      
+      // Track processed message IDs to prevent duplicates
+      const processedMessageIds = new Set<string>()
       
       // Set up WebSocket event handlers
       const unsubscribe = writingWebSocketService.onStatusUpdate((message: any) => {
@@ -1072,10 +1156,47 @@ export const useWritingStore = create<WritingState>((set, get) => ({
           return
         }
         
+        // Check for duplicate messages using timestamp and type
+        const messageKey = `${message.type}_${message.timestamp}_${message.session_id}`
+        if (processedMessageIds.has(messageKey)) {
+          console.log('Skipping duplicate message:', messageKey)
+          return
+        }
+        processedMessageIds.add(messageKey)
+        
+        // Clean up old message IDs to prevent memory leak (keep last 100)
+        if (processedMessageIds.size > 100) {
+          const idsArray = Array.from(processedMessageIds)
+          idsArray.slice(0, idsArray.length - 100).forEach(id => processedMessageIds.delete(id))
+        }
+        
         switch (message.type) {
           case 'connection_established':
             state.setWebSocketConnected(true)
-            console.log('Writing WebSocket connected for session:', sessionId)
+            // console.log('Writing WebSocket connected for session:', sessionId)
+            
+            // When reconnecting, check if we should clear any stuck loading states
+            // This handles cases where the user switched away during response generation
+            const messages = state.getCurrentMessages()
+            if (messages.length > 0) {
+              const lastMessage = messages[messages.length - 1]
+              // If last message is from assistant and we're loading, clear the loading state
+              // since the response must have completed while we were away
+              if (lastMessage.role === 'assistant') {
+                const currentLoadingState = state.getSessionLoading(sessionId)
+                if (currentLoadingState) {
+                  console.log('Clearing stuck loading state on WebSocket reconnection')
+                  state.setSessionLoading(sessionId, false)
+                  state.setAgentStatus(sessionId, 'idle')
+                  
+                  // Also clear for activeChat if it exists
+                  if (state.activeChat?.id) {
+                    state.setSessionLoading(state.activeChat.id, false)
+                    state.setAgentStatus(state.activeChat.id, 'idle')
+                  }
+                }
+              }
+            }
             break
             
           case 'agent_status':
@@ -1084,40 +1205,61 @@ export const useWritingStore = create<WritingState>((set, get) => ({
               let statusText = message.status
               if (message.details) {
                 statusText = message.details  // Use details as the full message
-                console.log(`Agent status: ${message.status} - ${message.details}`)
+                // console.log(`Agent status: ${message.status} - ${message.details}`)
               } else {
-                console.log(`Agent status: ${message.status}`)
+                // console.log(`Agent status: ${message.status}`)
               }
-              state.setAgentStatus(sessionId, statusText)
               
-              // Reset to idle after completion to ensure spinner disappears
-              if (message.status === 'complete') {
-                setTimeout(() => {
-                  const currentState = get()
-                  // Only reset if we're still in complete status (not overridden by new message)
-                  const currentAgentStatus = currentState.getCurrentAgentStatus()
-                  if (currentAgentStatus === 'complete') {
-                    state.setAgentStatus(sessionId, 'idle')
-                  }
-                }, 1000) // 1 second delay to show completion briefly
+              // Handle completion status immediately
+              if (message.status === 'complete' || statusText.includes('Response generated successfully')) {
+                // Set to idle immediately to clear spinner
+                state.setAgentStatus(sessionId, 'idle')
+                state.setSessionLoading(sessionId, false)
+                
+                // Also clear for activeChat if it matches
+                if (state.activeChat?.id) {
+                  state.setSessionLoading(state.activeChat.id, false)
+                  state.setAgentStatus(state.activeChat.id, 'idle')
+                }
+                // console.log('Response completed - cleared loading states')
+              } else {
+                // For non-complete statuses, update normally
+                state.setAgentStatus(sessionId, statusText)
               }
             }
             break
             
             
           case 'draft_content_update':
-            // Only refresh the draft if no user is currently editing
-            // This prevents cursor jumping issues in the editor
-            if (state.currentSession?.id === sessionId) {
-              // Check if the editor is currently being used
+            // Check if this is a complete response message
+            if (message.action === 'complete' && message.data) {
+              // Add the complete response as a new message
+              const assistantMessage: WritingMessageWithSources = {
+                id: generateUUID(),
+                role: 'assistant',
+                content: message.data.message || '',
+                timestamp: ensureDate(new Date()),
+                sources: message.data.sources || []
+              }
+              state.addMessage(assistantMessage)
+              
+              // Clear loading states
+              const loadingId = state.currentSession?.id || state.activeChat?.id
+              if (loadingId) {
+                state.setSessionLoading(loadingId, false)
+                state.setAgentStatus(loadingId, 'idle')
+              }
+            } else if (state.currentSession?.id === sessionId) {
+              // Only refresh the draft if no user is currently editing
+              // This prevents cursor jumping issues in the editor
               const editorContainer = document.querySelector('.editor-container');
               const isEditorFocused = editorContainer && editorContainer.contains(document.activeElement);
               
               if (!isEditorFocused) {
-                console.log('Refreshing draft content from WebSocket update');
+                // console.log('Refreshing draft content from WebSocket update');
                 state.loadDraft(sessionId).catch(console.error);
               } else {
-                console.log('Skipping draft refresh - user is actively editing');
+                // console.log('Skipping draft refresh - user is actively editing');
               }
             }
             break
@@ -1126,8 +1268,8 @@ export const useWritingStore = create<WritingState>((set, get) => ({
             // Update the chat title in the sessions list and reload sessions
             if (message.chat_id && message.title) {
               // Update the session name in the current sessions list
-              set((currentState) => ({
-                sessions: currentState.sessions.map(session => 
+              set((currentState: WritingState) => ({
+                sessions: currentState.sessions.map((session: WritingSession) => 
                   session.chat_id === message.chat_id 
                     ? { ...session, name: message.title } as WritingSession
                     : session
@@ -1135,10 +1277,20 @@ export const useWritingStore = create<WritingState>((set, get) => ({
                 // Also update current session if it matches
                 currentSession: currentState.currentSession?.chat_id === message.chat_id && currentState.currentSession
                   ? { ...currentState.currentSession, name: message.title } as WritingSession
-                  : currentState.currentSession
+                  : currentState.currentSession,
+                // IMPORTANT: Also update activeChat title if it matches
+                activeChat: currentState.activeChat?.id === message.chat_id && currentState.activeChat
+                  ? { ...currentState.activeChat, title: message.title } as Chat
+                  : currentState.activeChat,
+                // Also update chats array to keep sidebar in sync
+                chats: currentState.chats.map((chat: Chat) =>
+                  chat.id === message.chat_id
+                    ? { ...chat, title: message.title } as Chat
+                    : chat
+                )
               }))
               
-              console.log(`Updated chat title for ${message.chat_id} to: ${message.title}`)
+              // console.log(`Updated chat title for ${message.chat_id} to: ${message.title}`)
               
               // Dispatch a custom event to notify the sidebar
               window.dispatchEvent(new CustomEvent('writingChatTitleUpdate', {
@@ -1153,7 +1305,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
           case 'stats_update':
             // Handle real-time stats updates
             if (message.session_id === sessionId && message.data) {
-              console.log('Received stats update via WebSocket in store:', message.data)
+              // console.log('Received stats update via WebSocket in store:', message.data)
               // Dispatch a custom event to notify the stats component
               window.dispatchEvent(new CustomEvent('writingStatsUpdate', {
                 detail: {
@@ -1165,7 +1317,7 @@ export const useWritingStore = create<WritingState>((set, get) => ({
             break
             
           default:
-            console.log('Unhandled writing WebSocket update:', message)
+            // console.log('Unhandled writing WebSocket update:', message)
         }
       })
       
@@ -1192,6 +1344,9 @@ export const useWritingStore = create<WritingState>((set, get) => ({
         unsubscribe()
         ;(writingWebSocketService as any)._currentWritingUnsubscribe = null
       }
+      
+      // Clear session tracking
+      ;(writingWebSocketService as any)._currentSessionId = null
       
       writingWebSocketService.disconnect()
     }).catch(console.error)

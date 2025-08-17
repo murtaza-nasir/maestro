@@ -24,7 +24,8 @@ from ai_researcher.agentic_layer.schemas.goal import GoalEntry
 # Import WebSocket update functions
 from api.websockets import (
     send_plan_update, send_notes_update, send_draft_update,
-    send_context_update, send_goal_pad_update, send_thought_pad_update, send_scratchpad_update
+    send_context_update, send_goal_pad_update, send_thought_pad_update, send_scratchpad_update,
+    send_logs_update
 )
 from api.utils import _make_serializable
 
@@ -33,9 +34,96 @@ logger = logging.getLogger(__name__)
 
 MissionStatus = Literal["planning", "running", "completed", "failed", "paused", "stopped"]
 
+# Global reference to the main event loop for WebSocket updates
+_main_event_loop = None
+
+def set_main_event_loop():
+    """Called from the main thread to store the event loop reference."""
+    global _main_event_loop
+    try:
+        _main_event_loop = asyncio.get_running_loop()
+        logger.info("Main event loop reference stored for WebSocket updates")
+    except RuntimeError:
+        logger.warning("No running event loop to store")
+
+def _send_websocket_update(coroutine):
+    """
+    Helper function to send WebSocket updates from synchronous context.
+    Uses asyncio.run_coroutine_threadsafe to properly schedule on the main event loop.
+    """
+    import inspect
+    
+    # Extract function name and mission_id for logging
+    func_name = "unknown"
+    mission_id = "unknown"
+    if hasattr(coroutine, 'cr_code'):
+        func_name = coroutine.cr_code.co_name
+    if hasattr(coroutine, 'cr_frame') and coroutine.cr_frame:
+        local_vars = coroutine.cr_frame.f_locals
+        mission_id = local_vars.get('mission_id', 'unknown')
+    
+    logger.debug(f"_send_websocket_update called for {func_name} (mission: {mission_id})")
+    
+    try:
+        # Try to get the running loop
+        loop = asyncio.get_running_loop()
+        # We're already in an async context, just create a task
+        task = asyncio.create_task(coroutine)
+        # Add error handler to log any exceptions
+        def handle_exception(task):
+            if not task.cancelled():
+                exc = task.exception()
+                if exc:
+                    logger.error(f"WebSocket update failed for {func_name}: {exc}")
+                else:
+                    logger.debug(f"WebSocket update completed for {func_name} (mission: {mission_id})")
+        task.add_done_callback(handle_exception)
+        logger.debug(f"WebSocket update task created in async context for {func_name}")
+    except RuntimeError:
+        # No running loop in current thread - we're in a sync context (background thread)
+        # Need to use the main event loop to send WebSocket updates
+        global _main_event_loop
+        
+        logger.debug(f"In sync context, attempting to send {func_name} update to main loop")
+        
+        try:
+            # First try to use the stored main loop
+            if _main_event_loop and _main_event_loop.is_running():
+                # Use run_coroutine_threadsafe to schedule on the main loop
+                future = asyncio.run_coroutine_threadsafe(coroutine, _main_event_loop)
+                
+                # Add callback to log completion
+                def log_result(fut):
+                    try:
+                        result = fut.result(timeout=0.1)  # Quick check, don't block
+                        logger.debug(f"WebSocket update {func_name} completed successfully (mission: {mission_id})")
+                    except asyncio.TimeoutError:
+                        logger.debug(f"WebSocket update {func_name} scheduled but not yet complete (mission: {mission_id})")
+                    except Exception as e:
+                        logger.error(f"WebSocket update {func_name} failed: {e}")
+                
+                future.add_done_callback(log_result)
+                logger.info(f"WebSocket update {func_name} scheduled on main event loop (mission: {mission_id})")
+            else:
+                logger.warning(f"Main event loop not available for {func_name}, falling back to thread")
+                # Fallback: run in a separate thread with its own loop
+                import threading
+                def run_in_thread():
+                    try:
+                        asyncio.run(coroutine)
+                        logger.info(f"WebSocket update {func_name} sent via new thread (mission: {mission_id})")
+                    except Exception as thread_error:
+                        logger.error(f"WebSocket update {func_name} failed in thread: {thread_error}")
+                
+                thread = threading.Thread(target=run_in_thread, daemon=True)
+                thread.start()
+        except Exception as e:
+            logger.error(f"Failed to send WebSocket update {func_name}: {e}")
+
 # --- New Schema for Execution Log ---
 class ExecutionLogEntry(BaseModel):
     """Represents a single step in the mission execution log."""
+    log_id: str = Field(default_factory=lambda: str(uuid.uuid4()))  # Unique ID for each log entry
     timestamp: datetime.datetime = Field(default_factory=get_current_time)
     agent_name: str
     action: str # e.g., "Generating Plan", "Running Research", "Writing Section"
@@ -71,6 +159,11 @@ class MissionContext(BaseModel):
     goal_pad: List[GoalEntry] = Field(default_factory=list, description="Persistent list of research goals and guiding thoughts.") # <-- ADDED goal_pad
     thought_pad: List[ThoughtEntry] = Field(default_factory=list, description="Working memory holding recent thoughts and focus points.") # <-- ADDED thought_pad
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata for the mission (e.g., questions, refinements).")
+    
+    # Resumable execution tracking
+    execution_phase: str = Field(default="not_started", description="Current execution phase")
+    completed_phases: List[str] = Field(default_factory=list, description="List of completed phases")
+    phase_checkpoint: Dict[str, Any] = Field(default_factory=dict, description="Checkpoint data for resuming phases")
 
     def update_timestamp(self):
         self.updated_at = get_current_time()
@@ -221,6 +314,69 @@ class ContextManager:
                 db.close()
         else:
             logger.error(f"Cannot update status for non-existent mission ID: {mission_id}")
+    
+    def update_execution_phase(self, mission_id: str, phase: str, checkpoint_data: Optional[Dict[str, Any]] = None):
+        """Updates the current execution phase and optionally saves checkpoint data."""
+        mission = self.get_mission_context(mission_id)
+        if mission:
+            mission.execution_phase = phase
+            if checkpoint_data:
+                mission.phase_checkpoint.update(checkpoint_data)
+            mission.update_timestamp()
+            
+            # Save to database
+            db = self.db_session_factory()
+            try:
+                crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
+                logger.info(f"Updated mission {mission_id} to phase: {phase}")
+            except Exception as e:
+                logger.error(f"Failed to update execution phase in database: {e}")
+            finally:
+                db.close()
+    
+    def mark_phase_completed(self, mission_id: str, phase: str):
+        """Marks a phase as completed."""
+        mission = self.get_mission_context(mission_id)
+        if mission:
+            if phase not in mission.completed_phases:
+                mission.completed_phases.append(phase)
+                mission.update_timestamp()
+                
+                # Save to database
+                db = self.db_session_factory()
+                try:
+                    crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
+                    logger.info(f"Marked phase '{phase}' as completed for mission {mission_id}")
+                except Exception as e:
+                    logger.error(f"Failed to mark phase as completed in database: {e}")
+                finally:
+                    db.close()
+    
+    def get_next_phase(self, mission_id: str) -> Optional[str]:
+        """Returns the next phase to execute based on completed phases."""
+        mission = self.get_mission_context(mission_id)
+        if not mission:
+            return None
+        
+        # Define the phase order
+        phase_order = [
+            "initial_analysis",
+            "initial_research", 
+            "outline_generation",
+            "structured_research",
+            "note_preparation",
+            "writing",
+            "title_generation",
+            "citation_processing",
+            "completed"
+        ]
+        
+        # Find the next uncompleted phase
+        for phase in phase_order:
+            if phase not in mission.completed_phases:
+                return phase
+        
+        return "completed"
 
     def store_plan(self, mission_id: str, plan: SimplifiedPlan):
         """Stores the generated plan for a mission in memory and persists the context to the database."""
@@ -241,7 +397,7 @@ class ContextManager:
                 # Send WebSocket update for plan
                 try:
                     plan_dict = plan.model_dump() if hasattr(plan, 'model_dump') else plan
-                    asyncio.create_task(send_plan_update(mission_id, plan_dict, "update"))
+                    _send_websocket_update(send_plan_update(mission_id, plan_dict, "update"))
                     logger.info(f"Sent plan update via WebSocket for mission '{mission_id}'.")
                 except Exception as ws_error:
                     logger.error(f"Failed to send plan update via WebSocket for mission {mission_id}: {ws_error}")
@@ -297,7 +453,7 @@ class ContextManager:
                 try:
                     current_draft = self.build_draft_from_context(mission_id)
                     if current_draft:
-                        asyncio.create_task(send_draft_update(mission_id, current_draft, "update"))
+                        _send_websocket_update(send_draft_update(mission_id, current_draft, "update"))
                         logger.info(f"Sent draft update via WebSocket for mission '{mission_id}'.")
                 except Exception as ws_error:
                     logger.error(f"Failed to send draft update via WebSocket for mission {mission_id}: {ws_error}")
@@ -324,7 +480,7 @@ class ContextManager:
                 
                 # Send WebSocket update for final report
                 try:
-                    asyncio.create_task(send_draft_update(mission_id, report_text, "report"))
+                    _send_websocket_update(send_draft_update(mission_id, report_text, "report"))
                     logger.info(f"Sent final report update via WebSocket for mission '{mission_id}'.")
                 except Exception as ws_error:
                     logger.error(f"Failed to send final report update via WebSocket for mission {mission_id}: {ws_error}")
@@ -362,9 +518,27 @@ class ContextManager:
                 try:
                     # Import and use the transformation function for consistency
                     from api.missions import transform_note_for_frontend
-                    note_dict = transform_note_for_frontend(note)
-                    asyncio.create_task(send_notes_update(mission_id, [note_dict], "append"))
-                    logger.info(f"Sent note update via WebSocket for mission '{mission_id}' (1 note).")
+                    import asyncio
+                    
+                    # Check if we're in an async context or not
+                    try:
+                        loop = asyncio.get_running_loop()
+                        # We're in an async context, schedule the coroutine
+                        async def send_note_update():
+                            note_dict = await transform_note_for_frontend(note)
+                            await send_notes_update(mission_id, [note_dict], "append")
+                        asyncio.ensure_future(send_note_update())
+                        logger.info(f"Scheduled note update via WebSocket for mission '{mission_id}' (1 note).")
+                    except RuntimeError:
+                        # No running loop, we're in a sync context
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        try:
+                            note_dict = loop.run_until_complete(transform_note_for_frontend(note))
+                        finally:
+                            loop.close()
+                        _send_websocket_update(send_notes_update(mission_id, [note_dict], "append"))
+                        logger.info(f"Sent note update via WebSocket for mission '{mission_id}' (1 note).")
                 except Exception as ws_error:
                     logger.error(f"Failed to send note update via WebSocket for mission {mission_id}: {ws_error}")
             except Exception as e:
@@ -390,9 +564,32 @@ class ContextManager:
                 try:
                     # Import and use the transformation function for consistency
                     from api.missions import transform_note_for_frontend
-                    notes_list = [transform_note_for_frontend(note) for note in notes]
-                    asyncio.create_task(send_notes_update(mission_id, notes_list, "append"))
-                    logger.info(f"Sent notes update via WebSocket for mission '{mission_id}' ({len(notes)} notes).")
+                    import asyncio
+                    
+                    # Check if we're in an async context or not
+                    try:
+                        loop = asyncio.get_running_loop()
+                        # We're in an async context, schedule the coroutine
+                        async def send_notes_update_async():
+                            tasks = [transform_note_for_frontend(note) for note in notes]
+                            notes_list = await asyncio.gather(*tasks)
+                            await send_notes_update(mission_id, notes_list, "append")
+                        asyncio.ensure_future(send_notes_update_async())
+                        logger.info(f"Scheduled notes update via WebSocket for mission '{mission_id}' ({len(notes)} notes).")
+                    except RuntimeError:
+                        # No running loop, we're in a sync context
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        try:
+                            # Transform all notes asynchronously
+                            async def transform_all_notes():
+                                tasks = [transform_note_for_frontend(note) for note in notes]
+                                return await asyncio.gather(*tasks)
+                            notes_list = loop.run_until_complete(transform_all_notes())
+                        finally:
+                            loop.close()
+                        _send_websocket_update(send_notes_update(mission_id, notes_list, "append"))
+                        logger.info(f"Sent notes update via WebSocket for mission '{mission_id}' ({len(notes)} notes).")
                 except Exception as ws_error:
                     logger.error(f"Failed to send notes update via WebSocket for mission {mission_id}: {ws_error}")
             except Exception as e:
@@ -453,7 +650,7 @@ class ContextManager:
                     
                     # Send WebSocket update for scratchpad
                     try:
-                        asyncio.create_task(send_scratchpad_update(mission_id, scratchpad_content or "", "update"))
+                        _send_websocket_update(send_scratchpad_update(mission_id, scratchpad_content or "", "update"))
                         logger.info(f"Sent scratchpad update via WebSocket for mission '{mission_id}'.")
                     except Exception as ws_error:
                         logger.error(f"Failed to send scratchpad update via WebSocket for mission {mission_id}: {ws_error}")
@@ -638,6 +835,31 @@ class ContextManager:
                 logger.error(f"Database error saving execution log for mission {mission_id}: {e}", exc_info=True)
             finally:
                 db.close()
+            
+            # ALWAYS send WebSocket update for execution log
+            # Even if callback is provided, we send the update directly to ensure it's not lost
+            try:
+                # Convert log entry to dict for WebSocket
+                log_dict = {
+                    "log_id": log_entry.log_id,  # Include the unique log ID
+                    "timestamp": log_entry.timestamp.isoformat() if hasattr(log_entry.timestamp, 'isoformat') else str(log_entry.timestamp),
+                    "agent_name": log_entry.agent_name,
+                    "message": log_entry.action,
+                    "action": log_entry.action,
+                    "input_summary": log_entry.input_summary,
+                    "output_summary": log_entry.output_summary,
+                    "status": log_entry.status,
+                    "error_message": log_entry.error_message,
+                    "full_input": log_entry.full_input,
+                    "full_output": log_entry.full_output,
+                    "model_details": log_entry.model_details,
+                    "tool_calls": log_entry.tool_calls,
+                    "file_interactions": log_entry.file_interactions
+                }
+                _send_websocket_update(send_logs_update(mission_id, [log_dict], "append"))
+                logger.debug(f"Sent execution log update via WebSocket for mission '{mission_id}'.")
+            except Exception as ws_error:
+                logger.error(f"Failed to send execution log update via WebSocket for mission {mission_id}: {ws_error}")
 
             # Call the callback function if provided, passing the queue and log entry
             if update_callback and log_queue is not None:
@@ -672,7 +894,7 @@ class ContextManager:
                     # Send WebSocket update for goal pad
                     try:
                         goals_list = [goal.model_dump() for goal in mission.goal_pad]
-                        asyncio.create_task(send_goal_pad_update(mission_id, goals_list, "update"))
+                        _send_websocket_update(send_goal_pad_update(mission_id, goals_list, "update"))
                         logger.info(f"Sent goal pad update via WebSocket for mission '{mission_id}'.")
                     except Exception as ws_error:
                         logger.error(f"Failed to send goal pad update via WebSocket for mission {mission_id}: {ws_error}")
@@ -804,7 +1026,7 @@ class ContextManager:
                     # Send WebSocket update for thought pad
                     try:
                         thoughts_list = [thought.model_dump() for thought in mission.thought_pad]
-                        asyncio.create_task(send_thought_pad_update(mission_id, thoughts_list, "update"))
+                        _send_websocket_update(send_thought_pad_update(mission_id, thoughts_list, "update"))
                         logger.info(f"Sent thought pad update via WebSocket for mission '{mission_id}'.")
                     except Exception as ws_error:
                         logger.error(f"Failed to send thought pad update via WebSocket for mission {mission_id}: {ws_error}")

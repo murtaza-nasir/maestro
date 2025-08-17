@@ -34,7 +34,7 @@ export const DocumentUploadZone: React.FC<DocumentUploadZoneProps> = ({
     const fileName = file.name.toLowerCase();
     
     // Debug logging
-    console.log(`Validating file: ${file.name}, size: ${file.size}, type: ${file.type}`);
+    // console.log(`Validating file: ${file.name}, size: ${file.size}, type: ${file.type}`);
     
     if (!supportedExtensions.some(ext => fileName.endsWith(ext))) {
       const error = `Only PDF, Word (docx, doc), and Markdown (md, markdown) files are supported. Got: ${file.name}`;
@@ -47,7 +47,7 @@ export const DocumentUploadZone: React.FC<DocumentUploadZoneProps> = ({
       return error;
     }
     
-    console.log(`File validation passed: ${file.name}`);
+    // console.log(`File validation passed: ${file.name}`);
     return null;
   };
 
@@ -72,10 +72,10 @@ export const DocumentUploadZone: React.FC<DocumentUploadZoneProps> = ({
     }
 
     if (validFiles.length > 0) {
-      console.log(`Calling onFilesSelected with ${validFiles.length} valid files:`, validFiles.map(f => f.name));
+      // console.log(`Calling onFilesSelected with ${validFiles.length} valid files:`, validFiles.map(f => f.name));
       onFilesSelected(validFiles);
     } else if (errors.length > 0) {
-      console.log('No valid files to upload due to validation errors');
+      // console.log('No valid files to upload due to validation errors');
     }
   }, [maxFiles, maxFileSize, onFilesSelected]);
 
@@ -107,23 +107,23 @@ export const DocumentUploadZone: React.FC<DocumentUploadZoneProps> = ({
     setIsDragOver(false);
 
     if (disabled) {
-      console.log('Upload zone is disabled, ignoring drop');
+      // console.log('Upload zone is disabled, ignoring drop');
       return;
     }
 
     if (!selectedGroupId) {
-      console.log('No group selected, ignoring drop');
+      // console.log('No group selected, ignoring drop');
       alert('Please select a document group first before uploading files');
       return;
     }
 
     const files = e.dataTransfer.files;
-    console.log(`Files dropped: ${files.length} files`, Array.from(files).map(f => `${f.name} (${f.type})`));
+    // console.log(`Files dropped: ${files.length} files`, Array.from(files).map(f => `${f.name} (${f.type})`));
     
     if (files && files.length > 0) {
       handleFiles(files);
     } else {
-      console.log('No files in drop event');
+      // console.log('No files in drop event');
     }
   }, [disabled, selectedGroupId, handleFiles]);
 
@@ -138,12 +138,12 @@ export const DocumentUploadZone: React.FC<DocumentUploadZoneProps> = ({
 
   const handleClick = useCallback(() => {
     if (disabled) {
-      console.log('Upload zone is disabled, ignoring click');
+      // console.log('Upload zone is disabled, ignoring click');
       return;
     }
     
     if (!selectedGroupId) {
-      console.log('No group selected, ignoring click');
+      // console.log('No group selected, ignoring click');
       alert('Please select a document group first before uploading files');
       return;
     }

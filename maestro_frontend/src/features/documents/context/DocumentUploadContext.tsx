@@ -9,6 +9,7 @@ interface DocumentUploadContextType {
   cancelUpload: (fileId: string) => void;
   cancelAllUploads: () => void;
   clearCompletedUploads: () => void;
+  clearAllErrors: () => void;
   dismissFile: (fileId: string) => void;
 }
 
@@ -36,8 +37,8 @@ export const DocumentUploadProvider: React.FC<{ children: React.ReactNode }> = (
   }, []);
 
   const startUploads = useCallback(async (files: File[], groupId: string) => {
-    console.log(`DocumentUploadContext: startUploads called with ${files.length} files for group ${groupId}`);
-    console.log('Files:', files.map(f => `${f.name} (${f.size} bytes, ${f.type})`));
+    // console.log(`DocumentUploadContext: startUploads called with ${files.length} files for group ${groupId}`);
+    // console.log('Files:', files.map(f => `${f.name} (${f.size} bytes, ${f.type})`));
     
     const newUploadFiles: UploadFile[] = files.map(file => ({
       id: generateFileId(),
@@ -46,27 +47,27 @@ export const DocumentUploadProvider: React.FC<{ children: React.ReactNode }> = (
       progress: 0
     }));
 
-    console.log('Created upload files:', newUploadFiles.map(uf => `${uf.id}: ${uf.file.name}`));
+    // console.log('Created upload files:', newUploadFiles.map(uf => `${uf.id}: ${uf.file.name}`));
     
     setUploadingFiles(prev => {
       const updated = [...prev, ...newUploadFiles];
-      console.log('Updated uploadingFiles count:', updated.length);
+      // console.log('Updated uploadingFiles count:', updated.length);
       return updated;
     });
 
     for (const uploadFile of newUploadFiles) {
-      console.log(`Starting upload for: ${uploadFile.file.name} (ID: ${uploadFile.id})`);
+      // console.log(`Starting upload for: ${uploadFile.file.name} (ID: ${uploadFile.id})`);
       try {
         const result = await uploadService.uploadFile(
           uploadFile.file,
           groupId,
           uploadFile.id,
           (progress) => {
-            console.log(`Progress for ${uploadFile.file.name}:`, progress);
+            // console.log(`Progress for ${uploadFile.file.name}:`, progress);
             updateFileProgress(uploadFile.id, progress);
           }
         );
-        console.log(`Upload result for ${uploadFile.file.name}:`, result);
+        // console.log(`Upload result for ${uploadFile.file.name}:`, result);
       } catch (error) {
         console.error(`Upload error for ${uploadFile.file.name}:`, error);
       }
@@ -120,6 +121,10 @@ export const DocumentUploadProvider: React.FC<{ children: React.ReactNode }> = (
     setUploadingFiles(prev => prev.filter(f => f.status !== 'completed' && f.status !== 'error' && f.status !== 'cancelled'));
   }, []);
 
+  const clearAllErrors = useCallback(() => {
+    setUploadingFiles(prev => prev.filter(f => f.status !== 'error'));
+  }, []);
+
   const dismissFile = useCallback((fileId: string) => {
     uploadService.dismissFile(fileId);
     setUploadingFiles(prev => prev.filter(f => f.id !== fileId));
@@ -140,6 +145,7 @@ export const DocumentUploadProvider: React.FC<{ children: React.ReactNode }> = (
         cancelUpload,
         cancelAllUploads,
         clearCompletedUploads,
+        clearAllErrors,
         dismissFile,
       }}
     >

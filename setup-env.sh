@@ -106,6 +106,81 @@ read -p "Port for MAESTRO (default: 80): " maestro_port
 maestro_port=${maestro_port:-80}
 sed "${SED_INPLACE[@]}" "s/MAESTRO_PORT=80/MAESTRO_PORT=$maestro_port/" .env
 
+# Database Security Configuration
+echo ""
+echo "🔐 Database Security Setup"
+echo "Choose how to set database passwords:"
+echo "1) Generate secure random passwords (recommended)"
+echo "2) Enter custom passwords"
+echo "3) Skip (use default - NOT RECOMMENDED for production)"
+read -p "Choice (1-3, default: 1): " pass_mode
+pass_mode=${pass_mode:-1}
+
+case $pass_mode in
+    1)
+        # Generate secure random passwords
+        if command -v openssl &> /dev/null; then
+            postgres_pass=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
+            admin_pass=$(openssl rand -base64 16 | tr -d "=+/" | cut -c1-16)
+            jwt_secret=$(openssl rand -hex 32)
+        else
+            # Fallback to /dev/urandom if openssl not available
+            postgres_pass=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 25)
+            admin_pass=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 16)
+            jwt_secret=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 64)
+        fi
+        
+        sed "${SED_INPLACE[@]}" "s/POSTGRES_PASSWORD=CHANGE_THIS_PASSWORD_IMMEDIATELY/POSTGRES_PASSWORD=$postgres_pass/" .env
+        sed "${SED_INPLACE[@]}" "s/ADMIN_PASSWORD=CHANGE_THIS_ADMIN_PASSWORD/ADMIN_PASSWORD=$admin_pass/" .env
+        sed "${SED_INPLACE[@]}" "s/JWT_SECRET_KEY=GENERATE_A_RANDOM_KEY_DO_NOT_USE_DEFAULT/JWT_SECRET_KEY=$jwt_secret/" .env
+        
+        echo "✅ Generated secure passwords"
+        echo ""
+        echo "⚠️  SAVE THESE CREDENTIALS:"
+        echo "   Admin Username: admin"
+        echo "   Admin Password: $admin_pass"
+        echo ""
+        echo "   Database credentials are stored in .env"
+        ;;
+    2)
+        # Custom passwords
+        read -sp "Enter PostgreSQL password: " postgres_pass
+        echo
+        read -sp "Confirm PostgreSQL password: " postgres_pass_confirm
+        echo
+        if [ "$postgres_pass" != "$postgres_pass_confirm" ]; then
+            echo "❌ Passwords don't match. Using defaults."
+        else
+            sed "${SED_INPLACE[@]}" "s/POSTGRES_PASSWORD=CHANGE_THIS_PASSWORD_IMMEDIATELY/POSTGRES_PASSWORD=$postgres_pass/" .env
+        fi
+        
+        read -sp "Enter Admin password: " admin_pass
+        echo
+        read -sp "Confirm Admin password: " admin_pass_confirm
+        echo
+        if [ "$admin_pass" != "$admin_pass_confirm" ]; then
+            echo "❌ Passwords don't match. Using defaults."
+        else
+            sed "${SED_INPLACE[@]}" "s/ADMIN_PASSWORD=CHANGE_THIS_ADMIN_PASSWORD/ADMIN_PASSWORD=$admin_pass/" .env
+        fi
+        
+        # Generate JWT secret
+        if command -v openssl &> /dev/null; then
+            jwt_secret=$(openssl rand -hex 32)
+        else
+            jwt_secret=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 64)
+        fi
+        sed "${SED_INPLACE[@]}" "s/JWT_SECRET_KEY=GENERATE_A_RANDOM_KEY_DO_NOT_USE_DEFAULT/JWT_SECRET_KEY=$jwt_secret/" .env
+        
+        echo "✅ Custom passwords set"
+        ;;
+    *)
+        echo "⚠️  WARNING: Using default passwords is insecure!"
+        echo "   Please change them in .env before deploying to production"
+        admin_pass="admin123"  # Keep for display later
+        ;;
+esac
+
 # Timezone
 read -p "Timezone (default: America/Chicago): " timezone
 timezone=${timezone:-America/Chicago}
@@ -132,12 +207,25 @@ else
     esac
 fi
 echo ""
-echo "Default login:"
-echo "  Username: admin"
-echo "  Password: adminpass123"
+if [ "$pass_mode" != "3" ]; then
+    echo "Login credentials:"
+    echo "  Username: admin"
+    if [ -n "$admin_pass" ]; then
+        echo "  Password: [Set during setup - check above or .env file]"
+    fi
+else
+    echo "Default login (CHANGE IMMEDIATELY):"
+    echo "  Username: admin"
+    echo "  Password: admin123"
+fi
 echo ""
 echo "Start MAESTRO with:"
 echo "  docker compose up -d"
+echo ""
+echo "⚠️  IMPORTANT - First Run:"
+echo "  Initial startup takes 5-10 minutes to download AI models"
+echo "  Monitor progress with: docker compose logs -f maestro-backend"
+echo "  Wait for message: Application startup complete"
 echo ""
 echo "To modify settings later:"
 echo "  nano .env"

@@ -1,15 +1,44 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import type { Document } from '../types';
 import { Button } from '../../../components/ui/button';
-import { Paperclip, Trash2 } from 'lucide-react';
+import { Paperclip, Trash2, FileText, Calendar, BookOpen, Eye, Edit } from 'lucide-react';
+import { DocumentMetadataEditModal } from './DocumentMetadataEditModal';
+import { DocumentViewModal } from './DocumentViewModal';
 
 interface DocumentListProps {
   documents: Document[];
   onUpload: (file: File) => void;
   onDelete: (documentId: string) => void;
+  onDocumentUpdated?: () => void;
 }
 
-const DocumentList: React.FC<DocumentListProps> = ({ documents, onUpload, onDelete }) => {
+const DocumentList: React.FC<DocumentListProps> = ({ documents, onUpload, onDelete, onDocumentUpdated }) => {
+  // Modal state
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
+
+  // Modal handlers
+  const handleEditDocument = useCallback((document: Document) => {
+    setSelectedDocument(document);
+    setEditModalOpen(true);
+  }, []);
+
+  const handleViewDocument = useCallback((document: Document) => {
+    setSelectedDocument(document);
+    setViewModalOpen(true);
+  }, []);
+
+  const handleCloseModals = useCallback(() => {
+    setEditModalOpen(false);
+    setViewModalOpen(false);
+    setSelectedDocument(null);
+  }, []);
+
+  const handleDocumentUpdated = useCallback(() => {
+    handleCloseModals();
+    onDocumentUpdated?.();
+  }, [handleCloseModals, onDocumentUpdated]);
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -30,20 +59,138 @@ const DocumentList: React.FC<DocumentListProps> = ({ documents, onUpload, onDele
         </Button>
       </div>
       <div className="bg-background-alt shadow rounded-lg">
-        <ul>
-          {documents.map((doc) => (
-            <li key={doc.id} className="flex justify-between items-center p-4 border-b border-border">
-              <span>{doc.original_filename}</span>
-              <div className="flex items-center">
-                <span className="text-sm text-text-secondary mr-4">{new Date(doc.created_at).toLocaleDateString()}</span>
-                <Button variant="ghost" size="icon" onClick={() => onDelete(doc.id)} className="text-destructive hover:text-destructive/80">
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+        <div className="divide-y divide-border">
+          {documents.map((doc) => {
+            const title = doc.title || doc.metadata_?.title || doc.original_filename;
+            const authors = doc.metadata_?.authors || doc.authors;
+            const journal = doc.metadata_?.journal_or_source;
+            const year = doc.metadata_?.publication_year;
+            
+            const formatAuthors = (authorsData: string | string[] | undefined): string => {
+              if (!authorsData) return '';
+              if (typeof authorsData === 'string') {
+                try {
+                  const parsed = JSON.parse(authorsData);
+                  return Array.isArray(parsed) ? parsed.join(', ') : authorsData;
+                } catch {
+                  return authorsData;
+                }
+              }
+              return Array.isArray(authorsData) ? authorsData.join(', ') : '';
+            };
+            
+            const authorsFormatted = formatAuthors(authors);
+            
+            return (
+              <div key={doc.id} className="group p-2 rounded-md transition-all duration-200 bg-background border border-border/50 hover:bg-muted/50 hover:border-border">
+                <div className="flex items-start gap-2">
+                  {/* Document Icon */}
+                  <div className="flex-shrink-0 mt-0.5">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  
+                  {/* Document Content */}
+                  <div className="flex-1 min-w-0">
+                    {/* Title */}
+                    <h4 className="font-medium text-sm leading-tight mb-1 line-clamp-2 text-foreground" title={title}>
+                      {title}
+                    </h4>
+                    
+                    {/* Authors subtitle */}
+                    {authorsFormatted && (
+                      <p className="text-xs text-muted-foreground mb-1 line-clamp-1" title={authorsFormatted}>
+                        {authorsFormatted}
+                      </p>
+                    )}
+                    
+                    {/* Metadata */}
+                    <div className="space-y-0.5 mb-1">
+                      {(journal || year) && (
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <BookOpen className="h-3 w-3 flex-shrink-0" />
+                          <span className="truncate">
+                            {journal && <span>{journal}</span>}
+                            {journal && year && <span> • </span>}
+                            {year && <span>{year}</span>}
+                          </span>
+                        </div>
+                      )}
+                      
+                      {/* Filename if different from title */}
+                      {title !== doc.original_filename && (
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <FileText className="h-3 w-3 flex-shrink-0" />
+                          <span className="truncate">File: {doc.original_filename}</span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Bottom Row: Date and Action Buttons */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Calendar className="h-3 w-3" />
+                        <span>{new Date(doc.created_at).toLocaleDateString()}</span>
+                      </div>
+                      
+                      {/* Action buttons */}
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleViewDocument(doc);
+                          }}
+                          className="h-7 w-7 text-muted-foreground hover:text-primary"
+                          title="View markdown"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEditDocument(doc);
+                          }}
+                          className="h-7 w-7 text-muted-foreground hover:text-primary"
+                          title="Edit metadata"
+                        >
+                          <Edit className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          onClick={() => onDelete(doc.id)} 
+                          className="h-7 w-7 text-destructive hover:text-destructive/80"
+                          title="Delete document"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </li>
-          ))}
-        </ul>
+            );
+          })}
+        </div>
       </div>
+
+      {/* Document Metadata Edit Modal */}
+      <DocumentMetadataEditModal
+        document={selectedDocument}
+        isOpen={editModalOpen}
+        onClose={handleCloseModals}
+        onSave={handleDocumentUpdated}
+      />
+
+      {/* Document View Modal */}
+      <DocumentViewModal
+        document={selectedDocument}
+        isOpen={viewModalOpen}
+        onClose={handleCloseModals}
+      />
     </div>
   );
 };

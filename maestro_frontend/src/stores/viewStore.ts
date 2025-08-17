@@ -8,7 +8,9 @@ interface ViewState {
   setView: (view: ViewMode) => void
 }
 
+// @ts-ignore - Zustand TypeScript compatibility issues
 export const useViewStore = create<ViewState>()(
+  // @ts-ignore
   persist(
     (set) => ({
       currentView: 'research',

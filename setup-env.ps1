@@ -8,7 +8,7 @@ Write-Host "=================================="
 
 # Check if .env already exists
 if (Test-Path ".env") {
-    Write-Host "⚠️  .env file already exists!"
+    Write-Host "WARNING: .env file already exists!" -ForegroundColor Yellow
     $overwrite = Read-Host "Do you want to overwrite it? (y/N)"
     if ($overwrite -ne "y" -and $overwrite -ne "Y") {
         Write-Host "Setup cancelled."
@@ -18,17 +18,17 @@ if (Test-Path ".env") {
 
 # Copy .env.example to .env
 if (-not (Test-Path ".env.example")) {
-    Write-Host "❌ .env.example file not found!"
+    Write-Host "ERROR: .env.example file not found!" -ForegroundColor Red
     Write-Host "Please make sure you're in the correct directory."
     exit 1
 }
 
 Copy-Item ".env.example" ".env"
-Write-Host "✅ Created .env from .env.example"
+Write-Host "SUCCESS: Created .env from .env.example" -ForegroundColor Green
 
 # Simplified configuration
 Write-Host ""
-Write-Host "📝 MAESTRO Configuration"
+Write-Host "MAESTRO Configuration" -ForegroundColor Cyan
 Write-Host ""
 
 # Setup mode selection
@@ -36,7 +36,7 @@ Write-Host "Choose setup mode:"
 Write-Host "1) Simple (localhost only) - Recommended"
 Write-Host "2) Network (access from other devices)"
 Write-Host "3) Custom domain (for reverse proxy)"
-$setupMode = Read-Host "Choice (1-3, default: 1)"
+$setupMode = Read-Host "Choice (1-3, default is 1)"
 if (-not $setupMode) { $setupMode = "1" }
 
 switch ($setupMode) {
@@ -45,7 +45,7 @@ switch ($setupMode) {
         $ip = (Get-NetIPAddress | Where-Object {$_.AddressFamily -eq "IPv4" -and $_.InterfaceAlias -notlike "*Loopback*" -and $_.IPAddress -notlike "169.254.*"}).IPAddress | Select-Object -First 1
         
         if ($ip) {
-            Write-Host "🔍 Auto-detected IP: $ip"
+            Write-Host "Auto-detected IP: $ip"
             $useDetected = Read-Host "Use this IP? (Y/n)"
             if ($useDetected -eq "n" -or $useDetected -eq "N") {
                 $ip = Read-Host "Enter IP address"
@@ -55,7 +55,7 @@ switch ($setupMode) {
         }
         
         (Get-Content .env) -replace 'CORS_ALLOWED_ORIGINS=\*', "CORS_ALLOWED_ORIGINS=http://$ip,http://localhost" | Set-Content .env
-        Write-Host "✅ Configured for network access from: $ip"
+        Write-Host "SUCCESS: Configured for network access from: $ip" -ForegroundColor Green
     }
     "3" {
         $domain = Read-Host "Enter your domain (e.g., researcher.local)"
@@ -69,10 +69,10 @@ switch ($setupMode) {
         
         (Get-Content .env) -replace 'CORS_ALLOWED_ORIGINS=\*', "CORS_ALLOWED_ORIGINS=$protocol`://$domain" | Set-Content .env
         (Get-Content .env) -replace 'ALLOW_CORS_WILDCARD=true', 'ALLOW_CORS_WILDCARD=false' | Set-Content .env
-        Write-Host "✅ Configured for custom domain: $protocol`://$domain"
+        Write-Host "SUCCESS: Configured for custom domain: $protocol`://$domain" -ForegroundColor Green
     }
     default {
-        Write-Host "✅ Using simple localhost configuration"
+        Write-Host "SUCCESS: Using simple localhost configuration" -ForegroundColor Green
         Write-Host "   The application will be accessible at: http://localhost"
     }
 }
@@ -126,10 +126,10 @@ switch ($timezoneChoice) {
         try {
             $systemTz = [System.TimeZoneInfo]::Local.Id
             $timezone = $systemTz
-            Write-Host "✅ Using system timezone: $timezone"
+            Write-Host "SUCCESS: Using system timezone: $timezone" -ForegroundColor Green
         } catch {
             $timezone = "America/Chicago"
-            Write-Host "⚠️  Could not detect system timezone, using default: $timezone"
+            Write-Host "WARNING: Could not detect system timezone, using default: $timezone" -ForegroundColor Yellow
         }
     }
     default { $timezone = "America/Chicago" }
@@ -139,10 +139,19 @@ switch ($timezoneChoice) {
 (Get-Content .env) -replace 'VITE_SERVER_TIMEZONE=America/Chicago', "VITE_SERVER_TIMEZONE=$timezone" | Set-Content .env
 
 Write-Host ""
-Write-Host "🎉 Setup complete!"
+Write-Host "SETUP COMPLETE!" -ForegroundColor Green
 Write-Host ""
 Write-Host "Your .env file has been created."
 Write-Host ""
+
+# Windows line ending warning
+Write-Host "WARNING - Windows/WSL Note:" -ForegroundColor Yellow
+Write-Host "   If you encounter 'bad interpreter' errors, run:" -ForegroundColor Yellow
+Write-Host "   docker compose down" -ForegroundColor Cyan
+Write-Host "   docker compose build --no-cache" -ForegroundColor Cyan
+Write-Host "   docker compose up -d" -ForegroundColor Cyan
+Write-Host ""
+
 Write-Host "Access MAESTRO at:"
 if ($maestroPort -eq "80") {
     switch ($setupMode) {
@@ -160,10 +169,15 @@ if ($maestroPort -eq "80") {
 Write-Host ""
 Write-Host "Default login:"
 Write-Host "  Username: admin"
-Write-Host "  Password: adminpass123"
+Write-Host "  Password: admin123"
 Write-Host ""
 Write-Host "Start MAESTRO with:"
-Write-Host "  docker compose up -d"
+Write-Host "  docker compose up -d" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "IMPORTANT - First Run:" -ForegroundColor Yellow
+Write-Host "  Initial startup takes 5-10 minutes to download AI models" -ForegroundColor Yellow
+Write-Host "  Monitor progress with: docker compose logs -f maestro-backend" -ForegroundColor Yellow
+Write-Host "  Wait for message: Application startup complete" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "To modify settings later:"
 Write-Host "  notepad .env" 

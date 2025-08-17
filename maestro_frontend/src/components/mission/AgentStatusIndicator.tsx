@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Activity, CheckCircle, AlertCircle, Clock, Pause } from 'lucide-react';
 import type { ExecutionLogEntry } from './AgentActivityLog';
 import { formatActivityLogTime } from '../../utils/timezone';
+import { getAgentIcon, getAgentColorClass } from './agentIcons';
 
 interface AgentStatusIndicatorProps {
   logs: ExecutionLogEntry[];
@@ -96,15 +97,6 @@ export const AgentStatusIndicator: React.FC<AgentStatusIndicatorProps> = ({
     }
   };
 
-  const getAgentIcon = (agentName: string) => {
-    const name = agentName.toLowerCase();
-    if (name.includes('planning')) return '📋';
-    if (name.includes('research')) return '🔍';
-    if (name.includes('writing')) return '✍️';
-    if (name.includes('reflection')) return '🤔';
-    if (name.includes('controller')) return '⚙️';
-    return '🤖';
-  };
 
   const formatTimestamp = (timestamp?: Date) => {
     if (!timestamp) return 'Never';
@@ -148,7 +140,9 @@ export const AgentStatusIndicator: React.FC<AgentStatusIndicatorProps> = ({
             <div className="absolute left-0 top-0 bottom-0 w-1 bg-current opacity-75"></div>
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <span className="text-sm">{getAgentIcon(agent.name)}</span>
+                <div className={`flex items-center ${getAgentColorClass(agent.name)}`}>
+                  {getAgentIcon(agent.name)}
+                </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center space-x-2">
                     <span className="font-medium text-foreground text-xs">{agent.name}</span>

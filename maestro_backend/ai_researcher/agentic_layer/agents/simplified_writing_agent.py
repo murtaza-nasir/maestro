@@ -132,7 +132,7 @@ class SimplifiedWritingAgent:
         max_decomposed_queries = search_config.get("max_decomposed_queries", 10 if use_deep_search else 3)
         max_search_results = search_config.get("max_results", 5)  # Get max_results from config
         
-        logger.info(f"SimplifiedWritingAgent.run called with prompt: {prompt[:100]}...")
+        logger.info(f"SimplifiedWritingAgent.run called with prompt: {prompt[:200] + '...' if len(prompt) > 200 else prompt}")
         logger.info(f"Available tools - Web search: {context_info.get('use_web_search', False)}, Document group: {context_info.get('document_group_id')}")
         
         try:
@@ -173,7 +173,7 @@ class SimplifiedWritingAgent:
                 sources.extend(web_sources)
                 tools_used["web_search"] = True
             
-            if router_decision in ["search", "documents", "both"] and context_info.get("document_group_id"):
+            if router_decision in ["documents", "both"] and context_info.get("document_group_id"):
                 if status_callback:
                     search_mode = "deep document search" if use_deep_search else "document search"
                     await status_callback("searching_documents", f"Performing {search_mode} in your collection...")
@@ -275,10 +275,14 @@ class SimplifiedWritingAgent:
         history_length = len(chat_history)
         context_length = len(user_context)
         logger.info(f"Router input lengths - Prompt: {prompt_length}, History: {history_length}, Context: {context_length}")
+        # Check which tools are available
+        has_web_search = context_info.get("use_web_search", False)
+        has_document_group = bool(context_info.get("document_group_id"))
+        
         available_tools = []
-        if context_info.get("use_web_search"):
+        if has_web_search:
             available_tools.append("web search")
-        if context_info.get("document_group_id"):
+        if has_document_group:
             available_tools.append("document search")
         
         if not available_tools:
@@ -287,24 +291,69 @@ class SimplifiedWritingAgent:
         
         tools_text = " and ".join(available_tools)
         
-        # Refined router prompt for more accurate tool decisions
-        # Keep it concise for thinking models that may have stricter constraints
-        system_prompt = (
-            "Output ONLY one word: 'search', 'documents', 'both', or 'none'.\n"
-            f"Available tools: {tools_text}.\n"
-            "search = web info needed\n"
-            "documents = document search needed\n"
-            "both = both needed\n"
-            "none = no external data needed\n"
-            "ONE WORD ONLY."
-        )
+        # Build contextual router prompt based on available tools
+        if has_document_group and has_web_search:
+            # Both tools available - prefer using both for comprehensive research
+            system_prompt = (
+                "You must decide which information sources to use.\n"
+                f"Available tools: {tools_text}.\n\n"
+                "Decision rules:\n"
+                "- Use 'both' for: research questions, academic queries, technical analysis, "
+                "comprehensive reviews, or ANY query that would benefit from multiple perspectives\n"
+                "- Use 'documents' ONLY when: user specifically asks to focus on documents/papers, "
+                "or the query is about specific content within the provided documents\n"
+                "- Use 'search' ONLY when: user specifically asks for web/current information, "
+                "or the query is exclusively about recent events, news, or real-time data\n"
+                "- Use 'none' ONLY for: general conversation, opinions, or creative writing with no factual requirements\n\n"
+                "When in doubt, prefer 'both' for comprehensive research coverage.\n"
+                "Output ONLY one word: 'search', 'documents', 'both', or 'none'."
+            )
+        elif has_document_group:
+            # Only documents available - use them by default for most queries
+            system_prompt = (
+                "You have access to a document collection that the user wants you to use.\n"
+                f"Available tool: {tools_text}.\n\n"
+                "Decision rules:\n"
+                "- Use 'documents' for: ANY question requiring information, facts, analysis, research, "
+                "or content that could be answered from documents\n"
+                "- Use 'none' ONLY for: pure creative writing, personal opinions, or general chat with no information needs\n\n"
+                "Since the user provided documents, you should use them unless the query is purely creative/conversational.\n"
+                "Output ONLY one word: 'documents' or 'none'."
+            )
+        elif has_web_search:
+            # Only web search available
+            system_prompt = (
+                f"Available tool: {tools_text}.\n\n"
+                "Decision rules:\n"
+                "- Use 'search' for: any factual questions, current events, research queries, or information requests\n"
+                "- Use 'none' ONLY for: creative writing, opinions, or general conversation with no factual requirements\n\n"
+                "Output ONLY one word: 'search' or 'none'."
+            )
+        else:
+            # No tools available
+            system_prompt = (
+                "No external tools are available.\n"
+                "Output ONLY: 'none'"
+            )
         
-        # Truncate chat history if too long for router (keep last 500 chars)
-        truncated_history = chat_history[-500:] if len(chat_history) > 500 else chat_history
+        # Use full chat history up to a reasonable token limit (approximately 100k tokens = ~400k chars)
+        MAX_HISTORY_CHARS = 400000  # Roughly 100k tokens
+        if len(chat_history) > MAX_HISTORY_CHARS:
+            # Keep the most recent history when we exceed the limit
+            truncated_history = "... [earlier conversation truncated] ...\n" + chat_history[-MAX_HISTORY_CHARS:]
+        else:
+            truncated_history = chat_history
         
-        user_message = f"Request: {prompt[:200]}" if len(prompt) > 200 else f"Request: {prompt}"
+        # Use full prompt without truncation
+        user_message = f"User request: {prompt}"
+        
+        # Add context if available
         if truncated_history:
-            user_message = f"Recent context: {truncated_history}\n{user_message}"
+            user_message = f"Recent conversation context:\n{truncated_history}\n\n{user_message}"
+        
+        # Add hint about document availability when relevant
+        if has_document_group:
+            user_message += "\n\nNote: The user has provided documents for you to reference."
         
         messages = [
             {"role": "system", "content": system_prompt},
@@ -564,7 +613,6 @@ class SimplifiedWritingAgent:
             from ai_researcher.core_rag.retriever import Retriever
             from ai_researcher.core_rag.query_preparer import QueryPreparer
             from ai_researcher.core_rag.query_strategist import QueryStrategist
-            from ai_researcher.core_rag.vector_store import VectorStore
             from ai_researcher.core_rag.embedder import TextEmbedder
             from ai_researcher.core_rag.reranker import TextReranker
             
@@ -574,17 +622,36 @@ class SimplifiedWritingAgent:
             # Initialize the RAG components (this should ideally be cached/reused)
             logger.info(f"Initializing document search components for group: {document_group_id}")
             
-            # Initialize vector store and embedder with the correct persistence directory
-            vector_store = VectorStore(persist_directory="/app/ai_researcher/data/vector_store")
-            embedder = TextEmbedder()
-            reranker = TextReranker()
-            
-            # Initialize retriever
-            retriever = Retriever(
-                vector_store=vector_store,
-                embedder=embedder,
-                reranker=reranker
-            )
+            # Initialize the new clean vector store using singleton
+            try:
+                from ai_researcher.core_rag.vector_store_singleton import get_vector_store
+                vector_store = get_vector_store()  # Uses singleton instance
+                
+                # Health check
+                if not vector_store.healthcheck():
+                    logger.error("Vector store health check failed")
+                    return "Error: Document database is not accessible. Please try again later.", []
+                
+                logger.info("Vector store initialized successfully")
+                
+            except Exception as e:
+                logger.error(f"Failed to initialize vector store: {e}", exc_info=True)
+                return f"Error: Unable to access document database. Error: {str(e)}", []
+            try:
+                # Use cached model instances to avoid repeated initialization
+                from ai_researcher.core_rag.model_cache import model_cache
+                embedder = model_cache.get_embedder()
+                reranker = model_cache.get_reranker()
+                
+                # Initialize retriever
+                retriever = Retriever(
+                    vector_store=vector_store,
+                    embedder=embedder,
+                    reranker=reranker
+                )
+            except Exception as e:
+                logger.error(f"Failed to initialize retriever components: {e}", exc_info=True)
+                return f"Error: Failed to initialize search components. Error: {str(e)}", []
             
             # Initialize query components
             query_preparer = QueryPreparer(model_dispatcher=self.model_dispatcher)
@@ -955,17 +1022,20 @@ class SimplifiedWritingAgent:
         # Step 2: Execute each focused search with iterative improvement
         for i, focused_query in enumerate(decomposed_queries, 1):
             if status_callback:
-                # More detailed search progress
-                search_msg = f"Search {i} of {len(decomposed_queries)}: {focused_query[:80]}..."
-                if max_attempts > 1:
-                    search_msg += f" (up to {max_attempts} quality iterations)"
+                # More detailed search progress showing which focused search we're on
+                search_msg = f"Focused search {i}/{len(decomposed_queries)}: {focused_query[:60]}..."
+                if len(focused_query) > 60:
+                    search_msg = f"Focused search {i}/{len(decomposed_queries)}: {focused_query[:60]}..."
+                else:
+                    search_msg = f"Focused search {i}/{len(decomposed_queries)}: {focused_query}"
                 await status_callback("searching_web", search_msg)
             
             logger.info(f"Executing focused web search {i}/{len(decomposed_queries)}: {focused_query}")
             
             # Perform iterative search for this focused query
             focused_results, focused_sources = await self._perform_focused_iterative_web_search(
-                focused_query, query, chat_history, session_id, seen_urls, max_attempts, status_callback, max_search_results
+                focused_query, query, chat_history, session_id, seen_urls, max_attempts, status_callback, max_search_results,
+                search_number=i, total_searches=len(decomposed_queries)
             )
             
             # Filter out duplicate URLs and update seen_urls
@@ -1002,7 +1072,7 @@ class SimplifiedWritingAgent:
         
         return all_results, all_sources
 
-    async def _perform_focused_iterative_web_search(self, focused_query: str, original_query: str, chat_history: str = "", session_id: str = None, global_seen_urls: set = None, max_attempts: int = 3, status_callback: Optional[callable] = None, max_search_results: int = 5) -> tuple[str, List[Dict[str, Any]]]:
+    async def _perform_focused_iterative_web_search(self, focused_query: str, original_query: str, chat_history: str = "", session_id: str = None, global_seen_urls: set = None, max_attempts: int = 3, status_callback: Optional[callable] = None, max_search_results: int = 5, search_number: int = 1, total_searches: int = 1) -> tuple[str, List[Dict[str, Any]]]:
         """
         Performs iterative search for a single focused query with quality assessment.
         Integrates with existing query enrichment for optimal results.
@@ -1018,11 +1088,15 @@ class SimplifiedWritingAgent:
                 logger.info(f"Focused web search attempt {attempt + 1}/{max_attempts} with query: {current_query}")
                 
                 # Send detailed status update if we're doing multiple attempts
-                if max_attempts > 1 and status_callback:
-                    if attempt == 0:
-                        quality_msg = f"Performing initial search..."
+                if status_callback:
+                    if max_attempts > 1:
+                        if attempt == 0:
+                            quality_msg = f"[Search {search_number}/{total_searches}] Performing initial search..."
+                        else:
+                            quality_msg = f"[Search {search_number}/{total_searches}] Refining quality (iteration {attempt + 1} of {max_attempts})"
                     else:
-                        quality_msg = f"Refining search quality (iteration {attempt + 1} of {max_attempts})"
+                        # For single iteration, just show which search we're on
+                        quality_msg = f"[Search {search_number}/{total_searches}] Searching..."
                     
                     await status_callback("search_quality_iteration", quality_msg)
                 

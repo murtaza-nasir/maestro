@@ -5,7 +5,6 @@ import { useMissionStore } from '../store'
 import { useToast } from '../../../components/ui/toast'
 import { Edit3, Save, X, FileText, Target } from 'lucide-react'
 import { apiClient } from '../../../config/api'
-import { useMissionWebSocket } from '../../../services/websocket'
 
 interface PlanTabProps {
   missionId: string
@@ -17,9 +16,6 @@ export const PlanTab: React.FC<PlanTabProps> = ({ missionId }) => {
   const [isEditing, setIsEditing] = useState(false)
   const [editedPlan, setEditedPlan] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-
-  // WebSocket connection for real-time plan updates
-  const { isConnected, subscribe } = useMissionWebSocket(missionId)
 
   const fetchPlan = useCallback(async () => {
     if (!missionId) return
@@ -40,23 +36,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({ missionId }) => {
     }
   }, [fetchPlan, activeMission?.plan])
 
-  // Handle WebSocket plan updates
-  useEffect(() => {
-    if (!isConnected) return
-
-    const unsubscribe = subscribe('plan_update', (message: any) => {
-      if (import.meta.env.DEV) {
-        console.log('Plan update received')
-      }
-      
-      if (message.mission_id === missionId && message.data) {
-        const planData = typeof message.data === 'string' ? message.data : JSON.stringify(message.data, null, 2)
-        setMissionPlan(missionId, planData)
-      }
-    })
-
-    return unsubscribe
-  }, [isConnected, subscribe, missionId, setMissionPlan])
+  // WebSocket updates are now handled by ResearchPanel
 
   // Update edited plan when mission plan changes
   useEffect(() => {

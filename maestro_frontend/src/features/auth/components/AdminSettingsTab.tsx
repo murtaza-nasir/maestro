@@ -23,6 +23,9 @@ import {
   UserX, 
   UserCheck,
   Loader2,
+  CheckCircle,
+  AlertCircle,
+  Search,
 } from 'lucide-react';
 
 interface User {
@@ -68,6 +71,11 @@ export const AdminSettingsTab: React.FC = () => {
     role: 'user',
     user_type: 'standard'
   });
+
+  // Consistency check states
+  const [consistencyCheckRunning, setConsistencyCheckRunning] = useState(false);
+  const [consistencyCheckResults, setConsistencyCheckResults] = useState<any>(null);
+  const [showConsistencyResults, setShowConsistencyResults] = useState(false);
 
   const { addToast } = useToast();
   const { getCsrfToken } = useAuthStore();
@@ -264,6 +272,35 @@ export const AdminSettingsTab: React.FC = () => {
   //   }
   // };
 
+  const runConsistencyCheck = async () => {
+    try {
+      setConsistencyCheckRunning(true);
+      const response = await apiClient.post('/api/system/consistency-check', {}, {
+        headers: {
+          'X-CSRF-Token': getCsrfToken()
+        }
+      });
+      
+      setConsistencyCheckResults(response.data.result);
+      setShowConsistencyResults(true);
+      
+      addToast({
+        type: 'success',
+        title: 'Consistency Check Complete',
+        message: `Found ${response.data.result.total_consistency_issues || 0} issues`
+      });
+    } catch (error: any) {
+      console.error('Failed to run consistency check:', error);
+      addToast({
+        type: 'error',
+        title: 'Error',
+        message: error.response?.data?.detail || 'Failed to run consistency check'
+      });
+    } finally {
+      setConsistencyCheckRunning(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -401,6 +438,114 @@ export const AdminSettingsTab: React.FC = () => {
               }
             />
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Database Consistency Check Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <CheckCircle className="h-5 w-5" />
+            Database Consistency Check
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Check for inconsistencies in document storage across the database, vector store, and file system.
+              This will identify orphaned files, missing data, and synchronization issues.
+            </p>
+            <div className="flex items-center gap-4">
+              <Button
+                onClick={runConsistencyCheck}
+                disabled={consistencyCheckRunning}
+                className="gap-2"
+              >
+                {consistencyCheckRunning ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Running Check...
+                  </>
+                ) : (
+                  <>
+                    <Search className="h-4 w-4" />
+                    Run Consistency Check
+                  </>
+                )}
+              </Button>
+              
+              {consistencyCheckResults && (
+                <div className="flex items-center gap-2">
+                  {consistencyCheckResults.total_consistency_issues > 0 ? (
+                    <>
+                      <AlertCircle className="h-4 w-4 text-yellow-500" />
+                      <span className="text-sm text-yellow-600">
+                        {consistencyCheckResults.total_consistency_issues} issues found
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="h-4 w-4 text-green-500" />
+                      <span className="text-sm text-green-600">
+                        No issues found
+                      </span>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+          
+          {/* Display results if available */}
+          {consistencyCheckResults && showConsistencyResults && (
+            <div className="mt-4 p-4 bg-muted rounded-lg space-y-3">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="font-medium">Total Users:</span> {consistencyCheckResults.total_users || 0}
+                </div>
+                <div>
+                  <span className="font-medium">Total Documents:</span> {consistencyCheckResults.total_documents || 0}
+                </div>
+                <div>
+                  <span className="font-medium">Users Checked:</span> {consistencyCheckResults.users_checked || 0}
+                </div>
+                <div>
+                  <span className="font-medium">Issues Found:</span> {consistencyCheckResults.total_consistency_issues || 0}
+                </div>
+              </div>
+              
+              {consistencyCheckResults.users_with_issues && consistencyCheckResults.users_with_issues.length > 0 && (
+                <div className="mt-3">
+                  <p className="font-medium text-sm mb-2">Users with Issues:</p>
+                  <div className="space-y-1">
+                    {consistencyCheckResults.users_with_issues.map((user: any, idx: number) => (
+                      <div key={idx} className="text-sm p-2 bg-background rounded">
+                        <span className="font-medium">{user.username}</span>: {user.issues_count} issues in {user.inconsistent_documents} documents
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {consistencyCheckResults.cleanup_performed && (
+                <div className="mt-3">
+                  <p className="font-medium text-sm mb-2">Cleanup Performed:</p>
+                  <div className="text-sm">
+                    <div>Documents deleted: {consistencyCheckResults.cleanup_performed.documents_deleted || 0}</div>
+                    <div>Files cleaned: {consistencyCheckResults.cleanup_performed.files_cleaned || 0}</div>
+                  </div>
+                </div>
+              )}
+              
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowConsistencyResults(false)}
+              >
+                Hide Details
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 

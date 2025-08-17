@@ -18,7 +18,7 @@ export const WritingSessionControls: React.FC = () => {
 
   const handleCreateNewSession = () => {
     // TODO: Implement create new writing session
-    console.log('Creating new writing session...')
+    // console.log('Creating new writing session...')
   }
 
   return (

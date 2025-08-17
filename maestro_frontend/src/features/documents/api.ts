@@ -1,6 +1,17 @@
 import { apiClient } from '../../config/api';
 import type { DocumentGroup, DocumentGroupWithCount, Document } from './types';
 
+// Filter Options API
+export const getFilterOptions = async (groupId?: string): Promise<{
+  authors: string[];
+  years: number[];
+  journals: string[];
+}> => {
+  const params = groupId ? { group_id: groupId } : {};
+  const response = await apiClient.get('/api/documents/filter-options', { params });
+  return response.data;
+};
+
 export const getDocumentGroups = async (): Promise<DocumentGroupWithCount[]> => {
   const response = await apiClient.get('/api/document-groups/');
   return response.data;
@@ -66,7 +77,7 @@ export interface PaginatedDocumentResponse {
 
 // New API calls for the existing document store
 export const getAllDocuments = async (params?: PaginationParams): Promise<PaginatedDocumentResponse> => {
-  const response = await apiClient.get('/api/all-documents/', { params });
+  const response = await apiClient.get('/api/documents/all', { params });
   return response.data;
 };
 

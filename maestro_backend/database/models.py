@@ -1,27 +1,29 @@
 """
 Database Models for Maestro Application
 
-This module defines the SQLAlchemy ORM models for the main application database.
-The application uses a dual-database architecture:
-1. This main database (maestro.db) - Application data, users, chats, document records
-2. AI researcher database (metadata.db) - Extracted document metadata for fast queries
-3. Vector store (ChromaDB) - Document embeddings and chunks for semantic search
+This module defines the SQLAlchemy ORM models for the PostgreSQL database.
+The application uses a unified architecture:
+1. PostgreSQL database - All application data, users, chats, documents with metadata
+2. Vector store (ChromaDB) - Document embeddings and chunks for semantic search
+3. File storage - Original documents and converted markdown
 
 For detailed architecture documentation, see: docs/DATABASE_ARCHITECTURE.md
 """
 
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON, Table, Boolean, Numeric
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON, Table, Boolean, Numeric, BigInteger
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from datetime import datetime
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+import uuid
 from database.database import Base
+from database.uuid_type import StringUUID
 
 # Association Table for Document and DocumentGroup
 # Enables many-to-many relationship between documents and groups
 # A document can belong to multiple groups, and a group can contain multiple documents
 document_group_association = Table('document_group_association', Base.metadata,
-    Column('document_id', String, ForeignKey('documents.id'), primary_key=True),
-    Column('document_group_id', String, ForeignKey('document_groups.id'), primary_key=True)
+    Column('document_id', StringUUID, ForeignKey('documents.id'), primary_key=True),
+    Column('document_group_id', StringUUID, ForeignKey('document_groups.id'), primary_key=True)
 )
 
 class User(Base):
@@ -29,6 +31,7 @@ class User(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
+    email = Column(String, unique=True, index=True)  # Added to match PostgreSQL schema
     hashed_password = Column(String)
     
     # User Profile Fields
@@ -42,7 +45,7 @@ class User(Base):
     
     created_at = Column(DateTime(timezone=True), nullable=False)
     updated_at = Column(DateTime(timezone=True), nullable=False)
-    settings = Column(JSON, nullable=True)  # Store user settings as JSON
+    settings = Column(JSONB, nullable=True)  # Store user settings as JSONB for PostgreSQL
     
     is_admin = Column(Boolean, default=False, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
@@ -55,9 +58,9 @@ class User(Base):
 class Chat(Base):
     __tablename__ = "chats"
 
-    id = Column(String, primary_key=True, index=True)  # UUID string
+    id = Column(StringUUID, primary_key=True, default=uuid.uuid4, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    document_group_id = Column(String, ForeignKey("document_groups.id"), nullable=True, index=True)
+    document_group_id = Column(StringUUID, ForeignKey("document_groups.id"), nullable=True, index=True)
     title = Column(String, nullable=False)
     chat_type = Column(String, nullable=False, default="research", index=True)  # 'research' or 'writing'
     created_at = Column(DateTime(timezone=True))
@@ -72,11 +75,11 @@ class Chat(Base):
 class Message(Base):
     __tablename__ = "messages"
 
-    id = Column(String, primary_key=True, index=True)  # UUID string
-    chat_id = Column(String, ForeignKey("chats.id"), nullable=False, index=True)
+    id = Column(StringUUID, primary_key=True, default=uuid.uuid4, index=True)
+    chat_id = Column(StringUUID, ForeignKey("chats.id"), nullable=False, index=True)
     content = Column(Text, nullable=False)
     role = Column(String, nullable=False)  # 'user' or 'assistant'
-    sources = Column(JSON, nullable=True)  # Store sources as JSON for assistant messages
+    sources = Column(JSONB, nullable=True)  # Store sources as JSONB for assistant messages
     created_at = Column(DateTime(timezone=True))
     
     # Relationships
@@ -85,11 +88,11 @@ class Message(Base):
 class Mission(Base):
     __tablename__ = "missions"
 
-    id = Column(String, primary_key=True, index=True)  # UUID string
-    chat_id = Column(String, ForeignKey("chats.id"), nullable=False, index=True)
+    id = Column(StringUUID, primary_key=True, default=uuid.uuid4, index=True)
+    chat_id = Column(StringUUID, ForeignKey("chats.id"), nullable=False, index=True)
     user_request = Column(Text, nullable=False)
     status = Column(String, nullable=False, default="pending", index=True)  # pending, running, completed, stopped, failed
-    mission_context = Column(JSON, nullable=True)  # Store the full mission context as JSON
+    mission_context = Column(JSONB, nullable=True)  # Store the full mission context as JSONB
     error_info = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True))
     updated_at = Column(DateTime(timezone=True))
@@ -101,8 +104,8 @@ class Mission(Base):
 class MissionExecutionLog(Base):
     __tablename__ = "mission_execution_logs"
 
-    id = Column(String, primary_key=True, index=True)  # UUID string
-    mission_id = Column(String, ForeignKey("missions.id"), nullable=False, index=True)
+    id = Column(StringUUID, primary_key=True, default=uuid.uuid4, index=True)
+    mission_id = Column(StringUUID, ForeignKey("missions.id"), nullable=False, index=True)
     timestamp = Column(DateTime(timezone=True), nullable=False)
     agent_name = Column(String, nullable=False, index=True)
     action = Column(Text, nullable=False)
@@ -112,11 +115,11 @@ class MissionExecutionLog(Base):
     error_message = Column(Text, nullable=True)
     
     # Detailed logging fields
-    full_input = Column(JSON, nullable=True)
-    full_output = Column(JSON, nullable=True)
-    model_details = Column(JSON, nullable=True)
-    tool_calls = Column(JSON, nullable=True)
-    file_interactions = Column(JSON, nullable=True)
+    full_input = Column(JSONB, nullable=True)
+    full_output = Column(JSONB, nullable=True)
+    model_details = Column(JSONB, nullable=True)
+    tool_calls = Column(JSONB, nullable=True)
+    file_interactions = Column(JSONB, nullable=True)
     
     # Cost and token tracking
     cost = Column(Numeric(10, 6), nullable=True)
@@ -147,10 +150,11 @@ class Document(Base):
     """
     __tablename__ = "documents"
 
-    id = Column(String, primary_key=True, index=True)  # 8-character UUID from the RAG pipeline (e.g., "7fafabb4")
+    id = Column(StringUUID, primary_key=True, default=uuid.uuid4, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    original_filename = Column(String, nullable=False)
-    metadata_ = Column(JSON, nullable=True)  # Cached metadata from AI researcher database
+    filename = Column(String, nullable=False)  # Primary field matching PostgreSQL schema
+    original_filename = Column(String, nullable=True)  # For backward compatibility
+    metadata_ = Column(JSONB, nullable=True)  # Document metadata stored as JSONB
     created_at = Column(DateTime(timezone=True))
     updated_at = Column(DateTime(timezone=True))
     
@@ -158,18 +162,35 @@ class Document(Base):
     processing_status = Column(String, nullable=False, default="pending", index=True)  # pending, uploading, processing, completed, failed
     upload_progress = Column(Integer, default=0)  # 0-100
     processing_error = Column(Text, nullable=True)  # Error messages during processing
-    file_size = Column(Integer, nullable=True)  # File size in bytes
-    file_path = Column(String, nullable=True)  # Path to the original PDF file
+    file_size = Column(BigInteger, nullable=True)  # File size in bytes
+    
+    # Additional fields from database schema
+    file_path = Column(String(255), nullable=True)  # Path to the original PDF file
+    raw_file_path = Column(Text, nullable=True)
+    markdown_path = Column(Text, nullable=True)
+    chunk_count = Column(Integer, default=0)
+    dense_collection_name = Column(String(100), default='documents_dense')
+    sparse_collection_name = Column(String(100), default='documents_sparse')
 
     # Relationships
     user = relationship("User")
     groups = relationship("DocumentGroup", secondary=document_group_association, back_populates="documents")
     processing_jobs = relationship("DocumentProcessingJob", back_populates="document", cascade="all, delete-orphan")
+    chunks = relationship("DocumentChunk", back_populates="document", cascade="all, delete-orphan")
+    
+    def __init__(self, **kwargs):
+        # If original_filename is provided but not filename, copy it
+        if 'original_filename' in kwargs and 'filename' not in kwargs:
+            kwargs['filename'] = kwargs['original_filename']
+        # If filename is provided but not original_filename, copy it
+        elif 'filename' in kwargs and 'original_filename' not in kwargs:
+            kwargs['original_filename'] = kwargs['filename']
+        super().__init__(**kwargs)
 
 class DocumentGroup(Base):
     __tablename__ = "document_groups"
 
-    id = Column(String, primary_key=True, index=True)  # UUID string
+    id = Column(StringUUID, primary_key=True, default=uuid.uuid4, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
@@ -184,8 +205,8 @@ class DocumentGroup(Base):
 class DocumentProcessingJob(Base):
     __tablename__ = "document_processing_jobs"
 
-    id = Column(String, primary_key=True, index=True)  # UUID string
-    document_id = Column(String, ForeignKey("documents.id"), nullable=False, index=True)
+    id = Column(StringUUID, primary_key=True, default=uuid.uuid4, index=True)
+    document_id = Column(StringUUID, ForeignKey("documents.id"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     job_type = Column(String, nullable=False, default="process_document")  # process_document, upload, etc.
     status = Column(String, nullable=False, default="pending", index=True)  # pending, running, completed, failed
@@ -203,12 +224,12 @@ class DocumentProcessingJob(Base):
 class WritingSession(Base):
     __tablename__ = "writing_sessions"
 
-    id = Column(String, primary_key=True, index=True)  # UUID string
-    chat_id = Column(String, ForeignKey("chats.id"), nullable=False, index=True)
-    document_group_id = Column(String, ForeignKey("document_groups.id"), nullable=True, index=True)
+    id = Column(StringUUID, primary_key=True, default=uuid.uuid4, index=True)
+    chat_id = Column(StringUUID, ForeignKey("chats.id"), nullable=False, index=True)
+    document_group_id = Column(StringUUID, ForeignKey("document_groups.id"), nullable=True, index=True)
     use_web_search = Column(Boolean, default=True)
-    current_draft_id = Column(String, nullable=True)  # References the active draft
-    settings = Column(JSON, nullable=True)  # Writing-specific settings
+    current_draft_id = Column(StringUUID, nullable=True)  # References the active draft
+    settings = Column(JSONB, nullable=True)  # Writing-specific settings
     created_at = Column(DateTime(timezone=True))
     updated_at = Column(DateTime(timezone=True))
 
@@ -220,8 +241,8 @@ class WritingSession(Base):
 class Draft(Base):
     __tablename__ = "drafts"
 
-    id = Column(String, primary_key=True, index=True)  # UUID string
-    writing_session_id = Column(String, ForeignKey("writing_sessions.id"), nullable=False, index=True)
+    id = Column(StringUUID, primary_key=True, default=uuid.uuid4, index=True)
+    writing_session_id = Column(StringUUID, ForeignKey("writing_sessions.id"), nullable=False, index=True)
     title = Column(String, nullable=False)
     content = Column(Text, nullable=False)  # Store content as a single Markdown text block
     version = Column(Integer, default=1)  # Version number for draft history
@@ -236,9 +257,9 @@ class Draft(Base):
 class Reference(Base):
     __tablename__ = "draft_references"
 
-    id = Column(String, primary_key=True, index=True)  # UUID string
-    draft_id = Column(String, ForeignKey("drafts.id"), nullable=False, index=True)
-    document_id = Column(String, ForeignKey("documents.id"), nullable=True, index=True)  # For RAG document references
+    id = Column(StringUUID, primary_key=True, default=uuid.uuid4, index=True)
+    draft_id = Column(StringUUID, ForeignKey("drafts.id"), nullable=False, index=True)
+    document_id = Column(StringUUID, ForeignKey("documents.id"), nullable=True, index=True)  # For RAG document references
     web_url = Column(String, nullable=True)  # For web search references
     citation_text = Column(Text, nullable=False)  # The actual citation text
     context = Column(Text, nullable=True)  # Context where this reference is used
@@ -253,7 +274,7 @@ class WritingSessionStats(Base):
     __tablename__ = "writing_session_stats"
 
     id = Column(Integer, primary_key=True, index=True)
-    session_id = Column(String, ForeignKey("writing_sessions.id"), nullable=False, index=True, unique=True)
+    session_id = Column(StringUUID, ForeignKey("writing_sessions.id"), nullable=False, index=True, unique=True)
     total_cost = Column(Numeric(10, 6), default=0.0)
     total_prompt_tokens = Column(Integer, default=0)
     total_completion_tokens = Column(Integer, default=0)
@@ -266,11 +287,31 @@ class WritingSessionStats(Base):
     # Relationships
     writing_session = relationship("WritingSession")
 
+class DocumentChunk(Base):
+    """
+    Stores dense and sparse embeddings for document chunks.
+    Uses pgvector for dense embeddings and JSONB for sparse embeddings.
+    """
+    __tablename__ = "document_chunks"
+    
+    id = Column(StringUUID, primary_key=True, default=lambda: str(uuid.uuid4()))
+    doc_id = Column(StringUUID, ForeignKey('documents.id', ondelete='CASCADE'), nullable=False, index=True)
+    chunk_id = Column(String(255), unique=True, nullable=False, index=True)  # Format: {doc_id}_{chunk_index}
+    chunk_index = Column(Integer, nullable=False)
+    chunk_text = Column(Text, nullable=False)
+    dense_embedding = Column(Text, nullable=True)  # Will be handled as vector type by pgvector
+    sparse_embedding = Column(JSONB, nullable=False, default={})  # Stores {token_id: weight} pairs
+    chunk_metadata = Column(JSONB, nullable=False, default={})  # Renamed from metadata to avoid SQLAlchemy reserved word
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationship to Document
+    document = relationship("Document", back_populates="chunks")
+
 class SystemSetting(Base):
     __tablename__ = "system_settings"
 
     id = Column(Integer, primary_key=True, index=True)
     key = Column(String, unique=True, index=True, nullable=False)
-    value = Column(JSON, nullable=True)
+    value = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

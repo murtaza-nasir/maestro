@@ -70,13 +70,24 @@ export const useDocumentUpload = (options: UseDocumentUploadOptions = {}) => {
           uploadFile.id,
           (progress) => updateFileProgress(uploadFile.id, progress)
         );
-      } catch (error) {
+      } catch (error: any) {
         console.error('Upload error:', error);
+        
+        // Handle duplicate file error (409) with user-friendly message
+        let errorMessage = 'Upload failed';
+        if (error.response?.status === 409) {
+          errorMessage = `This file has already been uploaded: ${uploadFile.file.name}`;
+        } else if (error.response?.data?.detail) {
+          errorMessage = error.response.data.detail;
+        } else if (error.message) {
+          errorMessage = error.message;
+        }
+        
         updateFileProgress(uploadFile.id, {
           fileId: uploadFile.id,
           progress: 0,
           status: 'error',
-          error: error instanceof Error ? error.message : 'Upload failed'
+          error: errorMessage
         });
       }
     }
@@ -113,13 +124,24 @@ export const useDocumentUpload = (options: UseDocumentUploadOptions = {}) => {
         fileId,
         (progress) => updateFileProgress(fileId, progress)
       );
-    } catch (error) {
+    } catch (error: any) {
       console.error('Retry upload error:', error);
+      
+      // Handle duplicate file error (409) with user-friendly message
+      let errorMessage = 'Upload failed';
+      if (error.response?.status === 409) {
+        errorMessage = `This file has already been uploaded: ${file.file.name}`;
+      } else if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       updateFileProgress(fileId, {
         fileId,
         progress: 0,
         status: 'error',
-        error: error instanceof Error ? error.message : 'Upload failed'
+        error: errorMessage
       });
     }
   }, [uploadingFiles, updateFileProgress]);

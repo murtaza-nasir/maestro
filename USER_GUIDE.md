@@ -7,7 +7,7 @@ This guide provides a detailed walkthrough of the configuration options and feat
 On the first run, a default administrator account is automatically created for you to get started immediately.
 
 -   **Username**: `admin`
--   **Password**: `adminpass123`
+-   **Password**: `admin123`
 
 It is **highly recommended** that you change the default password immediately after your first login. You can do this from the **Settings -> Profile** tab.
 

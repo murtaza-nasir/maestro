@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, text
 from database.models import User, Chat, Message, Mission, Document, DocumentGroup, WritingSessionStats, SystemSetting, MissionExecutionLog
 from api import schemas
 from auth.security import get_password_hash
@@ -33,8 +33,14 @@ def create_user(db: Session, user: schemas.UserCreate):
     hashed_password = get_password_hash(user.password)
     now = get_current_time()
     db_user = User(
-        username=user.username, 
+        username=user.username,
+        email=user.username,  # Use username as email if not provided
         hashed_password=hashed_password,
+        full_name=getattr(user, 'full_name', None),
+        is_admin=getattr(user, 'is_admin', False),
+        is_active=getattr(user, 'is_active', True),
+        role=getattr(user, 'role', 'user'),
+        user_type=getattr(user, 'user_type', 'individual'),
         created_at=now,
         updated_at=now
     )
@@ -463,7 +469,8 @@ def create_document(db: Session, doc_id: str, user_id: int, original_filename: s
     db_document = Document(
         id=doc_id,
         user_id=user_id,
-        original_filename=original_filename,
+        filename=original_filename,  # Map to filename field
+        original_filename=original_filename,  # Also set for compatibility
         metadata_=metadata,
         processing_status=processing_status,
         upload_progress=upload_progress,
@@ -563,7 +570,9 @@ def create_document_group(db: Session, group_id: str, user_id: int, name: str, d
 
 def get_document_group(db: Session, group_id: str, user_id: int) -> Optional[DocumentGroup]:
     """Get a document group by ID, ensuring it belongs to the user."""
-    return db.query(DocumentGroup).options(joinedload(DocumentGroup.documents)).filter(
+    # IMPORTANT: Do NOT use joinedload here as it causes segfaults when the relationship is modified
+    # The documents relationship will be lazy-loaded when accessed
+    return db.query(DocumentGroup).filter(
         and_(DocumentGroup.id == group_id, DocumentGroup.user_id == user_id)
     ).first()
 
@@ -595,15 +604,25 @@ def delete_document_group(db: Session, group_id: str, user_id: int) -> bool:
 
 def add_document_to_group(db: Session, group_id: str, doc_id: str, user_id: int) -> Optional[DocumentGroup]:
     """Add a document to a document group."""
-    db_group = get_document_group(db, group_id, user_id)
+    # Verify group exists and belongs to user (without joinedload to avoid segfault)
+    db_group = db.query(DocumentGroup).filter(
+        and_(DocumentGroup.id == group_id, DocumentGroup.user_id == user_id)
+    ).first()
     db_document = get_document(db, doc_id, user_id)
+    
     if db_group and db_document:
-        # Check if document is already in the group to avoid duplicate constraint error
-        if db_document not in db_group.documents:
+        # Check if association already exists
+        existing = db.execute(text(
+            "SELECT 1 FROM document_group_association WHERE document_id = :doc_id AND document_group_id = :group_id"
+        ), {'doc_id': doc_id, 'group_id': group_id}).first()
+        
+        if not existing:
             try:
-                db_group.documents.append(db_document)
+                # Insert directly into association table to avoid segfault with joinedload
+                db.execute(text(
+                    "INSERT INTO document_group_association (document_id, document_group_id) VALUES (:doc_id, :group_id)"
+                ), {'doc_id': doc_id, 'group_id': group_id})
                 db.commit()
-                db.refresh(db_group)
                 logger.info(f"Added document {doc_id} to group {group_id}")
             except Exception as e:
                 logger.error(f"Error adding document {doc_id} to group: {e}")
@@ -615,20 +634,38 @@ def add_document_to_group(db: Session, group_id: str, doc_id: str, user_id: int)
 
 def remove_document_from_group(db: Session, group_id: str, doc_id: str, user_id: int) -> Optional[DocumentGroup]:
     """Remove a document from a document group."""
-    db_group = get_document_group(db, group_id, user_id)
+    # Verify group exists and belongs to user (without joinedload to avoid segfault)
+    db_group = db.query(DocumentGroup).filter(
+        and_(DocumentGroup.id == group_id, DocumentGroup.user_id == user_id)
+    ).first()
     db_document = get_document(db, doc_id, user_id)
-    if db_group and db_document and db_document in db_group.documents:
-        db_group.documents.remove(db_document)
-        db.commit()
-        db.refresh(db_group)
+    
+    if db_group and db_document:
+        try:
+            # Delete directly from association table to avoid segfault with joinedload
+            result = db.execute(text(
+                "DELETE FROM document_group_association WHERE document_id = :doc_id AND document_group_id = :group_id"
+            ), {'doc_id': doc_id, 'group_id': group_id})
+            if result.rowcount > 0:
+                db.commit()
+                logger.info(f"Removed document {doc_id} from group {group_id}")
+            else:
+                logger.info(f"Document {doc_id} was not in group {group_id}")
+        except Exception as e:
+            logger.error(f"Error removing document {doc_id} from group: {e}")
+            db.rollback()
+            return None
     return db_group
 
 def get_next_queued_document(db: Session) -> Optional[Document]:
-    """Get the next document with 'queued' status."""
-    return db.query(Document).filter(Document.processing_status == 'queued').order_by(Document.created_at).first()
+    """Get the next document with 'pending' or 'queued' status."""
+    return db.query(Document).filter(
+        or_(Document.processing_status == 'pending', Document.processing_status == 'queued')
+    ).order_by(Document.created_at).first()
 
 def update_document_status(db: Session, doc_id: str, user_id: int, status: str, 
-                          progress: Optional[int] = None, error: Optional[str] = None) -> Optional[Document]:
+                          progress: Optional[int] = None, error: Optional[str] = None,
+                          chunk_count: Optional[int] = None) -> Optional[Document]:
     """Update the processing status and progress of a document."""
     document = db.query(Document).filter(
         and_(Document.id == doc_id, Document.user_id == user_id)
@@ -642,6 +679,8 @@ def update_document_status(db: Session, doc_id: str, user_id: int, status: str,
             if not document.metadata_:
                 document.metadata_ = {}
             document.metadata_['processing_error'] = error
+        if chunk_count is not None:
+            document.chunk_count = chunk_count
         document.updated_at = get_current_time()
         db.commit()
         db.refresh(document)

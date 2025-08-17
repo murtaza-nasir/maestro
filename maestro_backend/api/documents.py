@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
@@ -8,15 +9,18 @@ from database import crud, models
 from api import schemas
 from auth.dependencies import get_current_user_from_cookie
 from database.database import get_db
-from services.document_service import document_service
+from services.document_service_v2 import UnifiedDocumentService
+import json
 from api.websockets import send_document_update
 import logging
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# New endpoint to get all documents from the existing vector store
-@router.get("/all-documents/", response_model=schemas.PaginatedDocumentResponse)
+# Documents Endpoints
+
+# Get all documents endpoint - must come before {doc_id} route
+@router.get("/documents/all", response_model=schemas.PaginatedDocumentResponse)
 async def get_all_documents(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie),
@@ -33,26 +37,38 @@ async def get_all_documents(
     """
     Get all documents from the AI researcher database with filtering and pagination (optimized).
     """
-    # Use the optimized paginated method that queries the AI researcher database directly
-    result = await document_service.get_paginated_documents(
+    # Initialize document service with current db session
+    document_service = UnifiedDocumentService(db)
+    
+    # Get documents with metadata from the unified database
+    documents, total_count = document_service.get_documents_with_metadata(
         user_id=current_user.id,
-        page=page,
-        limit=limit,
         search=search,
         author=author,
         year=year,
         journal=journal,
-        status=status,
-        sort_by=sort_by,
-        sort_order=sort_order
+        status_filter=status,
+        limit=limit,
+        offset=(page - 1) * limit
     )
     
     # Convert documents to schema format
     validated_documents = []
     validation_errors = 0
     
-    for i, doc in enumerate(result['documents']):
+    for i, doc in enumerate(documents):
         try:
+            # Ensure metadata_ field is properly formatted
+            if 'metadata_' not in doc and any(k in doc for k in ['abstract', 'keywords', 'doi']):
+                doc['metadata_'] = {
+                    'title': doc.get('title'),
+                    'authors': doc.get('authors', []),
+                    'publication_year': doc.get('publication_year'),
+                    'journal_or_source': doc.get('journal'),
+                    'abstract': doc.get('abstract'),
+                    'keywords': doc.get('keywords', []),
+                    'doi': doc.get('doi')
+                }
             validated_doc = schemas.Document(**doc)
             validated_documents.append(validated_doc)
         except Exception as e:
@@ -63,22 +79,29 @@ async def get_all_documents(
     
     logger.debug(f"API DEBUG: {len(validated_documents)} documents passed validation, {validation_errors} failed")
     
-    # Create pagination info
+    # Calculate pagination info
+    total_pages = (total_count + limit - 1) // limit if limit > 0 else 1
     pagination_info = schemas.PaginationInfo(
-        total_count=result['pagination']['total_count'],
-        page=result['pagination']['page'],
-        limit=result['pagination']['limit'],
-        total_pages=result['pagination']['total_pages'],
-        has_next=result['pagination']['has_next'],
-        has_previous=result['pagination']['has_previous']
+        total_count=total_count,
+        page=page,
+        limit=limit,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_previous=page > 1
     )
     
-    logger.debug(f"API DEBUG: Filtered to {result['pagination']['total_count']} documents, returning page {page} with {len(validated_documents)} items")
+    logger.debug(f"API DEBUG: Filtered to {total_count} documents, returning page {page} with {len(validated_documents)} items")
     
     return schemas.PaginatedDocumentResponse(
         documents=validated_documents,
         pagination=pagination_info,
-        filters_applied=result['filters_applied']
+        filters_applied={
+            'search': search,
+            'author': author,
+            'year': year,
+            'journal': journal,
+            'status': status
+        }
     )
 
 # New endpoint to search documents
@@ -92,7 +115,8 @@ async def search_documents(
     """
     Search documents using the existing vector store.
     """
-    results = await document_service.search_documents(query, current_user.id, n_results)
+    document_service = UnifiedDocumentService(db)
+    results = document_service.semantic_search(query, current_user.id, n_results)
     return {"results": results}
 
 # New endpoint to add existing document to group
@@ -106,12 +130,134 @@ async def add_existing_document_to_group(
     """
     Add an existing document from the vector store to a group.
     """
-    success = await document_service.add_document_to_group(group_id, doc_id, current_user.id, db)
-    if not success:
+    # For now, just add document directly to the group
+    group_doc = crud.add_document_to_group(db, group_id=group_id, doc_id=doc_id, user_id=current_user.id)
+    if not group_doc:
         raise HTTPException(status_code=404, detail="Document not found or could not be added to group")
     return {"message": "Document added to group successfully"}
 
-# New endpoint to upload and process documents
+# Upload document without group (to user's general documents)
+@router.post("/documents/upload")
+async def upload_document(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user_from_cookie)
+):
+    """
+    Upload a new document to user's general documents (no group).
+    """
+    # Check for supported file formats
+    filename_lower = file.filename.lower()
+    supported_extensions = ['.pdf', '.docx', '.doc', '.md', '.markdown']
+    
+    if not any(filename_lower.endswith(ext) for ext in supported_extensions):
+        raise HTTPException(
+            status_code=400, 
+            detail="Only PDF, Word (docx, doc), and Markdown (md, markdown) files are supported"
+        )
+    
+    try:
+        import uuid
+        import os
+        import hashlib
+        from datetime import datetime
+        
+        # Read file content
+        file_content = await file.read()
+        
+        # Generate document ID
+        doc_id = str(uuid.uuid4())
+        
+        # Calculate file hash for deduplication
+        file_hash = hashlib.sha256(file_content).hexdigest()
+        logger.info(f"Calculated file hash for {file.filename}: {file_hash}")
+        
+        # Check if document already exists (by hash)
+        existing = db.query(models.Document).filter(
+            models.Document.user_id == current_user.id,
+            models.Document.metadata_.op('->>')('file_hash') == file_hash
+        ).first()
+        
+        if existing:
+            logger.info(f"Found existing document with same hash: {existing.id} - {existing.filename}")
+        
+        if existing:
+            # Document already exists, return with 409 Conflict status
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "id": str(existing.id),
+                    "filename": existing.filename,
+                    "status": "duplicate",
+                    "processing_status": existing.processing_status,
+                    "message": f"This document has already been uploaded: {existing.filename}",
+                    "duplicate": True,
+                    "existing_document_id": str(existing.id)
+                }
+            )
+        
+        # Save the file to disk
+        upload_dir = "/app/data/raw_files"
+        os.makedirs(upload_dir, exist_ok=True)
+        
+        file_path = os.path.join(upload_dir, f"{doc_id}_{file.filename}")
+        with open(file_path, "wb") as f:
+            f.write(file_content)
+        
+        # Create document record in database
+        metadata = {
+            "title": file.filename,
+            "file_hash": file_hash,
+            "upload_timestamp": datetime.utcnow().isoformat()
+        }
+        
+        logger.info(f"Creating document with metadata: {metadata}")
+        
+        new_document = models.Document(
+            id=doc_id,
+            user_id=current_user.id,
+            filename=file.filename,
+            original_filename=file.filename,
+            metadata_=metadata,
+            processing_status="pending",
+            file_size=len(file_content),
+            file_path=file_path,
+            raw_file_path=file_path,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        
+        db.add(new_document)
+        db.commit()
+        db.refresh(new_document)
+        
+        # Trigger document processing (send to background processor)
+        from api.websockets import send_document_update
+        await send_document_update(str(current_user.id), {
+            "type": "document_uploaded",
+            "doc_id": doc_id,
+            "status": "pending",
+            "filename": file.filename
+        })
+        
+        # Document is already created with "pending" status
+        # The background processor will pick it up automatically
+        logger.info(f"Document {doc_id} created with pending status, will be processed by background service")
+        
+        return {
+            "id": doc_id,
+            "filename": file.filename,
+            "status": "processing",
+            "processing_status": "pending",
+            "message": "Document uploaded and processing started",
+            "duplicate": False
+        }
+        
+    except Exception as e:
+        logger.error(f"Error uploading document: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to upload document: {str(e)}")
+
+# New endpoint to upload and process documents to a specific group
 @router.post("/document-groups/{group_id}/upload/")
 async def upload_document_to_group(
     group_id: str,
@@ -132,15 +278,135 @@ async def upload_document_to_group(
             detail="Only PDF, Word (docx, doc), and Markdown (md, markdown) files are supported"
         )
     
-    file_content = await file.read()
-    result = await document_service.upload_document(
-        file_content, file.filename, group_id, current_user.id, db
-    )
-    
-    if not result:
-        raise HTTPException(status_code=500, detail="Failed to upload and process document")
-    
-    return result
+    try:
+        import uuid
+        import os
+        import hashlib
+        from datetime import datetime
+        
+        # Read file content
+        file_content = await file.read()
+        
+        # Generate document ID
+        doc_id = str(uuid.uuid4())
+        
+        # Calculate file hash for deduplication
+        file_hash = hashlib.sha256(file_content).hexdigest()
+        logger.info(f"Calculated file hash for {file.filename}: {file_hash}")
+        
+        # Check if document already exists (by hash)
+        existing = db.query(models.Document).filter(
+            models.Document.user_id == current_user.id,
+            models.Document.metadata_.op('->>')('file_hash') == file_hash
+        ).first()
+        
+        if existing:
+            logger.info(f"Found existing document with same hash: {existing.id} - {existing.filename}")
+        
+        if existing:
+            # Document already exists, just add to group if not already there
+            # Check if already in group
+            from sqlalchemy import and_
+            existing_in_group = db.query(models.DocumentGroupAssociation).filter(
+                and_(
+                    models.DocumentGroupAssociation.document_id == existing.id,
+                    models.DocumentGroupAssociation.document_group_id == group_id
+                )
+            ).first()
+            
+            if existing_in_group:
+                # Already in this group
+                return JSONResponse(
+                    status_code=409,
+                    content={
+                        "id": str(existing.id),
+                        "filename": existing.filename,
+                        "status": "duplicate",
+                        "processing_status": existing.processing_status,
+                        "message": f"Document '{existing.filename}' already exists in this group",
+                        "duplicate": True,
+                        "existing_document_id": str(existing.id)
+                    }
+                )
+            else:
+                # Add to group
+                crud.add_document_to_group(db, group_id=group_id, doc_id=str(existing.id), user_id=current_user.id)
+                return JSONResponse(
+                    status_code=200,
+                    content={
+                        "id": str(existing.id),
+                        "filename": existing.filename,
+                        "status": "existing",
+                        "processing_status": existing.processing_status,
+                        "message": f"Existing document '{existing.filename}' was added to the group",
+                        "duplicate": False,
+                        "existing_document_id": str(existing.id)
+                    }
+                )
+        
+        # Save the file to disk
+        upload_dir = "/app/data/raw_files"
+        os.makedirs(upload_dir, exist_ok=True)
+        
+        file_path = os.path.join(upload_dir, f"{doc_id}_{file.filename}")
+        with open(file_path, "wb") as f:
+            f.write(file_content)
+        
+        # Create document record in database
+        metadata = {
+            "title": file.filename,
+            "file_hash": file_hash,
+            "upload_timestamp": datetime.utcnow().isoformat()
+        }
+        
+        logger.info(f"Creating document with metadata: {metadata}")
+        
+        new_document = models.Document(
+            id=doc_id,
+            user_id=current_user.id,
+            filename=file.filename,
+            original_filename=file.filename,
+            metadata_=metadata,
+            processing_status="pending",
+            file_size=len(file_content),
+            file_path=file_path,
+            raw_file_path=file_path,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        
+        db.add(new_document)
+        db.commit()
+        db.refresh(new_document)
+        
+        # Add document to group
+        crud.add_document_to_group(db, group_id=group_id, doc_id=doc_id, user_id=current_user.id)
+        
+        # Trigger document processing (send to background processor)
+        from api.websockets import send_document_update
+        await send_document_update(str(current_user.id), {
+            "type": "document_uploaded",
+            "doc_id": doc_id,
+            "status": "pending",
+            "filename": file.filename
+        })
+        
+        # Document is already created with "pending" status
+        # The background processor will pick it up automatically
+        logger.info(f"Document {doc_id} created with pending status, will be processed by background service")
+        
+        return {
+            "id": doc_id,
+            "filename": file.filename,
+            "status": "processing",
+            "processing_status": "pending",
+            "message": "Document uploaded and processing started",
+            "duplicate": False
+        }
+        
+    except Exception as e:
+        logger.error(f"Error uploading document: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to upload document: {str(e)}")
 
 # New endpoint to get documents in a group (integrates with existing vector store)
 @router.get("/document-groups/{group_id}/documents/", response_model=schemas.PaginatedDocumentResponse)
@@ -161,28 +427,37 @@ async def get_documents_in_group(
     """
     Get all documents in a specific group with filtering and pagination (optimized).
     """
-    # Use the optimized paginated method that queries AI researcher database directly
-    result = await document_service.get_paginated_documents_in_group(
-        group_id=group_id,
+    # Initialize document service and get documents in group
+    document_service = UnifiedDocumentService(db)
+    documents, total_count = document_service.get_documents_with_metadata(
         user_id=current_user.id,
-        db=db,
-        page=page,
-        limit=limit,
         search=search,
         author=author,
         year=year,
         journal=journal,
-        status=status,
-        sort_by=sort_by,
-        sort_order=sort_order
+        status_filter=status,
+        group_id=group_id,
+        limit=limit,
+        offset=(page - 1) * limit
     )
     
     # Convert documents to schema format
     validated_documents = []
     validation_errors = 0
     
-    for doc_data in result['documents']:
+    for doc_data in documents:
         try:
+            # Ensure metadata_ field is properly formatted
+            if 'metadata_' not in doc_data and any(k in doc_data for k in ['abstract', 'keywords', 'doi']):
+                doc_data['metadata_'] = {
+                    'title': doc_data.get('title'),
+                    'authors': doc_data.get('authors', []),
+                    'publication_year': doc_data.get('publication_year'),
+                    'journal_or_source': doc_data.get('journal'),
+                    'abstract': doc_data.get('abstract'),
+                    'keywords': doc_data.get('keywords', []),
+                    'doi': doc_data.get('doi')
+                }
             validated_doc = schemas.Document(**doc_data)
             validated_documents.append(validated_doc)
         except Exception as e:
@@ -194,23 +469,101 @@ async def get_documents_in_group(
     
     logger.debug(f"API DEBUG: {len(validated_documents)} group documents passed validation, {validation_errors} failed")
     
-    # Create pagination info from service result
+    # Calculate pagination info
+    total_pages = (total_count + limit - 1) // limit if limit > 0 else 1
     pagination_info = schemas.PaginationInfo(
-        total_count=result['pagination']['total_count'],
-        page=result['pagination']['page'],
-        limit=result['pagination']['limit'],
-        total_pages=result['pagination']['total_pages'],
-        has_next=result['pagination']['has_next'],
-        has_previous=result['pagination']['has_previous']
+        total_count=total_count,
+        page=page,
+        limit=limit,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_previous=page > 1
     )
     
-    logger.debug(f"API DEBUG: Group documents - Total: {result['pagination']['total_count']}, Page: {page}, Returning: {len(validated_documents)} documents")
+    logger.debug(f"API DEBUG: Group documents - Total: {total_count}, Page: {page}, Returning: {len(validated_documents)} documents")
     
     return schemas.PaginatedDocumentResponse(
         documents=validated_documents,
         pagination=pagination_info,
-        filters_applied=result['filters_applied']
+        filters_applied={
+            'search': search,
+            'author': author,
+            'year': year,
+            'journal': journal,
+            'status': status,
+            'group_id': group_id
+        }
     )
+
+# New endpoint to get filter options
+@router.get("/documents/filter-options", response_model=dict)
+async def get_filter_options(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user_from_cookie),
+    group_id: Optional[str] = Query(None, description="Optional group ID to filter options")
+):
+    """
+    Get available filter options (authors, years, journals) from user's documents.
+    """
+    try:
+        from sqlalchemy import distinct, func
+        
+        # Base query for user's documents
+        query = db.query(models.Document).filter(models.Document.user_id == current_user.id)
+        
+        # If group_id provided, filter to documents in that group
+        if group_id:
+            query = query.join(
+                models.document_group_association,
+                models.Document.id == models.document_group_association.c.document_id
+            ).filter(models.document_group_association.c.document_group_id == group_id)
+        
+        # Get all documents for this user/group
+        documents = query.all()
+        logger.info(f"Found {len(documents)} documents for filter options")
+        
+        # Extract unique values from metadata
+        authors = set()
+        years = set()
+        journals = set()
+        
+        for doc in documents:
+            logger.debug(f"Processing doc {doc.id}: metadata={doc.metadata_}")
+            if doc.metadata_:
+                # Extract authors
+                doc_authors = doc.metadata_.get('authors', [])
+                if isinstance(doc_authors, list):
+                    authors.update(doc_authors)
+                elif isinstance(doc_authors, str):
+                    try:
+                        parsed = json.loads(doc_authors)
+                        if isinstance(parsed, list):
+                            authors.update(parsed)
+                        else:
+                            authors.add(doc_authors)
+                    except:
+                        if doc_authors:
+                            authors.add(doc_authors)
+                
+                # Extract year
+                year = doc.metadata_.get('publication_year')
+                if year:
+                    years.add(int(year))
+                
+                # Extract journal
+                journal = doc.metadata_.get('journal_or_source')
+                if journal:
+                    journals.add(journal)
+        
+        return {
+            "authors": sorted(list(authors)),
+            "years": sorted(list(years), reverse=True),
+            "journals": sorted(list(journals))
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting filter options: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get filter options: {str(e)}")
 
 # Document Groups Endpoints
 
@@ -353,8 +706,6 @@ def remove_document_from_group(
         raise HTTPException(status_code=404, detail="Document group or document not found, or document not in group")
     return db_group
 
-# Documents Endpoints
-
 @router.get("/documents/", response_model=List[schemas.Document])
 def read_user_documents(
     skip: int = 0,
@@ -393,8 +744,9 @@ async def delete_document(
     """
     # Use document service directly to avoid async issues
     try:
-        # Delete from vector stores and AI researcher database
-        vector_success = await document_service.delete_document_completely(doc_id, current_user.id, db)
+        # Initialize service and delete document
+        document_service = UnifiedDocumentService(db)
+        vector_success = await document_service.delete_document_with_cascade(doc_id, current_user.id)
         
         # Delete from main database
         db_success = crud.delete_document_simple_sync(db, doc_id=doc_id, user_id=current_user.id)
@@ -423,24 +775,27 @@ async def bulk_delete_documents(
     deleted_count = 0
     failed_deletions = []
     
+    # Import here to avoid circular dependencies
+    from database.crud_documents_improved import delete_document_atomically_sync
+    
     for doc_id in document_ids:
         try:
-            # Delete from vector stores and AI researcher database
-            vector_success = await document_service.delete_document_completely(doc_id, current_user.id, db)
+            # Call the synchronous version directly
+            success = delete_document_atomically_sync(db, doc_id, current_user.id)
             
-            # Delete from main database
-            db_success = crud.delete_document_simple_sync(db, doc_id=doc_id, user_id=current_user.id)
-            
-            # Count as success if deleted from any system
-            if vector_success or db_success:
+            if success:
                 deleted_count += 1
-                logger.info(f"Document {doc_id} deleted - Vector/AI DB: {vector_success}, Main DB: {db_success}")
+                logger.info(f"Document {doc_id} deleted successfully")
             else:
                 failed_deletions.append(doc_id)
+                logger.warning(f"Failed to delete document {doc_id}")
                 
         except Exception as e:
             logger.error(f"Error deleting document {doc_id}: {e}")
+            import traceback
+            traceback.print_exc()
             failed_deletions.append(doc_id)
+            # Continue with other deletions
     
     if failed_deletions:
         raise HTTPException(
@@ -460,25 +815,40 @@ async def bulk_add_documents_to_group(
     """
     Add multiple existing documents to a group.
     """
-    added_count = 0
-    failed_additions = []
-    
-    for doc_id in document_ids:
-        try:
-            success = await document_service.add_document_to_group(group_id, doc_id, current_user.id, db)
-            if success:
-                added_count += 1
-            else:
+    try:
+        # For now, just add documents directly to the group without checking vector store
+        # This avoids the crash issue with vector store initialization
+        added_count = 0
+        failed_additions = []
+        
+        for doc_id in document_ids:
+            try:
+                # Check if document exists in database
+                document = crud.get_document(db, doc_id=doc_id, user_id=current_user.id)
+                if document:
+                    # Add to group
+                    group_doc = crud.add_document_to_group(db, group_id=group_id, doc_id=doc_id, user_id=current_user.id)
+                    if group_doc:
+                        added_count += 1
+                    else:
+                        failed_additions.append(doc_id)
+                else:
+                    logger.warning(f"Document {doc_id} not found for user {current_user.id}")
+                    failed_additions.append(doc_id)
+            except Exception as e:
+                logger.error(f"Error adding document {doc_id} to group: {e}")
                 failed_additions.append(doc_id)
-        except Exception as e:
-            logger.debug(f"Error adding document {doc_id} to group: {e}")
-            failed_additions.append(doc_id)
-    
-    return {
-        "added_count": added_count,
-        "failed_additions": failed_additions,
-        "message": f"Added {added_count} documents to group"
-    }
+        
+        return {
+            "added_count": added_count,
+            "failed_additions": failed_additions,
+            "message": f"Added {added_count} documents to group"
+        }
+    except Exception as e:
+        logger.error(f"Critical error in bulk_add_documents_to_group: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/document-groups/{group_id}/bulk-remove-documents")
 async def bulk_remove_documents_from_group(
@@ -522,15 +892,76 @@ async def update_document_metadata(
     Update document metadata across all databases (Main DB, AI DB, Vector Store).
     """
     try:
-        updated_document = await document_service.update_document_metadata(
-            doc_id=doc_id,
-            user_id=current_user.id,
-            metadata_update=metadata_update.dict(exclude_unset=True),
-            db=db
-        )
-        
-        if not updated_document:
+        # For now, update metadata directly in the database
+        # The document service needs proper async implementation
+        document = crud.get_document(db, doc_id=doc_id, user_id=current_user.id)
+        if not document:
             raise HTTPException(status_code=404, detail="Document not found")
+        
+        # Get existing metadata or create new
+        existing_metadata = document.metadata_ or {}
+        
+        # Update metadata fields in JSONB
+        update_data = metadata_update.dict(exclude_unset=True)
+        
+        # Build updated metadata
+        updated_metadata = existing_metadata.copy()
+        
+        if 'title' in update_data:
+            updated_metadata['title'] = update_data['title']
+        if 'authors' in update_data:
+            updated_metadata['authors'] = update_data['authors']
+        if 'publication_year' in update_data:
+            updated_metadata['publication_year'] = update_data['publication_year']
+        if 'journal_or_source' in update_data:
+            updated_metadata['journal_or_source'] = update_data['journal_or_source']
+        if 'abstract' in update_data:
+            updated_metadata['abstract'] = update_data['abstract']
+        if 'keywords' in update_data:
+            updated_metadata['keywords'] = update_data['keywords']
+        if 'doi' in update_data:
+            updated_metadata['doi'] = update_data['doi']
+        
+        # Update document's metadata_ field
+        document.metadata_ = updated_metadata
+        
+        db.commit()
+        db.refresh(document)
+        
+        # Prepare response with proper JSON encoding for schema
+        authors = updated_metadata.get('authors', [])
+        if isinstance(authors, list):
+            authors_str = json.dumps(authors) if authors else None
+        else:
+            authors_str = authors
+            
+        keywords = updated_metadata.get('keywords', [])
+        if isinstance(keywords, list):
+            keywords_str = json.dumps(keywords) if keywords else None
+        else:
+            keywords_str = keywords
+        
+        updated_document = {
+            'id': document.id,
+            'user_id': current_user.id,
+            'filename': document.filename,
+            'original_filename': document.original_filename,
+            'title': updated_metadata.get('title', document.original_filename),
+            'authors': authors_str,
+            'publication_year': updated_metadata.get('publication_year'),
+            'journal': updated_metadata.get('journal_or_source'),
+            'abstract': updated_metadata.get('abstract'),
+            'doi': updated_metadata.get('doi'),
+            'keywords': keywords_str,
+            'processing_status': document.processing_status,
+            'processing_error': document.processing_error,
+            'upload_progress': document.upload_progress,
+            'chunk_count': document.chunk_count,
+            'file_size': document.file_size,
+            'created_at': document.created_at.isoformat() if document.created_at else None,
+            'updated_at': document.updated_at.isoformat() if document.updated_at else None,
+            'metadata_': updated_metadata
+        }
         
         # Send websocket update for real-time UI updates
         await send_document_update(str(current_user.id), {
@@ -556,14 +987,64 @@ async def view_document_content(
     Get document content for viewing (includes markdown content and metadata).
     """
     try:
-        document_data = await document_service.get_document_content(
-            doc_id=doc_id,
-            user_id=current_user.id,
-            db=db
-        )
+        document = crud.get_document(db, doc_id=doc_id, user_id=current_user.id)
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
         
-        if not document_data:
-            raise HTTPException(status_code=404, detail="Document not found or no content available")
+        # Extract metadata from JSONB field
+        metadata = document.metadata_ or {}
+        title = metadata.get('title') or document.original_filename or document.filename
+        
+        # Parse authors and keywords if they're stored as strings
+        authors = metadata.get('authors', [])
+        if isinstance(authors, str):
+            try:
+                authors = json.loads(authors)
+            except:
+                authors = [authors]
+        
+        keywords = metadata.get('keywords', [])
+        if isinstance(keywords, str):
+            try:
+                keywords = json.loads(keywords)
+            except:
+                keywords = [keywords]
+        
+        # Try to read the markdown content from file
+        markdown_content = None
+        markdown_path = f"/app/ai_researcher/data/processed/markdown/{doc_id}.md"
+        
+        try:
+            import os
+            if os.path.exists(markdown_path):
+                with open(markdown_path, 'r', encoding='utf-8') as f:
+                    markdown_content = f.read()
+                logger.info(f"Successfully loaded markdown content for document {doc_id}")
+            else:
+                # Try alternative path
+                alt_markdown_path = f"/app/data/markdown_files/{doc_id}.md"
+                if os.path.exists(alt_markdown_path):
+                    with open(alt_markdown_path, 'r', encoding='utf-8') as f:
+                        markdown_content = f.read()
+                    logger.info(f"Successfully loaded markdown content from alternative path for document {doc_id}")
+                else:
+                    logger.warning(f"Markdown file not found for document {doc_id} at {markdown_path} or {alt_markdown_path}")
+        except Exception as e:
+            logger.error(f"Error reading markdown file for document {doc_id}: {e}")
+        
+        # Fallback if no markdown content found
+        if not markdown_content:
+            markdown_content = f"# {title}\n\n*Document content is being processed or not available.*"
+        
+        document_data = {
+            'id': document.id,
+            'original_filename': document.original_filename or document.filename,
+            'title': title,
+            'content': markdown_content,  # Use actual markdown content
+            'metadata_': metadata,  # Use the full metadata object
+            'created_at': document.created_at.isoformat() if document.created_at else None,
+            'file_size': document.file_size
+        }
             
         return schemas.DocumentViewResponse(**document_data)
         
@@ -582,7 +1063,17 @@ async def cancel_document_processing(
     """
     try:
         # Update document status to cancelled in database
-        success = await document_service.cancel_document_processing(doc_id, current_user.id, db)
+        document = crud.get_document(db, doc_id=doc_id, user_id=current_user.id)
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        if document.processing_status == 'processing':
+            document.processing_status = 'cancelled'
+            db.commit()
+            success = True
+        else:
+            success = False
+        
         if not success:
             raise HTTPException(status_code=404, detail="Document not found or cannot be cancelled")
         
