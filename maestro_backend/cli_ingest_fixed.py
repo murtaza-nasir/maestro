@@ -133,7 +133,7 @@ def create_document_record(
         with open(saved_file_path, "wb") as f:
             f.write(file_content)
         
-        # Create document record with cli_processing status to avoid background processor
+        # Create document record with pending status (matching UI upload)
         metadata = {
             "title": file_path.name,
             "file_hash": file_hash,
@@ -146,7 +146,7 @@ def create_document_record(
             filename=file_path.name,
             original_filename=file_path.name,
             metadata_=metadata,
-            processing_status="cli_processing",  # Use cli_processing to prevent background pickup
+            processing_status="pending",  # Start with pending status
             file_size=len(file_content),
             file_path=saved_file_path,
             raw_file_path=saved_file_path,
@@ -254,16 +254,6 @@ def process_document_in_subprocess(args):
         
         # Get database session
         db = next(get_db())
-        
-        # Check if document still has cli_processing status (not picked up by background)
-        document = crud.get_document(db, doc_id=doc_id, user_id=user_id)
-        if not document:
-            print(f"[{index}/{total}] Error: Document {doc_id} not found in database")
-            db.close()
-            return (False, doc_id, "Document not found")
-        
-        if document.processing_status not in ["cli_processing", "processing"]:
-            print(f"[{index}/{total}] Warning: Document {doc_id} status is {document.processing_status}, may be processed by background")
         
         # Update status to processing
         crud.update_document_status(db, doc_id, user_id, "processing", 10)
@@ -373,10 +363,6 @@ def process_single_document(
         if not document:
             progress.log_error(f"Document record not found: {doc_id}")
             return False, doc_id
-        
-        # Check if document still has cli_processing status
-        if document.processing_status not in ["cli_processing", "processing"]:
-            progress.log_warning(f"Document status is {document.processing_status}, may be processed by background")
         
         saved_file_path = Path(document.file_path)
         file_type = saved_file_path.suffix.lower()

@@ -333,7 +333,7 @@ class DocumentProcessor:
             print(f"Error extracting header/footer text from {pdf_path}: {e}")
             return ""
 
-    def process_pdf(self, pdf_path: Path) -> Optional[Dict]:
+    def process_pdf(self, pdf_path: Path, doc_id: Optional[str] = None) -> Optional[Dict]:
         """
         Processes a single PDF file.
         Returns a dictionary containing doc_id, markdown content, metadata, and chunks.
@@ -347,7 +347,9 @@ class DocumentProcessor:
         print(f"Processing PDF: {pdf_path.name}...")
 
         # Always process documents - no database checks needed
-        doc_id = str(uuid.uuid4())
+        # Use provided doc_id or generate a new one
+        if doc_id is None:
+            doc_id = str(uuid.uuid4())
         final_metadata = {"doc_id": doc_id, "original_filename": pdf_path.name}
         print(f"Processing '{pdf_path.name}' with doc_id: {doc_id}")
 
@@ -492,7 +494,7 @@ class DocumentProcessor:
             # Removed markdown_path and markdown_content as they are less relevant for the summary return
         }
 
-    def process_word_document(self, word_path: Path) -> Optional[Dict]:
+    def process_word_document(self, word_path: Path, doc_id: Optional[str] = None) -> Optional[Dict]:
         """
         Processes a single Word document.
         Returns a dictionary containing doc_id, markdown content, metadata, and chunks.
@@ -506,7 +508,9 @@ class DocumentProcessor:
         print(f"Processing Word document: {word_path.name}...")
 
         # Always process documents - no database checks needed
-        doc_id = str(uuid.uuid4())
+        # Use provided doc_id or generate a new one
+        if doc_id is None:
+            doc_id = str(uuid.uuid4())
         final_metadata = {"doc_id": doc_id, "original_filename": word_path.name}
         print(f"Processing '{word_path.name}' with doc_id: {doc_id}")
         
@@ -646,7 +650,7 @@ class DocumentProcessor:
             "extracted_metadata": final_metadata
         }
 
-    def process_markdown_file(self, markdown_path: Path) -> Optional[Dict]:
+    def process_markdown_file(self, markdown_path: Path, doc_id: Optional[str] = None) -> Optional[Dict]:
         """
         Processes a single Markdown file.
         Returns a dictionary containing doc_id, markdown content, metadata, and chunks.
@@ -660,7 +664,9 @@ class DocumentProcessor:
         print(f"Processing Markdown file: {markdown_path.name}...")
 
         # Always process documents - no database checks needed
-        doc_id = str(uuid.uuid4())
+        # Use provided doc_id or generate a new one
+        if doc_id is None:
+            doc_id = str(uuid.uuid4())
         final_metadata = {"doc_id": doc_id, "original_filename": markdown_path.name}
         print(f"Processing '{markdown_path.name}' with doc_id: {doc_id}")
         
@@ -800,7 +806,7 @@ class DocumentProcessor:
             "extracted_metadata": final_metadata
         }
 
-    def process_document(self, file_path: Path) -> Optional[Dict]:
+    def process_document(self, file_path: Path, doc_id: Optional[str] = None) -> Optional[Dict]:
         """
         Generic method to process any supported document format.
         Automatically detects file type and routes to appropriate processing method.
@@ -812,11 +818,11 @@ class DocumentProcessor:
         filename = file_path.name
         
         if filename.lower().endswith('.pdf'):
-            return self.process_pdf(file_path)
+            return self.process_pdf(file_path, doc_id=doc_id)
         elif self.document_converter.is_word_document(filename):
-            return self.process_word_document(file_path)
+            return self.process_word_document(file_path, doc_id=doc_id)
         elif self.document_converter.is_markdown_file(filename):
-            return self.process_markdown_file(file_path)
+            return self.process_markdown_file(file_path, doc_id=doc_id)
         else:
             print(f"Error: Unsupported file format: {filename}")
             return None
