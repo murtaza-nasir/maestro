@@ -188,26 +188,77 @@ Check document processing status.
 ```
 
 #### cleanup
-Clean up documents with specific status (e.g., failed or error documents).
+Remove documents that failed to process or have a specific status. This command helps you clean up your database by removing documents that couldn't be processed successfully.
 
 ```bash
 ./maestro-cli.sh cleanup [options]
 ```
 
 **Options:**
-- `--user <username>`: Clean up for specific user
-- `--status <status>`: Target specific status (failed, error, etc.)
-- `--group <group_id>`: Clean up in specific group
-- `--confirm`: Skip confirmation prompt
+- `--user <username>`: Only clean up documents for a specific user
+- `--status <status>`: Target documents with this status (default: "failed")
+- `--group <group_id>`: Only clean up documents in a specific group
+- `--confirm`: Skip the confirmation prompt
+
+**What it does:**
+1. Finds all documents matching your criteria
+2. Shows a summary of what will be deleted
+3. Asks for confirmation (unless --confirm is used)
+4. Deletes the database records
+5. Removes associated files from disk
 
 **Examples:**
 ```bash
-# Clean up all failed documents
+# Clean up all failed documents (asks for confirmation)
+./maestro-cli.sh cleanup --status failed
+
+# Clean up failed documents without confirmation
 ./maestro-cli.sh cleanup --status failed --confirm
 
-# Clean up for specific user
+# Clean up error documents for a specific user
 ./maestro-cli.sh cleanup --user researcher --status error
+
+# Clean up failed documents in a specific group
+./maestro-cli.sh cleanup --group abc123 --status failed
 ```
+
+#### cleanup-cli
+Remove documents that got stuck during CLI processing. This is useful when you interrupt document ingestion (like pressing Ctrl+C) and documents are left in a "cli_processing" state.
+
+```bash
+./maestro-cli.sh cleanup-cli [options]
+```
+
+**Options:**
+- `--dry-run`: Show what would be deleted without actually deleting anything
+- `--force`: Skip the confirmation prompt
+
+**What it does:**
+1. Finds all documents stuck with "cli_processing" status
+2. Shows detailed information about each stuck document
+3. Calculates total disk space that will be freed
+4. Asks for confirmation (unless --force is used)
+5. Deletes documents and all associated files:
+   - Raw uploaded files
+   - Generated markdown files
+   - Vector store embeddings
+   - Document group associations
+
+**Examples:**
+```bash
+# Check what documents are stuck (dry run)
+./maestro-cli.sh cleanup-cli --dry-run
+
+# Clean up stuck documents (asks for confirmation)
+./maestro-cli.sh cleanup-cli
+
+# Force cleanup without confirmation
+./maestro-cli.sh cleanup-cli --force
+```
+
+**When to use each command:**
+- Use `cleanup` when documents have failed processing and you want to remove them
+- Use `cleanup-cli` when you interrupted a CLI ingestion and documents are stuck
 
 ### Document Search
 
