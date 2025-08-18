@@ -101,6 +101,80 @@ docker compose up -d
 
 ---
 
+### AI/LLM Processing Issues
+
+#### Problem: Planning/Outline Generation Errors
+**Symptoms**: 
+- Errors during outline generation or planning phases with the Planning Agent
+- LLM context length exceeded errors
+- Timeout errors during planning phase
+- "Request too large" errors from local LLMs
+
+**Common Causes**:
+- Local LLMs with smaller context windows (8K-32K tokens)
+- Processing extensive research with hundreds of notes
+- Default settings optimized for cloud LLMs (Claude, GPT-4) not suitable for local models
+
+**Solution 1: Reduce Planning Context via Settings**
+1. Navigate to Settings (user icon in top right)
+2. Go to Research Parameters tab
+3. Find "Content Processing Limits" section
+4. Reduce "Planning Context" from default 200,000 characters:
+   - For local LLMs with 8K context: Set to 30,000-40,000
+   - For local LLMs with 16K context: Set to 60,000-80,000
+   - For local LLMs with 32K context: Set to 100,000-120,000
+5. Save settings
+
+**Solution 2: Adjust Other Related Parameters**
+```yaml
+# In Settings → Research Parameters, also consider adjusting:
+
+Note Content Limit: 15000  # (default: 32000)
+- Reduces size of individual note windows
+
+Writing Preview: 10000  # (default: 30000)  
+- Reduces context for writing passes
+
+Max Notes per Section: 20  # (default: 40)
+- Limits notes assigned to each section
+```
+
+**Solution 3: For Immediate Relief (Environment Variables)**
+```bash
+# Add to your .env file for global defaults:
+MAX_PLANNING_CONTEXT_CHARS=50000
+RESEARCH_NOTE_CONTENT_LIMIT=15000
+WRITING_PREVIOUS_CONTENT_PREVIEW_CHARS=10000
+
+# Restart the backend:
+docker compose restart maestro-backend
+```
+
+**Understanding the Settings**:
+- **Planning Context**: Maximum characters for notes passed to Planning Agent in one batch
+- **Note Content Limit**: Size of content window extracted around each search result
+- **Writing Preview**: How much previous content is shown to Writing Agent for context
+- These settings work together - reducing all three provides best results for local LLMs
+
+#### Problem: Research Agent Memory Issues
+**Symptoms**:
+- Out of memory errors during research phase
+- Container crashes during document processing
+- "CUDA out of memory" errors
+
+**Solution**: Reduce concurrent operations and batch sizes
+```bash
+# In Settings → Research Parameters:
+Concurrent Requests: 2  # (default: 10)
+Max Research Cycles/Section: 1  # (default: 2)
+
+# For document processing, in .env:
+EMBEDDING_BATCH_SIZE=4  # (default: 32)
+MAX_WORKER_THREADS=2  # (default: 10)
+```
+
+---
+
 ### Database Issues
 
 #### Problem: Database connection errors

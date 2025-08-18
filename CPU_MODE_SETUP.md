@@ -83,27 +83,12 @@ If you have ROCm installed, the system will attempt to use it automatically. No 
 
 For AMD GPUs without ROCm support, use CPU mode as described above. This provides stable operation while AMD GPU support is being developed.
 
-## Running Without Docker
-
-If running directly without Docker:
-
-1. **Set environment variables**:
-   ```bash
-   export FORCE_CPU_MODE=true
-   export PREFERRED_DEVICE_TYPE=cpu
-   ```
-
-2. **Run the application**:
-   ```bash
-   python maestro_backend/main.py
-   ```
-
 ## Verifying CPU Mode
 
 To verify that CPU mode is active, check the startup logs:
 
 ```bash
-docker-compose logs backend | grep -i "cpu"
+docker compose logs backend | grep -i "cpu"
 ```
 
 You should see messages like:
@@ -115,10 +100,9 @@ You should see messages like:
 
 ### CPU Mode Performance
 
-- **Embedding generation** will be slower (expect 2-5x slower than GPU)
-- **Document processing** may take longer for large PDFs
+- **Embedding generation** will be slower (expect 5-20x slower than GPU)
+- **Document processing** may take very long for large PDFs
 - **Reranking** operations will have increased latency
-- Consider reducing batch sizes in your settings for better responsiveness
 
 ### Recommended Settings for CPU Mode
 
@@ -177,11 +161,3 @@ If you encounter issues with CPU mode:
    - Your system specifications (CPU, RAM, OS)
    - The error messages you're seeing
    - Your `.env` configuration (remove sensitive data)
-
-## Contributing
-
-If you've successfully set up CPU mode on your AMD system and want to share optimizations:
-
-1. Fork the repository
-2. Create a branch with your improvements
-3. Submit a pull request with details about your setup and performance gains

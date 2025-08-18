@@ -22,34 +22,31 @@ This guide will help you set up and run MAESTRO on Windows systems.
 ### 1. Clone the Repository
 ```powershell
 # Using PowerShell (recommended)
-git clone https://github.com/your-repo/maestro.git
+git clone https://github.com/murtaza-nasir/maestro.git
 cd maestro
 
 # Or using Command Prompt
-git clone https://github.com/your-repo/maestro.git
+git clone https://github.com/murtaza-nasir/maestro.git
 cd maestro
 ```
 
 ### 2. Environment Setup
-
-You have three options for setting up your environment:
 
 #### Option A: PowerShell Script (Recommended)
 ```powershell
 # Run the PowerShell setup script
 .\setup-env.ps1
 ```
+This script will automatically:
+- Copy `.env.example` to `.env`
+- Generate secure passwords
+- Configure network settings
+- Set up GPU configuration
 
-#### Option B: Batch File
-```cmd
-# Run the batch file setup script
-setup-env.bat
-```
-
-#### Option C: Manual Setup
-```cmd
+#### Option B: Manual Setup
+```powershell
 # Copy the environment template
-copy env.example .env
+copy .env.example .env
 
 # Edit the .env file with your preferred text editor
 notepad .env
@@ -57,7 +54,7 @@ notepad .env
 
 ### 3. Start MAESTRO
 
-#### Using Docker Compose (Recommended)
+#### For Systems with NVIDIA GPUs
 ```powershell
 # Start all services
 docker compose up -d
@@ -67,6 +64,18 @@ docker compose logs -f
 
 # Stop services
 docker compose down
+```
+
+#### For CPU-Only Systems (Recommended for most Windows users)
+```powershell
+# Use the CPU-optimized compose file
+docker compose -f docker-compose.cpu.yml up -d
+
+# View logs
+docker compose -f docker-compose.cpu.yml logs -f
+
+# Stop services
+docker compose -f docker-compose.cpu.yml down
 ```
 
 #### Using Individual Commands
@@ -106,52 +115,47 @@ MAESTRO provides Windows-compatible CLI tools for document management:
 .\maestro-cli.ps1 search researcher "machine learning" -Limit 10
 ```
 
-### Using Batch File
-```cmd
-# Show help
-maestro-cli.bat help
-
-# Create a user
-maestro-cli.bat create-user researcher mypass123 --full-name "Research User"
-
-# Create a document group
-maestro-cli.bat create-group researcher "AI Papers" --description "Machine Learning Research"
-
-# Process PDF documents
-maestro-cli.bat ingest researcher ./pdfs
-
-# Check status
-maestro-cli.bat status --user researcher
-
-# Search documents
-maestro-cli.bat search researcher "machine learning" --limit 10
-```
 
 ## Configuration
 
 ### Environment Variables
 
-The main configuration file is `.env`. Key settings include:
+The main configuration file is `.env`, created from `.env.example`. Key settings include:
 
+#### Basic Configuration
 ```env
-# Network Configuration
-BACKEND_HOST=127.0.0.1
-BACKEND_PORT=8000
-FRONTEND_HOST=127.0.0.1
-FRONTEND_PORT=3000
+# Main application port (the only port you need to configure)
+MAESTRO_PORT=80  # Change this if port 80 is in use
 
-# Protocol (HTTP/WS for development, HTTPS/WSS for production)
-API_PROTOCOL=http
-WS_PROTOCOL=ws
-
-# Timezone
+# Timezone configuration
 TZ=America/Chicago
 VITE_SERVER_TIMEZONE=America/Chicago
 
-# GPU Configuration (optional)
-BACKEND_GPU_DEVICE=
-DOC_PROCESSOR_GPU_DEVICE=
-CLI_GPU_DEVICE=
+# Admin credentials (CHANGE THESE!)
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=admin123  # Must change for security
+
+# JWT Secret (generate a secure random string)
+JWT_SECRET_KEY=your-secret-key-change-this
+```
+
+#### GPU Configuration
+```env
+# For GPU acceleration (NVIDIA GPUs only)
+BACKEND_GPU_DEVICE=0
+DOC_PROCESSOR_GPU_DEVICE=0
+CLI_GPU_DEVICE=0
+
+# For CPU-only mode (no GPU or AMD GPUs)
+FORCE_CPU_MODE=true  # Uncomment to disable GPU
+```
+
+#### Database Configuration
+```env
+# PostgreSQL settings (auto-configured by setup script)
+POSTGRES_USER=maestro_user
+POSTGRES_PASSWORD=secure_generated_password
+POSTGRES_DB=maestro_db
 ```
 
 ### GPU Support
@@ -171,7 +175,18 @@ To enable GPU acceleration on Windows:
 
 ### Common Issues
 
-#### 1. Docker Not Running
+#### 1. Line Ending Issues (CRITICAL FOR WINDOWS)
+```powershell
+# If you see "bad interpreter" or similar errors:
+.\\fix-line-endings.ps1
+
+# Then rebuild the backend:
+docker compose down
+docker compose build --no-cache maestro-backend
+docker compose up -d
+```
+
+#### 2. Docker Not Running
 ```powershell
 # Check Docker status
 docker --version
@@ -181,25 +196,23 @@ docker compose version
 # Open Docker Desktop application
 ```
 
-#### 2. Port Conflicts
-If ports 8000 or 3000 are already in use:
+#### 3. Port Conflicts
+If port 80 is already in use:
 ```powershell
-# Check what's using the ports
-netstat -ano | findstr :8000
-netstat -ano | findstr :3000
+# Check what's using port 80
+netstat -ano | findstr :80
 
-# Change ports in .env file
-BACKEND_PORT=8001
-FRONTEND_PORT=3001
+# Change port in .env file
+MAESTRO_PORT=8080  # or any available port
 ```
 
-#### 3. Permission Issues
+#### 4. Permission Issues
 ```powershell
 # Run PowerShell as Administrator if needed
 # Or adjust file permissions for the project directory
 ```
 
-#### 4. Path Issues
+#### 5. Path Issues
 ```powershell
 # Use forward slashes or escaped backslashes in paths
 PDF_DIR=./pdfs
@@ -207,7 +220,7 @@ PDF_DIR=./pdfs
 PDF_DIR=.\\pdfs
 ```
 
-#### 5. Script Execution Policy
+#### 6. Script Execution Policy
 If PowerShell scripts won't run:
 ```powershell
 # Check execution policy
@@ -240,18 +253,21 @@ docker compose --profile cli run --rm cli python cli_ingest.py --help
 
 ```
 maestro/
-├── maestro-cli.bat          # Windows batch CLI script
 ├── maestro-cli.ps1          # Windows PowerShell CLI script
-├── setup-env.bat            # Windows batch setup script
 ├── setup-env.ps1            # Windows PowerShell setup script
-├── env.example              # Environment template
-├── .env                     # Your environment configuration
-├── pdfs/                    # PDF upload directory
+├── fix-line-endings.ps1     # Windows line ending fix script
+├── .env.example             # Environment template with all options
+├── .env                     # Your environment configuration (created from .env.example)
+├── docker-compose.yml       # Main Docker services configuration
+├── docker-compose.cpu.yml   # CPU-only configuration
 ├── maestro_backend/
-│   ├── start.bat            # Windows backend startup script
-│   └── start.sh             # Linux/Mac backend startup script
+│   ├── data/                # Persistent data storage
+│   └── Dockerfile           # Backend container definition
 ├── maestro_frontend/
-└── docker-compose.yml       # Docker services configuration
+│   └── Dockerfile           # Frontend container definition
+├── nginx/                   # Reverse proxy configuration
+│   └── nginx.conf           # Routing rules
+└── reports/                 # Generated research reports
 ```
 
 ## Performance Optimization
@@ -292,9 +308,10 @@ maestro/
 For additional help:
 
 1. Check the main [README.md](README.md) for general information
-2. Review [DOCKER.md](DOCKER.md) for Docker-specific details
-3. Check [USER_GUIDE.md](USER_GUIDE.md) for detailed configuration instructions
-4. Open an issue on GitHub for bugs or feature requests
+2. Review [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common issues and solutions
+3. Review [DOCKER.md](DOCKER.md) for Docker-specific details
+4. Check [USER_GUIDE.md](USER_GUIDE.md) for detailed configuration instructions
+5. Open an issue on [GitHub](https://github.com/murtaza-nasir/maestro/issues) for bugs or feature requests
 
 ## Windows-Specific Notes
 
