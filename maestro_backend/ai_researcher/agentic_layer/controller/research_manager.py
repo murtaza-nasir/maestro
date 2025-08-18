@@ -7,6 +7,11 @@ from collections import deque
 
 from ai_researcher import config
 from ai_researcher.config import THOUGHT_PAD_CONTEXT_LIMIT
+from ai_researcher.dynamic_config import (
+    get_max_planning_context_chars,
+    get_min_notes_per_section_assignment,
+    get_max_notes_per_section_assignment
+)
 from ai_researcher.agentic_layer.context_manager import ExecutionLogEntry
 from ai_researcher.agentic_layer.tool_registry import ToolRegistry
 from ai_researcher.agentic_layer.schemas.planning import SimplifiedPlan, ReportSection, SimplifiedPlanResponse
@@ -474,7 +479,7 @@ Instructions:
 
         # Calculate Total Character Count and Check Limit
         total_chars = sum(len(note.content) for note in initial_notes)
-        char_limit = config.MAX_PLANNING_CONTEXT_CHARS
+        char_limit = get_max_planning_context_chars(mission_id)
         needs_batching = total_chars > char_limit
         logger.info(f"Total characters in initial notes: {total_chars}. Limit: {char_limit}. Batching needed: {needs_batching}")
 
@@ -1167,8 +1172,8 @@ Instructions:
         )
         
         # Get mission-specific config values
-        min_notes = config.MIN_NOTES_PER_SECTION_ASSIGNMENT
-        max_notes = config.MAX_NOTES_PER_SECTION_ASSIGNMENT
+        min_notes = get_min_notes_per_section_assignment(mission_id)
+        max_notes = get_max_notes_per_section_assignment(mission_id)
         max_notes_for_reranking = get_max_notes_for_assignment_reranking(mission_id)
         thought_pad_context_limit = get_thought_pad_context_limit(mission_id)
         

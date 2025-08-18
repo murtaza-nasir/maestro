@@ -14,6 +14,7 @@ from ai_researcher.agentic_layer.agents.base_agent import BaseAgent
 from ai_researcher.agentic_layer.model_dispatcher import ModelDispatcher
 # Note: MODEL_MAPPING was removed from model_dispatcher, we should get it from config now
 from ai_researcher import config # Import config to get model mapping
+from ai_researcher.dynamic_config import get_writing_previous_content_preview_chars, get_thought_pad_context_limit
 # Writing agent typically doesn't need tools directly
 # from ai_researcher.agentic_layer.tool_registry import ToolRegistry
 from ai_researcher.agentic_layer.schemas.planning import ReportSection # Needed for section context
@@ -417,7 +418,8 @@ class WritingAgent(BaseAgent):
              # TODO: Consider providing only immediately preceding sections or summaries?
              for sec_id, sec_content in previous_sections_content.items():
                   # Limit length to avoid excessive context
-                  preview = sec_content[:config.WRITING_PREVIOUS_CONTENT_PREVIEW_CHARS] + "..." if len(sec_content) > config.WRITING_PREVIOUS_CONTENT_PREVIEW_CHARS else sec_content
+                  char_limit = get_writing_previous_content_preview_chars(self.mission_id)
+                  preview = sec_content[:char_limit] + "..." if len(sec_content) > char_limit else sec_content
                   previous_context += f"### Section: {sec_id}\n{preview}\n\n"
         else:
              previous_context += "## Content from Previous Sections:\n\n[No previous sections written yet or provided]\n\n"
@@ -602,13 +604,14 @@ class WritingAgent(BaseAgent):
              if found_sub:
                   sub_title = found_sub.title
 
-             preview = sub_content[:config.WRITING_PREVIOUS_CONTENT_PREVIEW_CHARS] + "..." if len(sub_content) > config.WRITING_PREVIOUS_CONTENT_PREVIEW_CHARS else sub_content
+             char_limit = get_writing_previous_content_preview_chars(self.mission_id)
+             preview = sub_content[:char_limit] + "..." if len(sub_content) > char_limit else sub_content
              subsection_context_str += f"### Subsection: {sub_id} ('{sub_title}')\n{preview}\n\n"
         # --- End Formatting ---
 
         # --- Fetch Goals & Thoughts ---
         active_goals = self.controller.context_manager.get_active_goals(mission_id)
-        active_thoughts = self.controller.context_manager.get_recent_thoughts(mission_id, limit=config.THOUGHT_PAD_CONTEXT_LIMIT)
+        active_thoughts = self.controller.context_manager.get_recent_thoughts(mission_id, limit=get_thought_pad_context_limit(mission_id))
         # Ensure only GoalEntry objects are processed
         goals_str = "\n".join([f"- Goal ID: {g.goal_id}, Status: {g.status}, Text: {g.text}" for g in active_goals if isinstance(g, GoalEntry)]) if active_goals else "None" # Use g.status directly
         active_goals_context = f"**Active Mission Goals:**\n---\n{goals_str}\n---\n"

@@ -101,26 +101,24 @@ export const WritingSearchSettingsModal: React.FC<WritingSearchSettingsModalProp
                 />
               </div>
 
-              {localSettings.useWebSearch && (
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label htmlFor="deep-search" className="text-sm">Deep Search Mode</Label>
-                    <div className="text-xs text-muted-foreground">
-                      Use multiple iterations with quality assessment
-                    </div>
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="deep-search" className="text-sm">Deep Search Mode</Label>
+                  <div className="text-xs text-muted-foreground">
+                    Use multiple iterations with quality assessment (applies to both web and document searches)
                   </div>
-                  <Switch
-                    id="deep-search"
-                    checked={localSettings.deepSearch}
-                    onCheckedChange={(checked) => setLocalSettings({ ...localSettings, deepSearch: checked })}
-                  />
                 </div>
-              )}
+                <Switch
+                  id="deep-search"
+                  checked={localSettings.deepSearch}
+                  onCheckedChange={(checked) => setLocalSettings({ ...localSettings, deepSearch: checked })}
+                />
+              </div>
             </CardContent>
           </Card>
 
           {/* Regular Search Settings */}
-          {localSettings.useWebSearch && !localSettings.deepSearch && (
+          {!localSettings.deepSearch && (
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium">Regular Search Settings</CardTitle>
@@ -175,7 +173,7 @@ export const WritingSearchSettingsModal: React.FC<WritingSearchSettingsModalProp
           )}
 
           {/* Deep Search Settings */}
-          {localSettings.useWebSearch && localSettings.deepSearch && (
+          {localSettings.deepSearch && (
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium">Deep Search Settings</CardTitle>

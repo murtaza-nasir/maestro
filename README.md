@@ -359,7 +359,7 @@ MAESTRO now uses a **unified reverse proxy architecture** to eliminate CORS issu
 - **Single Entry Point**: Everything accessible through one port (default: 80)
 - **No CORS Problems**: Frontend and backend served from the same origin
 - **Simple Configuration**: One host, one port to configure
-- **Production Ready**: nginx handles static files and API routing efficiently
+- **Efficient Routing**: nginx handles static files and API routing efficiently
 
 ### Network Access Options
 
@@ -420,25 +420,37 @@ MAESTRO now uses a **unified reverse proxy architecture** to eliminate CORS issu
 - All data will be lost - backup any important documents first
 - After migration, all data is stored in PostgreSQL with pgvector
 
+**Planning/Outline Generation Errors (Local LLMs or Large Research Tasks)?**
+- If you encounter errors during outline generation or planning phases with the Planning Agent
+- This often happens with local LLMs or when processing extensive research with many notes
+- **Solution**: Reduce the "Planning Context" parameter in Settings → Research Parameters
+- Navigate to Settings → Research tab → Content Processing Limits section
+- Decrease "Planning Context" from default 200,000 to a lower value (e.g., 100,000 or 50,000)
+- This splits large planning tasks into smaller, more manageable batches
+- Particularly important for local LLMs with smaller context windows
+
 ### GPU Support and Performance Optimization
 
 MAESTRO includes automatic GPU detection and configuration for optimal performance across different platforms.
 
 #### CPU-Only Mode
 
-For systems without GPU or when GPU support is problematic:
+For systems without GPU or when GPU support is problematic, you have two options:
 
-**Option 1: Use CPU-only compose file (Recommended for Windows/WSL)**
+**Option 1: Use the CPU-only Docker Compose file (Recommended)**
 ```bash
-# All platforms - forces CPU mode
 docker compose -f docker-compose.cpu.yml up -d
 ```
+This is the cleanest approach - it completely removes GPU dependencies from your containers, making them smaller and preventing any GPU-related errors. Perfect for dedicated CPU-only setups or servers without GPUs.
 
-**Option 2: Set environment variable**
+**Option 2: Set FORCE_CPU_MODE in your .env file**
 ```bash
-# In your .env file
+# Add to your .env file
 FORCE_CPU_MODE=true
+# Then use regular docker compose
+docker compose up -d
 ```
+This approach keeps the GPU libraries in the container but tells the application to ignore them. It's convenient for development when you might want to switch between CPU and GPU modes without changing compose files.
 
 #### Quick Start with GPU Detection
 ```bash

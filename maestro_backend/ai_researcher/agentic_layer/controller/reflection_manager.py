@@ -3,7 +3,8 @@ from typing import Dict, Any, Optional, List, Callable, Tuple, Set
 import queue
 import json
 
-from ai_researcher.config import THOUGHT_PAD_CONTEXT_LIMIT, MAX_PLANNING_CONTEXT_CHARS
+from ai_researcher.config import THOUGHT_PAD_CONTEXT_LIMIT
+from ai_researcher.dynamic_config import get_max_planning_context_chars
 from ai_researcher.agentic_layer.context_manager import ExecutionLogEntry
 from ai_researcher.agentic_layer.schemas.planning import SimplifiedPlan, ReportSection
 from ai_researcher.agentic_layer.schemas.notes import Note
@@ -291,7 +292,7 @@ class ReflectionManager:
         else:
             # Calculate Total Character Count and Check Limit
             total_chars = sum(len(note.content) for note in all_notes)
-            char_limit = MAX_PLANNING_CONTEXT_CHARS
+            char_limit = get_max_planning_context_chars(mission_id)
             needs_batching = total_chars > char_limit
             logger.info(f"Inter-pass revision: Total characters in notes: {total_chars}. Limit: {char_limit}. Batching needed: {needs_batching}")
 

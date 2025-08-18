@@ -21,6 +21,12 @@ import ai_researcher # Import the package itself to find its path
 from ai_researcher.agentic_layer.agents.base_agent import BaseAgent
 from ai_researcher.agentic_layer.model_dispatcher import ModelDispatcher
 from ai_researcher import config # Import config to get model mapping
+from ai_researcher.dynamic_config import (
+    get_research_note_content_limit, 
+    get_max_planning_context_chars,
+    get_main_research_doc_results,
+    get_main_research_web_results
+)
 from ai_researcher.agentic_layer.tool_registry import ToolRegistry
 from ai_researcher.core_rag.query_preparer import QueryPreparer, QueryRewritingTechnique # <-- Import QueryPreparer
 from ai_researcher.agentic_layer.schemas.planning import PlanStep, ActionType, ReportSection
@@ -1160,8 +1166,8 @@ If no relevant sub-questions are identified, return an empty list for "sub_quest
 
         # Track processed chunks and their windows
         processed_chunks: Dict[str, Dict[str, Any]] = {}
-        window_size = config.RESEARCH_NOTE_CONTENT_LIMIT
-        max_window_size = config.MAX_PLANNING_CONTEXT_CHARS
+        window_size = get_research_note_content_limit(self.mission_id)
+        max_window_size = get_max_planning_context_chars(self.mission_id)
 
         # First pass: Find each chunk's position and calculate its window
         for chunk in chunks:
@@ -1562,8 +1568,8 @@ If no relevant sub-questions are identified, return an empty list for "sub_quest
     async def _execute_searches_parallel(
         self,
         queries: List[str],
-        n_doc_results: int = config.MAIN_RESEARCH_DOC_RESULTS, # Use config default
-        n_web_results: int = config.MAIN_RESEARCH_WEB_RESULTS, # Use config default
+        n_doc_results: Optional[int] = None, # Will use dynamic config if not provided
+        n_web_results: Optional[int] = None, # Will use dynamic config if not provided
         use_doc_reranker: bool = True, # Default to TRUE now for all document searches
         update_callback: Optional[Callable] = None, # <-- Add callback
         log_queue: Optional[queue.Queue] = None,     # <-- Add queue
@@ -1578,6 +1584,12 @@ If no relevant sub-questions are identified, return an empty list for "sub_quest
             logger.error("ToolRegistry not available for executing searches.")
             return {"document": [], "web": []}, []
 
+        # Use dynamic config values if not provided
+        if n_doc_results is None:
+            n_doc_results = get_main_research_doc_results(self.mission_id)
+        if n_web_results is None:
+            n_web_results = get_main_research_web_results(self.mission_id)
+            
         logger.info(f"Preparing parallel searches for {len(queries)} queries...")
         search_tasks = []
         
@@ -1877,9 +1889,9 @@ Content Source Details:
 - ID: {source_id}
 - Metadata: {json.dumps(source_metadata, indent=2)}
 
-Content to Analyze (first {config.RESEARCH_NOTE_CONTENT_LIMIT} chars):
+Content to Analyze (first {get_research_note_content_limit(self.mission_id)} chars):
 ---
-{content_to_process[:config.RESEARCH_NOTE_CONTENT_LIMIT]}...
+{content_to_process[:get_research_note_content_limit(self.mission_id)]}...
 ---
 
 Task: Extract all information directly relevant to answering the specific research question: "{question_being_explored}". Synthesize these findings into a detailed and comprehensive note. Ensure all key details, context, and nuances from the source content that help answer the question are included. 
@@ -1916,9 +1928,9 @@ Current Section Details:
 Source Metadata:
 {json.dumps(source_metadata, indent=2)}
 
-Content to Analyze (first {config.RESEARCH_NOTE_CONTENT_LIMIT} chars):
+Content to Analyze (first {get_research_note_content_limit(self.mission_id)} chars):
 ---
-{content_to_process[:config.RESEARCH_NOTE_CONTENT_LIMIT]}...
+{content_to_process[:get_research_note_content_limit(self.mission_id)]}...
 ---
 
 Task: Extract all key information relevant to the section goal (and focus questions, if provided). Synthesize these findings into a detailed and comprehensive note. Ensure all key details, context, and nuances from the source content relevant to the goal/questions are included.

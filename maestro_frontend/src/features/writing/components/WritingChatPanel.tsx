@@ -407,8 +407,8 @@ export const WritingChatPanel: React.FC = () => {
                       </span>
                     </div>
                     
-                    {/* Deep Search Toggle */}
-                    {searchSettings.useWebSearch && (
+                    {/* Deep Search Toggle - Show when either web search is on OR documents are selected */}
+                    {(searchSettings.useWebSearch || selectedGroupId) && (
                       <div className="flex items-center space-x-1.5">
                         <label className="text-xs text-muted-foreground whitespace-nowrap">Deep Search:</label>
                         <button
@@ -416,10 +416,10 @@ export const WritingChatPanel: React.FC = () => {
                           onClick={() => {
                             setSearchSettings(prev => ({ ...prev, deepSearch: !prev.deepSearch }))
                           }}
-                          disabled={isLoading || !searchSettings.useWebSearch}
+                          disabled={isLoading || (!searchSettings.useWebSearch && !selectedGroupId)}
                           className={`relative inline-flex h-3.5 w-6 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 ${
                             searchSettings.deepSearch ? 'bg-primary' : 'bg-secondary'
-                          } ${isLoading || !searchSettings.useWebSearch ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                          } ${isLoading || (!searchSettings.useWebSearch && !selectedGroupId) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                         >
                           <span
                             className={`inline-block h-2 w-2 transform rounded-full bg-white transition-transform ${
