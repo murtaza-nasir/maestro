@@ -5,7 +5,7 @@
 # MAESTRO: Your Self-Hosted AI Research Assistant
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-2.1.0-green.svg)](https://github.com/yourusername/maestro/releases)
+[![Version](https://img.shields.io/badge/Version-2.1.0-green.svg)](https://github.com/murtaza-nasir/maestro.git)
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://hub.docker.com/r/yourusername/maestro)
 
 > **⚠️ Version 0.1.3 - BREAKING CHANGE (08/15/2025)** 

@@ -61,7 +61,7 @@ docker compose -f docker-compose.cpu.yml down
 ### ⏱Startup Issues
 
 #### Problem: Login fails immediately after starting
-**Symptoms**: Frontend loads but login returns "Network Error"
+**Symptoms**: Frontend loads but login returns "Network Error" or "Unable to Login"
 
 **Explanation**: On first run, the backend downloads AI models (5-10 minutes)
 
@@ -113,10 +113,10 @@ docker compose up -d
 **Common Causes**:
 - Local LLMs with smaller context windows (8K-32K tokens)
 - Processing extensive research with hundreds of notes
-- Default settings optimized for cloud LLMs (Claude, GPT-4) not suitable for local models
+- Default settings optimized for cloud LLMs (e.g., via openrouter) not suitable for local models
 
 **Solution 1: Reduce Planning Context via Settings**
-1. Navigate to Settings (user icon in top right)
+1. Navigate to Settings (bottom left of the screen)
 2. Go to Research Parameters tab
 3. Find "Content Processing Limits" section
 4. Reduce "Planning Context" from default 200,000 characters:
@@ -137,17 +137,6 @@ Writing Preview: 10000  # (default: 30000)
 
 Max Notes per Section: 20  # (default: 40)
 - Limits notes assigned to each section
-```
-
-**Solution 3: For Immediate Relief (Environment Variables)**
-```bash
-# Add to your .env file for global defaults:
-MAX_PLANNING_CONTEXT_CHARS=50000
-RESEARCH_NOTE_CONTENT_LIMIT=15000
-WRITING_PREVIOUS_CONTENT_PREVIEW_CHARS=10000
-
-# Restart the backend:
-docker compose restart maestro-backend
 ```
 
 **Understanding the Settings**:
@@ -245,16 +234,6 @@ docker volume rm maestro_postgres-data maestro_maestro-data
 docker compose up -d
 ```
 
-#### Problem: Out of disk space
-**Solution**: Clean up Docker resources
-```bash
-# Remove unused containers, networks, images
-docker system prune -a
-
-# Remove unused volumes
-docker volume prune
-```
-
 ---
 
 ### Debugging Commands
@@ -266,14 +245,14 @@ docker compose ps
 
 #### View logs for specific service:
 ```bash
-docker compose logs maestro-backend
-docker compose logs maestro-postgres
-docker compose logs maestro-frontend
+docker compose logs backend
+docker compose logs postgres
+docker compose logs frontend
 ```
 
 #### Check database users:
 ```bash
-docker exec -it maestro-postgres psql -U maestro_user -d maestro_db -c "SELECT id, username, email FROM users;"
+docker exec -it postgres psql -U maestro_user -d maestro_db -c "SELECT id, username, email FROM users;"
 ```
 
 #### Test backend health:
@@ -303,7 +282,7 @@ docker compose version >> system-info.txt
 ```
 
 2. **Report the issue:**
-- GitHub Issues: https://github.com/Shubhamsaboo/maestro/issues
+- GitHub Issues: https://github.com/murtaza-nasir/maestro.git
 - Include:
   - Error messages
   - Log files
@@ -356,4 +335,4 @@ docker compose up -d
 
 ---
 
-Last updated: 2025-01-15
+Last updated: 2025-08-18
