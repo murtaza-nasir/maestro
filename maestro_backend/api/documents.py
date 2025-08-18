@@ -533,12 +533,14 @@ async def get_filter_options(
                 # Extract authors
                 doc_authors = doc.metadata_.get('authors', [])
                 if isinstance(doc_authors, list):
-                    authors.update(doc_authors)
+                    # Filter out None values before adding
+                    authors.update([a for a in doc_authors if a is not None])
                 elif isinstance(doc_authors, str):
                     try:
                         parsed = json.loads(doc_authors)
                         if isinstance(parsed, list):
-                            authors.update(parsed)
+                            # Filter out None values from parsed list
+                            authors.update([a for a in parsed if a is not None])
                         else:
                             authors.add(doc_authors)
                     except:
@@ -548,17 +550,21 @@ async def get_filter_options(
                 # Extract year
                 year = doc.metadata_.get('publication_year')
                 if year:
-                    years.add(int(year))
+                    try:
+                        years.add(int(year))
+                    except (ValueError, TypeError):
+                        logger.debug(f"Could not convert year to int: {year}")
                 
                 # Extract journal
                 journal = doc.metadata_.get('journal_or_source')
-                if journal:
+                if journal and journal is not None:
                     journals.add(journal)
         
+        # Filter out None values before sorting
         return {
-            "authors": sorted(list(authors)),
+            "authors": sorted([a for a in authors if a is not None]),
             "years": sorted(list(years), reverse=True),
-            "journals": sorted(list(journals))
+            "journals": sorted([j for j in journals if j is not None])
         }
         
     except Exception as e:

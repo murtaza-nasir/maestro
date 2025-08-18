@@ -249,20 +249,22 @@ Output ONLY a single JSON object conforming EXACTLY to the RequestAnalysisOutput
         active_thoughts = self.controller.context_manager.get_recent_thoughts(mission_id, limit=THOUGHT_PAD_CONTEXT_LIMIT) if mission_id else None
 
         try:
-            # Apply Semaphore
-            async with self.controller.maybe_semaphore:
-                # Call the MessengerAgent's run method
-                agent_output, model_details, scratchpad_update = await self.controller.messenger_agent.run(
-                    user_message=user_message,
-                    chat_history=chat_history,
-                    mission_context_summary=mission_context_summary,
-                    active_goals=active_goals,
-                    active_thoughts=active_thoughts,
-                    agent_scratchpad=current_scratchpad,
-                    mission_id=mission_id,
-                    log_queue=log_queue,
-                    update_callback=update_callback
-                )
+            # Don't apply semaphore for chat operations to allow concurrent chats
+            # The semaphore should only be used for heavy research operations
+            # that might overwhelm the LLM API with many parallel requests
+            
+            # Call the MessengerAgent's run method directly without semaphore
+            agent_output, model_details, scratchpad_update = await self.controller.messenger_agent.run(
+                user_message=user_message,
+                chat_history=chat_history,
+                mission_context_summary=mission_context_summary,
+                active_goals=active_goals,
+                active_thoughts=active_thoughts,
+                agent_scratchpad=current_scratchpad,
+                mission_id=mission_id,
+                log_queue=log_queue,
+                update_callback=update_callback
+            )
 
             # Update scratchpad if the agent provided an update and mission_id exists
             if scratchpad_update and mission_id:

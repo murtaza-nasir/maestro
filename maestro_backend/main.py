@@ -146,6 +146,55 @@ async def startup_event():
     finally:
         db.close()
     
+    # Clean up dangling CLI-ingested documents
+    db = SessionLocal()
+    try:
+        from database.models import Document, document_group_association
+        logger.info("Checking for dangling CLI documents...")
+        
+        # Find and clean up documents with cli_processing status
+        cli_documents = db.query(Document).filter(
+            Document.processing_status == "cli_processing"
+        ).all()
+        
+        if cli_documents:
+            logger.info(f"Found {len(cli_documents)} dangling CLI documents, cleaning up...")
+            deleted_count = 0
+            
+            for doc in cli_documents:
+                try:
+                    # Delete associated files
+                    if doc.file_path and os.path.exists(doc.file_path):
+                        os.remove(doc.file_path)
+                    
+                    markdown_path = f"/app/data/markdown_files/{doc.id}.md"
+                    if os.path.exists(markdown_path):
+                        os.remove(markdown_path)
+                    
+                    # Remove from document groups
+                    db.execute(
+                        document_group_association.delete().where(
+                            document_group_association.c.document_id == doc.id
+                        )
+                    )
+                    
+                    # Delete document record
+                    db.delete(doc)
+                    deleted_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to clean up document {doc.id}: {e}")
+            
+            db.commit()
+            logger.info(f"Cleaned up {deleted_count} dangling CLI documents")
+        else:
+            logger.debug("No dangling CLI documents found")
+            
+    except Exception as e:
+        logger.error(f"Failed to run CLI document cleanup: {e}", exc_info=True)
+        # Don't fail startup if cleanup fails
+    finally:
+        db.close()
+    
     # Initialize AI research components
     try:
         from api.missions import initialize_ai_components

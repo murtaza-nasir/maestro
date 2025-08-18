@@ -891,6 +891,138 @@ def cleanup(
         db.close()
 
 @app.command()
+def cleanup_cli(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be deleted without actually deleting"),
+    force: bool = typer.Option(False, "--force", help="Skip confirmation prompt"),
+):
+    """
+    Clean up dangling CLI-ingested documents.
+    
+    Removes documents that were being processed via CLI but were interrupted
+    (e.g., by Ctrl+C) and are now stuck with 'cli_processing' status.
+    """
+    try:
+        db = get_db_session()
+        
+        # Find all documents with cli_processing status
+        cli_documents = db.query(Document).filter(
+            Document.processing_status == "cli_processing"
+        ).all()
+        
+        if not cli_documents:
+            typer.secho("✓ No dangling CLI documents found.", fg=typer.colors.GREEN)
+            return
+        
+        typer.secho(f"\nFound {len(cli_documents)} dangling CLI documents:", fg=typer.colors.YELLOW)
+        typer.echo("-" * 80)
+        
+        total_size = 0
+        for doc in cli_documents:
+            user = crud.get_user(db, user_id=doc.user_id)
+            username = user.username if user else f"User ID {doc.user_id}"
+            
+            typer.echo(f"\nDocument ID: {doc.id}")
+            typer.echo(f"  User: {username}")
+            typer.echo(f"  Filename: {doc.original_filename}")
+            typer.echo(f"  Created: {doc.created_at}")
+            if doc.file_size:
+                typer.echo(f"  File size: {doc.file_size:,} bytes")
+                total_size += doc.file_size
+            if doc.file_path:
+                exists = os.path.exists(doc.file_path) if doc.file_path else False
+                typer.echo(f"  File path: {doc.file_path} {'(exists)' if exists else '(missing)'}")
+        
+        typer.echo("\n" + "-" * 80)
+        typer.echo(f"Total documents: {len(cli_documents)}")
+        if total_size > 0:
+            typer.echo(f"Total size: {total_size:,} bytes ({total_size / (1024*1024):.2f} MB)")
+        
+        if dry_run:
+            typer.secho("\nDRY RUN - No changes made", fg=typer.colors.YELLOW)
+            typer.echo("These documents and their associated files would be deleted.")
+            return
+        
+        # Ask for confirmation unless --force is used
+        if not force:
+            confirm = typer.confirm("\nDo you want to delete these documents and their files?")
+            if not confirm:
+                typer.echo("Cleanup cancelled.")
+                return
+        
+        # Perform cleanup
+        typer.echo("\nCleaning up dangling documents...")
+        deleted_count = 0
+        errors = []
+        
+        for doc in cli_documents:
+            try:
+                typer.echo(f"  Deleting {doc.original_filename}...", nl=False)
+                
+                # Delete associated files
+                files_deleted = []
+                
+                # Raw file
+                if doc.file_path and os.path.exists(doc.file_path):
+                    os.remove(doc.file_path)
+                    files_deleted.append("raw file")
+                
+                # Markdown file (if exists)
+                markdown_path = f"/app/data/markdown_files/{doc.id}.md"
+                if os.path.exists(markdown_path):
+                    os.remove(markdown_path)
+                    files_deleted.append("markdown")
+                
+                # Remove from document groups (if any)
+                from database.models import document_group_association
+                db.execute(
+                    document_group_association.delete().where(
+                        document_group_association.c.document_id == doc.id
+                    )
+                )
+                
+                # Try to delete from vector store
+                try:
+                    vector_store = VectorStore()
+                    for collection_name in ["documents_dense", "documents_sparse"]:
+                        try:
+                            collection = vector_store.chroma_client.get_collection(collection_name)
+                            collection.delete(where={"doc_id": str(doc.id)})
+                        except:
+                            pass  # Collection might not exist or document might not be in it
+                except:
+                    pass  # Vector store might not be available
+                
+                # Delete the document record
+                db.delete(doc)
+                deleted_count += 1
+                
+                if files_deleted:
+                    typer.secho(f" ✓ (deleted: {', '.join(files_deleted)})", fg=typer.colors.GREEN)
+                else:
+                    typer.secho(" ✓", fg=typer.colors.GREEN)
+                    
+            except Exception as e:
+                typer.secho(f" ✗ Error: {e}", fg=typer.colors.RED)
+                errors.append(f"Document {doc.id}: {str(e)}")
+        
+        # Commit all deletions
+        db.commit()
+        
+        typer.echo("\n" + "-" * 80)
+        typer.secho(f"✓ Successfully cleaned up {deleted_count} dangling CLI documents", fg=typer.colors.GREEN)
+        
+        if errors:
+            typer.secho(f"⚠ {len(errors)} errors encountered:", fg=typer.colors.YELLOW)
+            for error in errors[:5]:  # Show first 5 errors
+                typer.echo(f"  - {error}")
+                
+    except Exception as e:
+        typer.secho(f"Error during CLI cleanup: {e}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    finally:
+        db.close()
+
+@app.command()
 def search(
     username: str = typer.Argument(..., help="Username to search for"),
     query: str = typer.Argument(..., help="Search query"),

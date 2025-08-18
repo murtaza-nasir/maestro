@@ -98,6 +98,13 @@ Commands:
     - Optionally filter by user and/or group
     - Use --confirm to skip confirmation prompt
 
+  cleanup-cli [--dry-run] [--force]
+    Clean up dangling CLI-ingested documents
+    - Removes documents stuck with 'cli_processing' status (interrupted CLI ingestions)
+    - Deletes associated files and vector store entries
+    - Use --dry-run to see what would be deleted without making changes
+    - Use --force to skip confirmation prompt
+
   search <username> <query> [--limit <num>]
     Search through documents for a specific user
 
@@ -272,6 +279,13 @@ case "$1" in
         print_info "Starting document cleanup..."
         run_direct_cli cleanup "$@"
         print_success "Cleanup command completed"
+        ;;
+    "cleanup-cli")
+        shift
+        print_info "Starting CLI document cleanup..."
+        print_warning "This will remove all documents stuck in 'cli_processing' status"
+        run_direct_cli cleanup-cli "$@"
+        print_success "CLI cleanup completed"
         ;;
     "search")
         shift

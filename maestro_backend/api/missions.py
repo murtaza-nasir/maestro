@@ -24,6 +24,8 @@ from database.models import User
 from ai_researcher.agentic_layer.context_manager import ContextManager, set_main_event_loop
 from ai_researcher.agentic_layer.schemas.notes import Note
 from ai_researcher.agentic_layer.agent_controller import AgentController
+from ai_researcher import config
+from ai_researcher.agentic_layer.controller.core_controller import MaybeSemaphore
 import json
 from ai_researcher.agentic_layer.model_dispatcher import ModelDispatcher
 from ai_researcher.agentic_layer.tool_registry import ToolRegistry
@@ -369,10 +371,16 @@ def get_user_specific_agent_controller(
     # Get user settings
     user_settings = current_user.settings or {}
     
-    # Create a user-specific model dispatcher
+    # Create a per-chat semaphore to allow concurrent chats
+    # Each chat gets its own semaphore, allowing multiple chats to process simultaneously
+    chat_semaphore = None
+    if config.MAX_CONCURRENT_REQUESTS > 0:
+        # Create a per-chat semaphore - each chat can make its own concurrent requests
+        chat_semaphore = asyncio.Semaphore(config.MAX_CONCURRENT_REQUESTS)
+    
     user_model_dispatcher = ModelDispatcher(
         user_settings=user_settings,
-        semaphore=agent_controller.semaphore,
+        semaphore=chat_semaphore,  # Use per-chat semaphore for true concurrency
         context_manager=agent_controller.context_manager
     )
     
@@ -385,6 +393,11 @@ def get_user_specific_agent_controller(
         retriever=agent_controller.retriever,
         reranker=agent_controller.reranker
     )
+    
+    # Override the semaphore with our per-chat semaphore
+    # This ensures each chat has its own concurrency limit
+    user_agent_controller.semaphore = chat_semaphore
+    user_agent_controller.maybe_semaphore = MaybeSemaphore(chat_semaphore)
     
     return user_agent_controller
 

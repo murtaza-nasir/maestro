@@ -90,10 +90,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
     scrollToBottom()
   }, [currentChat?.messages])
 
-  // Set active chat when chatId changes
+  // Set active chat when chatId changes and reset loading state
   useEffect(() => {
     if (chatId && chatId !== activeChat?.id) {
       setActiveChat(chatId)
+      // Reset loading state when switching chats
+      setIsLoading(false)
     }
   }, [chatId, activeChat?.id, setActiveChat])
 
