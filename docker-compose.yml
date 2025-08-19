@@ -73,6 +73,8 @@ services:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-change-this}
     networks:
       - maestro-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     # GPU support - uncomment the following lines if you have a GPU and nvidia-container-toolkit installed
     deploy:
       resources:
@@ -108,6 +110,8 @@ services:
       dockerfile: Dockerfile
     image: maestro-doc-processor  # Unique image name
     container_name: maestro-doc-processor
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: ["python", "-u", "services/background_document_processor.py"]
     working_dir: /app
     volumes:
@@ -140,6 +144,8 @@ services:
       dockerfile: Dockerfile
     image: maestro-cli  # Unique image name
     container_name: maestro-cli
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     working_dir: /app
     volumes:
       - maestro-data:/app/ai_researcher/data

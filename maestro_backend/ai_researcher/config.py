@@ -191,7 +191,8 @@ MID_LLM_PROVIDER = get_mid_llm_provider() # Default mid to openrouter
 # --- Local LLM Configuration ---
 # Example: Using a local server like LM Studio, Ollama, etc.
 # Ensure your local server provides an OpenAI-compatible API endpoint.
-LOCAL_LLM_BASE_URL = os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:5000/v1/") # Default local URL
+# For Docker, use host.docker.internal to connect to the host machine.
+LOCAL_LLM_BASE_URL = os.getenv("LOCAL_LLM_BASE_URL", "http://host.docker.internal:1234/v1")
 LOCAL_LLM_API_KEY = os.getenv("LOCAL_LLM_API_KEY", "none") # Often 'none' or not required for local
 # Define local model names (adjust if your local models have different identifiers)
 # These might be the actual file names or identifiers used by your local server.
