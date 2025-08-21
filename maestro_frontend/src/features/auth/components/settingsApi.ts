@@ -30,11 +30,18 @@ export interface AISettings {
 }
 
 export interface SearchSettings {
-  provider: 'tavily' | 'linkup' | 'searxng'
+  provider: 'tavily' | 'linkup' | 'searxng' | 'jina'
   tavily_api_key: string | null
   linkup_api_key: string | null
+  jina_api_key: string | null
   searxng_base_url: string | null
   searxng_categories: string | null
+  max_results?: number
+  search_depth?: 'standard' | 'advanced'
+  // Jina-specific settings
+  jina_read_full_content?: boolean
+  jina_fetch_favicons?: boolean
+  jina_bypass_cache?: boolean
 }
 
 export interface ResearchParameters {
@@ -53,6 +60,16 @@ export interface ResearchParameters {
   auto_optimize_params: boolean
 }
 
+export interface WebFetchSettings {
+  provider: 'original' | 'jina' | 'original_with_jina_fallback'
+  jina_browser_engine?: string
+  jina_content_format?: string
+  jina_timeout?: number
+  jina_remove_images?: boolean
+  jina_gather_links?: boolean
+  jina_gather_images?: boolean
+}
+
 export interface AppearanceSettings {
   theme: 'light' | 'dark'
   color_scheme: 'default' | 'blue' | 'emerald' | 'purple' | 'rose' | 'amber' | 'teal'
@@ -61,6 +78,7 @@ export interface AppearanceSettings {
 export interface UserSettings {
   ai_endpoints: AISettings
   search: SearchSettings
+  web_fetch?: WebFetchSettings
   research_parameters: ResearchParameters
   appearance: AppearanceSettings
 }

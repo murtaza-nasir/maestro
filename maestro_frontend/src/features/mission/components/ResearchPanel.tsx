@@ -15,9 +15,12 @@ import { FileSearch, MessageSquare, Play, Square, RotateCcw } from 'lucide-react
 
 export const ResearchPanel: React.FC = () => {
   const { activeChat } = useChatStore()
-  const { missions, startMission, stopMission, resumeMission, fetchMissionStatus, ensureMissionInStore, missionLogs, setMissionLogs } = useMissionStore()
+  const { missions, startMission, stopMission, resumeMission, fetchMissionStatus, ensureMissionInStore, missionLogs, setMissionLogs, appendMissionLogs } = useMissionStore()
   const { addToast } = useToast()
   const previousMissionId = useRef<string | null>(null)
+  const [hasMoreLogs, setHasMoreLogs] = React.useState(false)
+  const [isLoadingMoreLogs, setIsLoadingMoreLogs] = React.useState(false)
+  const [totalLogsCount, setTotalLogsCount] = React.useState(0)
   
   // Get panel controls - use try/catch to handle when not in SplitPaneLayout context
   let panelControls = null
@@ -39,9 +42,8 @@ export const ResearchPanel: React.FC = () => {
     }
     
     try {
-      // Fetch only recent logs to reduce payload size (limit to 100 most recent)
-      // WebSocket will provide real-time updates for new logs
-      const response = await apiClient.get(`/api/missions/${activeChat.missionId}/logs?limit=100`)
+      // Fetch initial batch of logs with pagination support
+      const response = await apiClient.get(`/api/missions/${activeChat.missionId}/logs?skip=0&limit=100`)
       if (response.data && response.data.logs) {
         const persistentLogs = response.data.logs.map((log: any) => ({
           ...log,
@@ -52,7 +54,12 @@ export const ResearchPanel: React.FC = () => {
         const sortedLogs = persistentLogs.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
         
         setMissionLogs(activeChat.missionId, sortedLogs)
-        // console.log(`Loaded ${persistentLogs.length} recent logs from database for mission ${activeChat.missionId}`)
+        
+        // Update pagination state
+        setHasMoreLogs(response.data.has_more || false)
+        setTotalLogsCount(response.data.total || sortedLogs.length)
+        
+        // console.log(`Loaded ${persistentLogs.length} logs from database (total: ${response.data.total})`)
       }
     } catch (error) {
       console.error('Failed to fetch initial mission logs:', error)
@@ -60,6 +67,48 @@ export const ResearchPanel: React.FC = () => {
       console.log(`Failed to fetch logs for mission ${activeChat.missionId}`)
     }
   }, [activeChat?.missionId, setMissionLogs])
+
+  // Load more logs function
+  const loadMoreLogs = useCallback(async () => {
+    if (!activeChat?.missionId || !hasMoreLogs || isLoadingMoreLogs) {
+      return
+    }
+    
+    setIsLoadingMoreLogs(true)
+    try {
+      const currentLogs = missionLogs[activeChat.missionId] || []
+      const skip = currentLogs.length
+      
+      const response = await apiClient.get(`/api/missions/${activeChat.missionId}/logs?skip=${skip}&limit=100`)
+      if (response.data && response.data.logs) {
+        const newLogs = response.data.logs.map((log: any) => ({
+          ...log,
+          timestamp: ensureDate(log.timestamp),
+        }))
+        
+        // Sort new logs by timestamp
+        const sortedNewLogs = newLogs.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+        
+        // Append new logs to existing ones
+        appendMissionLogs(activeChat.missionId, sortedNewLogs)
+        
+        // Update pagination state
+        setHasMoreLogs(response.data.has_more || false)
+        setTotalLogsCount(response.data.total || (currentLogs.length + sortedNewLogs.length))
+        
+        // console.log(`Loaded ${sortedNewLogs.length} more logs (total now: ${currentLogs.length + sortedNewLogs.length})`)
+      }
+    } catch (error) {
+      console.error('Failed to load more logs:', error)
+      addToast({
+        type: 'error',
+        title: 'Failed to load more logs',
+        message: 'Please try again'
+      })
+    } finally {
+      setIsLoadingMoreLogs(false)
+    }
+  }, [activeChat?.missionId, hasMoreLogs, isLoadingMoreLogs, missionLogs, appendMissionLogs, addToast])
 
   // Set up single WebSocket connection for ALL research updates
   const { isConnected, subscribeMission, unsubscribeMission } = useResearchWebSocket()
@@ -88,6 +137,9 @@ export const ResearchPanel: React.FC = () => {
     if (missionChanged) {
       // console.log(`Mission changed from ${previousMissionId.current} to ${activeChat?.missionId}`)
       previousMissionId.current = activeChat?.missionId
+      // Reset pagination state when mission changes
+      setHasMoreLogs(false)
+      setTotalLogsCount(0)
     }
     
     if (activeChat?.missionId) {
@@ -349,6 +401,10 @@ export const ResearchPanel: React.FC = () => {
           <ResearchTabs 
             missionId={activeChat.missionId} 
             isWebSocketConnected={isConnected}
+            hasMoreLogs={hasMoreLogs}
+            onLoadMoreLogs={loadMoreLogs}
+            isLoadingMoreLogs={isLoadingMoreLogs}
+            totalLogsCount={totalLogsCount}
           />
         </div>
       </div>

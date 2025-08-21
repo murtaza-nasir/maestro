@@ -68,6 +68,15 @@ class WritingStatsTracker:
         
         logger.debug(f"Tracked document search for session {session_id}")
     
+    async def track_web_fetch(self, session_id: str):
+        """Track a web page fetch operation."""
+        if not session_id:
+            return
+            
+        # For now, just count it as another web search since we don't have a separate counter
+        # In the future, we might want to add a separate web_fetches_delta field
+        logger.debug(f"Tracked web page fetch for session {session_id}")
+    
     async def _send_stats_update(self, session_id: str, stats_delta: Dict[str, Any]):
         """Send stats update via WebSocket using the global writing manager."""
         try:
@@ -117,6 +126,13 @@ class SimplifiedWritingAgent:
     def __init__(self, model_dispatcher: ModelDispatcher):
         self.model_dispatcher = model_dispatcher
         self.stats_tracker = WritingStatsTracker()
+        
+        # Tool cache to avoid re-initialization
+        self._web_search_tool = None
+        self._web_page_fetcher = None
+        self._document_search_tool = None
+        self._retriever = None
+        self._query_preparer = None
 
     async def run(self, prompt: str, draft_content: str, chat_history: str, context_info: Optional[Dict[str, Any]] = None, status_callback: Optional[callable] = None) -> Dict[str, Any]:
         """
@@ -160,7 +176,9 @@ class SimplifiedWritingAgent:
             if router_decision in ["search", "both"] and context_info.get("use_web_search"):
                 if status_callback:
                     search_mode = "deep web search" if use_deep_search else "web search"
-                    await status_callback("searching_web", f"Performing {search_mode} for relevant information...")
+                    # Include the actual query in the status message
+                    query_preview = prompt[:80] + "..." if len(prompt) > 80 else prompt
+                    await status_callback("searching_web", f"Performing {search_mode} for: {query_preview}")
                 
                 logger.info(f"Performing iterative web search (deep={use_deep_search}, max_iterations={max_search_iterations})...")
                 web_results, web_sources = await self._perform_iterative_web_search(
@@ -176,7 +194,9 @@ class SimplifiedWritingAgent:
             if router_decision in ["documents", "both"] and context_info.get("document_group_id"):
                 if status_callback:
                     search_mode = "deep document search" if use_deep_search else "document search"
-                    await status_callback("searching_documents", f"Performing {search_mode} in your collection...")
+                    # Include the actual query in the status message
+                    query_preview = prompt[:80] + "..." if len(prompt) > 80 else prompt
+                    await status_callback("searching_documents", f"Performing {search_mode} in your collection for: {query_preview}")
                 
                 logger.info(f"Performing iterative document search in group: {context_info['document_group_id']} (deep={use_deep_search})")
                 doc_results, doc_sources = await self._perform_iterative_document_search(
@@ -541,7 +561,7 @@ class SimplifiedWritingAgent:
             logger.error(f"Error during query enrichment: {e}", exc_info=True)
             return raw_query
 
-    async def _perform_web_search(self, query: str, chat_history: str = "", session_id: str = None, max_search_results: int = 5) -> tuple[str, List[Dict[str, Any]]]:
+    async def _perform_web_search(self, query: str, chat_history: str = "", session_id: str = None, max_search_results: int = 5, status_callback: Optional[callable] = None) -> tuple[str, List[Dict[str, Any]]]:
         """
         Performs web search with query enrichment and returns formatted results with source metadata.
         Returns: (formatted_results, sources_list)
@@ -550,11 +570,19 @@ class SimplifiedWritingAgent:
             from ai_researcher.agentic_layer.tools.web_search_tool import WebSearchTool
             from ai_researcher import config
             
+            # Send status update with the actual query
+            if status_callback:
+                query_preview = query[:80] + "..." if len(query) > 80 else query
+                await status_callback("searching_web", f"Searching for: {query_preview}")
+            
             # Enrich the query with context from chat history
             enriched_query = await self._enrich_search_query(raw_query=query, chat_history=chat_history, context_type="web")
             
-            # Initialize web search tool
-            web_search_tool = WebSearchTool()
+            # Use cached web search tool or create new one
+            if not self._web_search_tool:
+                self._web_search_tool = WebSearchTool()
+                logger.info("Created new WebSearchTool instance (cached for reuse)")
+            web_search_tool = self._web_search_tool
             
             # Perform the search with enriched query
             logger.info(f"Executing web search for enriched query: {enriched_query}")
@@ -582,17 +610,63 @@ class SimplifiedWritingAgent:
                 snippet = result_item.get("snippet", "No content available")
                 url = result_item.get("url", "#")
                 
-                formatted_results += f"**Result {i}: {title}**\n"
-                formatted_results += f"Source: {url}\n"
-                formatted_results += f"Content: {snippet}\n\n"
+                # Assess relevance of this result
+                is_relevant = await self._assess_search_result_relevance(
+                    query=query,
+                    title=title,
+                    snippet=snippet,
+                    url=url
+                )
                 
-                # Add to sources list
-                sources.append({
-                    "type": "web",
-                    "title": title,
-                    "url": url,
-                    "provider": config.WEB_SEARCH_PROVIDER.capitalize()
-                })
+                if is_relevant:
+                    logger.info(f"Result {i} deemed relevant, fetching full content from: {url[:60]}...")
+                    
+                    # Send status update when fetching content
+                    if status_callback:
+                        await status_callback("fetching_content", f"Fetching full content from: {title[:50]}...")
+                    
+                    # Fetch full content using the web page fetcher
+                    full_content = await self._fetch_web_page_content(url, session_id)
+                    
+                    if full_content and "error" not in full_content:
+                        # Use full content instead of snippet
+                        content_text = full_content.get("text", snippet)[:5000]  # Limit content length
+                        formatted_results += f"**Result {i}: {title}** [FULL CONTENT]\n"
+                        formatted_results += f"Source: {url}\n"
+                        formatted_results += f"Content: {content_text}\n\n"
+                        
+                        # Track that we fetched full content
+                        if session_id:
+                            await self.stats_tracker.track_web_fetch(session_id)
+                        
+                        # Add to sources list ONLY if we successfully fetched content
+                        sources.append({
+                            "type": "web",
+                            "title": title,
+                            "url": url,
+                            "provider": config.WEB_SEARCH_PROVIDER.capitalize()
+                        })
+                    else:
+                        # Fall back to snippet if fetch failed
+                        logger.warning(f"Failed to fetch full content for {url[:60]}, using snippet")
+                        formatted_results += f"**Result {i}: {title}**\n"
+                        formatted_results += f"Source: {url}\n"
+                        formatted_results += f"Content: {snippet}\n\n"
+                        
+                        # Still add to sources since we're using the snippet
+                        sources.append({
+                            "type": "web",
+                            "title": title,
+                            "url": url,
+                            "provider": config.WEB_SEARCH_PROVIDER.capitalize()
+                        })
+                else:
+                    # Not relevant enough for full fetch, just use snippet
+                    logger.debug(f"Result {i} not relevant enough for full fetch: {title[:60]}")
+                    formatted_results += f"**Result {i}: {title}** [NOT RELEVANT]\n"
+                    formatted_results += f"Source: {url}\n"
+                    formatted_results += f"Content: {snippet}\n\n"
+                    # DO NOT add non-relevant results to sources list
             
             formatted_results += "=== END WEB SEARCH RESULTS ===\n"
             
@@ -619,8 +693,8 @@ class SimplifiedWritingAgent:
             # Enrich the query with context from chat history for document search
             enriched_query = await self._enrich_search_query(raw_query=query, chat_history=chat_history, context_type="document")
             
-            # Initialize the RAG components (this should ideally be cached/reused)
-            logger.info(f"Initializing document search components for group: {document_group_id}")
+            # Use cached RAG components when possible
+            logger.info(f"Using document search components for group: {document_group_id}")
             
             # Initialize the new clean vector store using singleton
             try:
@@ -643,26 +717,34 @@ class SimplifiedWritingAgent:
                 embedder = model_cache.get_embedder()
                 reranker = model_cache.get_reranker()
                 
-                # Initialize retriever
-                retriever = Retriever(
-                    vector_store=vector_store,
-                    embedder=embedder,
-                    reranker=reranker
-                )
+                # Use cached retriever or create new one
+                if not self._retriever:
+                    self._retriever = Retriever(
+                        vector_store=vector_store,
+                        embedder=embedder,
+                        reranker=reranker
+                    )
+                    logger.info("Created new Retriever instance (cached for reuse)")
             except Exception as e:
                 logger.error(f"Failed to initialize retriever components: {e}", exc_info=True)
                 return f"Error: Failed to initialize search components. Error: {str(e)}", []
             
-            # Initialize query components
-            query_preparer = QueryPreparer(model_dispatcher=self.model_dispatcher)
+            # Use cached query components or create new ones
+            if not self._query_preparer:
+                self._query_preparer = QueryPreparer(model_dispatcher=self.model_dispatcher)
+                logger.info("Created new QueryPreparer instance (cached for reuse)")
+            
             query_strategist = QueryStrategist(model_dispatcher=self.model_dispatcher)
             
-            # Initialize document search tool
-            doc_search_tool = DocumentSearchTool(
-                retriever=retriever,
-                query_preparer=query_preparer,
-                query_strategist=query_strategist
-            )
+            # Use cached document search tool or create new one
+            if not self._document_search_tool:
+                self._document_search_tool = DocumentSearchTool(
+                    retriever=self._retriever,
+                    query_preparer=self._query_preparer,
+                    query_strategist=query_strategist
+                )
+                logger.info("Created new DocumentSearchTool instance (cached for reuse)")
+            doc_search_tool = self._document_search_tool
             
             # Perform the search with enriched query
             logger.info(f"Executing document search for enriched query: {enriched_query} in group: {document_group_id}")
@@ -854,6 +936,10 @@ class SimplifiedWritingAgent:
             List of focused search queries
         """
         try:
+            from datetime import datetime
+            current_date = datetime.now().strftime("%Y-%m-%d")
+            current_year = datetime.now().year
+            
             # Extract recent context for better decomposition
             recent_context = ""
             if chat_history:
@@ -865,6 +951,11 @@ class SimplifiedWritingAgent:
                 f"You are a query decomposition specialist. Your job is to analyze complex queries and break them down into "
                 f"separate, focused search queries that will yield better results when searched individually.\n\n"
                 f"CRITICAL: You MUST respond with ONLY a valid JSON array, nothing else.\n\n"
+                f"CURRENT DATE CONTEXT:\n"
+                f"- Today's date: {current_date}\n"
+                f"- Current year: {current_year}\n"
+                f"- When user asks for 'current', 'recent', 'latest', 'happening right now', use {current_year}\n"
+                f"- NEVER use past years when user asks about current events\n\n"
                 f"IMPORTANT: Generate UP TO {max_queries} focused queries. If the query is simple, generate fewer queries.\n\n"
                 f"Rules for decomposition:\n"
                 f"1. Identify distinct topics, locations, or concepts in the query\n"
@@ -872,14 +963,15 @@ class SimplifiedWritingAgent:
                 f"3. Each query should be self-contained and specific\n"
                 f"4. Avoid combining multiple locations or topics in a single query\n"
                 f"5. Preserve the user's intent and context\n"
-                f"6. Generate between 1 and {max_queries} queries based on complexity\n\n"
+                f"6. Generate between 1 and {max_queries} queries based on complexity\n"
+                f"7. Use current year ({current_year}) for any queries about recent/current events\n\n"
                 f"Examples:\n"
                 f'Input: "fun activities in New York and restaurants in Paris"\n'
                 f'Output: ["fun activities and attractions in New York City", "best restaurants and dining in Paris France"]\n\n'
                 f'Input: "machine learning tutorials and data science courses"\n'
                 f'Output: ["machine learning tutorials and guides", "data science courses and training programs"]\n\n'
-                f'Input: "things to do in Wichita and Denver activities"\n'
-                f'Output: ["fun activities and attractions in Wichita Kansas", "fun activities and attractions in Denver Colorado"]\n\n'
+                f'Input: "what are the leading text to image breakthroughs happening right now?" (asked in {current_year})\n'
+                f'Output: ["leading text to image breakthroughs", "recent advancements in text to image generation", "current trends in text to image models"]\n\n'
                 f"Recent Conversation Context:\n{recent_context}\n\n"
                 f"Query to decompose: {query}\n\n"
                 f"RESPOND WITH ONLY A JSON ARRAY:"
@@ -1022,12 +1114,9 @@ class SimplifiedWritingAgent:
         # Step 2: Execute each focused search with iterative improvement
         for i, focused_query in enumerate(decomposed_queries, 1):
             if status_callback:
-                # More detailed search progress showing which focused search we're on
-                search_msg = f"Focused search {i}/{len(decomposed_queries)}: {focused_query[:60]}..."
-                if len(focused_query) > 60:
-                    search_msg = f"Focused search {i}/{len(decomposed_queries)}: {focused_query[:60]}..."
-                else:
-                    search_msg = f"Focused search {i}/{len(decomposed_queries)}: {focused_query}"
+                # Show query text like document search does
+                query_preview = focused_query[:50] + "..." if len(focused_query) > 50 else focused_query
+                search_msg = f"Web search {i}/{len(decomposed_queries)}: {query_preview}"
                 await status_callback("searching_web", search_msg)
             
             logger.info(f"Executing focused web search {i}/{len(decomposed_queries)}: {focused_query}")
@@ -1087,18 +1176,19 @@ class SimplifiedWritingAgent:
             try:
                 logger.info(f"Focused web search attempt {attempt + 1}/{max_attempts} with query: {current_query}")
                 
-                # Send detailed status update if we're doing multiple attempts
+                # Send detailed status update with query text
                 if status_callback:
+                    query_preview = current_query[:50] + "..." if len(current_query) > 50 else current_query
                     if max_attempts > 1:
                         if attempt == 0:
-                            quality_msg = f"[Search {search_number}/{total_searches}] Performing initial search..."
+                            quality_msg = f"[Search {search_number}/{total_searches}] Searching for: {query_preview}"
                         else:
-                            quality_msg = f"[Search {search_number}/{total_searches}] Refining quality (iteration {attempt + 1} of {max_attempts})"
+                            quality_msg = f"[Search {search_number}/{total_searches}] Refining: {query_preview} (attempt {attempt + 1}/{max_attempts})"
                     else:
-                        # For single iteration, just show which search we're on
-                        quality_msg = f"[Search {search_number}/{total_searches}] Searching..."
+                        # For single iteration, show the query
+                        quality_msg = f"Web search {search_number}/{total_searches}: {query_preview}"
                     
-                    await status_callback("search_quality_iteration", quality_msg)
+                    await status_callback("searching_web", quality_msg)
                 
                 # Use existing query enrichment method for better search terms
                 enriched_query = await self._enrich_search_query(current_query, chat_history, "web")
@@ -1108,7 +1198,11 @@ class SimplifiedWritingAgent:
                     from ai_researcher.agentic_layer.tools.web_search_tool import WebSearchTool
                     from ai_researcher import config
                     
-                    web_search_tool = WebSearchTool()
+                    # Use cached web search tool or create new one
+                    if not self._web_search_tool:
+                        self._web_search_tool = WebSearchTool()
+                        logger.info("Created new WebSearchTool instance (cached for reuse)")
+                    web_search_tool = self._web_search_tool
                     logger.info(f"Executing focused web search for enriched query: {enriched_query}")
                     result = await web_search_tool.execute(query=enriched_query, max_results=max_search_results)
                     
@@ -1135,23 +1229,75 @@ class SimplifiedWritingAgent:
                                 snippet = result_item.get("snippet", "No content available")
                                 url = result_item.get("url", "#")
                                 
-                                search_results += f"**Result {i}: {title}**\n"
-                                search_results += f"Source: {url}\n"
-                                search_results += f"Content: {snippet}\n\n"
+                                # Skip if URL already seen
+                                if url in global_seen_urls or url in local_seen_urls:
+                                    if url in global_seen_urls:
+                                        logger.debug(f"Filtered globally seen URL: {url[:60]}...")
+                                    else:
+                                        logger.debug(f"Filtered locally seen URL: {url[:60]}...")
+                                    continue
                                 
-                                # Only add if URL not seen before
-                                if url not in global_seen_urls and url not in local_seen_urls:
-                                    search_sources.append({
-                                        "type": "web",
-                                        "title": title,
-                                        "url": url,
-                                        "provider": config.WEB_SEARCH_PROVIDER.capitalize()
-                                    })
-                                    local_seen_urls.add(url)
-                                elif url in global_seen_urls:
-                                    logger.debug(f"Filtered globally seen URL: {url[:60]}...")
+                                # Assess relevance of this result
+                                is_relevant = await self._assess_search_result_relevance(
+                                    query=original_query,
+                                    title=title,
+                                    snippet=snippet,
+                                    url=url
+                                )
+                                
+                                if is_relevant:
+                                    logger.info(f"Result {i} deemed relevant, fetching full content from: {url[:60]}...")
+                                    
+                                    # Update status to show we're fetching content
+                                    if status_callback:
+                                        fetch_msg = f"[Search {search_number}/{total_searches}] Fetching content from relevant result..."
+                                        await status_callback("fetching_content", fetch_msg)
+                                    
+                                    # Fetch full content using the web page fetcher
+                                    full_content = await self._fetch_web_page_content(url, session_id)
+                                    
+                                    if full_content and "error" not in full_content:
+                                        # Use full content instead of snippet
+                                        content_text = full_content.get("text", snippet)[:5000]  # Limit content length
+                                        search_results += f"**Result {i}: {title}** [FULL CONTENT]\n"
+                                        search_results += f"Source: {url}\n"
+                                        search_results += f"Content: {content_text}\n\n"
+                                        
+                                        # Track that we fetched full content
+                                        if session_id:
+                                            await self.stats_tracker.track_web_fetch(session_id)
+                                        
+                                        # Add to sources ONLY if we successfully fetched content
+                                        search_sources.append({
+                                            "type": "web",
+                                            "title": title,
+                                            "url": url,
+                                            "provider": config.WEB_SEARCH_PROVIDER.capitalize()
+                                        })
+                                    else:
+                                        # Fall back to snippet if fetch failed
+                                        logger.warning(f"Failed to fetch full content for {url[:60]}, using snippet")
+                                        search_results += f"**Result {i}: {title}**\n"
+                                        search_results += f"Source: {url}\n"
+                                        search_results += f"Content: {snippet}\n\n"
+                                        
+                                        # Still add to sources since we're using the snippet
+                                        search_sources.append({
+                                            "type": "web",
+                                            "title": title,
+                                            "url": url,
+                                            "provider": config.WEB_SEARCH_PROVIDER.capitalize()
+                                        })
                                 else:
-                                    logger.debug(f"Filtered locally seen URL: {url[:60]}...")
+                                    # Not relevant enough for full fetch, don't use
+                                    logger.debug(f"Result {i} not relevant enough for full fetch: {title[:60]}")
+                                    search_results += f"**Result {i}: {title}** [NOT RELEVANT]\n"
+                                    search_results += f"Source: {url}\n"
+                                    search_results += f"Content: {snippet}\n\n"
+                                    # DO NOT add non-relevant results to sources list
+                                
+                                # Track seen URLs regardless of relevance
+                                local_seen_urls.add(url)
                             
                             search_results += "\n"
                             
@@ -1634,3 +1780,104 @@ class SimplifiedWritingAgent:
         formatted += " • ".join(all_formatted_sources)
         
         return formatted
+    
+    async def _assess_search_result_relevance(self, query: str, title: str, snippet: str, url: str) -> bool:
+        """
+        Assess if a search result is relevant enough to warrant fetching full content.
+        Uses the fast LLM to make a quick decision.
+        
+        Args:
+            query: The original search query
+            title: The title of the search result
+            snippet: The snippet/summary of the search result
+            url: The URL of the search result
+            
+        Returns:
+            True if relevant enough to fetch full content, False otherwise
+        """
+        try:
+            # Create a prompt for the fast LLM to assess relevance
+            relevance_prompt = f"""Assess if this search result is relevant to the query.
+
+Query: {query}
+
+Search Result:
+Title: {title}
+URL: {url}
+Snippet: {snippet}
+
+Is this result relevant enough that we should fetch and read the full content of the page?
+Consider:
+- Does it relate to the query topic (even partially)?
+- Does the snippet suggest it might contain useful information?
+- Could it provide context or background information?
+
+Be inclusive - if there's any chance it could be useful, say YES.
+Respond with only YES or NO."""
+
+            # Use the fast model for quick assessment
+            # Create properly formatted messages for the dispatcher
+            messages = [
+                {"role": "system", "content": "You are a relevance assessor. Respond with only YES or NO."},
+                {"role": "user", "content": relevance_prompt}
+            ]
+            
+            # Use agent_mode to select the fast model type
+            # The dispatcher will look up the appropriate model based on the mode
+            response, _ = await self.model_dispatcher.dispatch(
+                messages=messages,
+                agent_mode="router"  # Router mode uses the fast model
+            )
+            
+            # Parse the response - response is a ChatCompletion object
+            if response and hasattr(response, 'choices') and response.choices:
+                decision = response.choices[0].message.content.strip().upper()
+                is_relevant = "YES" in decision
+            else:
+                # Default to not fetching on error
+                is_relevant = False
+            
+            logger.info(f"Relevance assessment for result '{title[:50]}...': {'YES - will fetch full content' if is_relevant else 'NO - using snippet only'}")
+            return is_relevant
+            
+        except Exception as e:
+            logger.error(f"Error assessing relevance: {e}")
+            # Default to not fetching on error to avoid excessive fetches
+            return False
+    
+    async def _fetch_web_page_content(self, url: str, session_id: str = None) -> Dict[str, Any]:
+        """
+        Fetch the full content of a web page using the configured web fetcher.
+        
+        Args:
+            url: The URL to fetch
+            session_id: Optional session ID for tracking
+            
+        Returns:
+            Dict with 'text' key containing the fetched content, or 'error' key on failure
+        """
+        try:
+            # Import the web fetcher tool
+            from ai_researcher.agentic_layer.tools.web_page_fetcher_tool import WebPageFetcherTool
+            
+            # Use cached fetcher or create new one
+            if not self._web_page_fetcher:
+                self._web_page_fetcher = WebPageFetcherTool()
+                logger.info("Created new WebPageFetcherTool instance (cached for reuse)")
+            fetcher = self._web_page_fetcher
+            
+            # Execute the fetch
+            logger.debug(f"Fetching full content from: {url[:100]}...")
+            result = await fetcher.execute(url=url, mission_id=session_id)
+            
+            if "error" in result:
+                logger.warning(f"Failed to fetch content from {url[:60]}: {result['error']}")
+                return result
+            
+            # Successfully fetched
+            logger.debug(f"Successfully fetched {len(result.get('text', ''))} chars from {url[:60]}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error fetching web page content from {url[:60]}: {e}")
+            return {"error": str(e)}

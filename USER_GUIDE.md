@@ -63,12 +63,33 @@ This mode is ideal for power users who want to optimize for cost and performance
 Configure the web search provider used by the Research Agent.
 
 -   **Search Provider**: Choose your preferred web search service.
-    -   **Tavily**
-    -   **LinkUp**
+    -   **Tavily** (Fast, good results)
+    -   **LinkUp** (Fast, good results)
+    -   **Jina** (Slower than other providers, may not provide better search results)
     -   **SearXNG** (for self-hosted search)
 -   **API Key**: Enter the API key for the selected search provider.
 
-### 4. Research
+**Note**: Jina search is noticeably slower than Tavily or LinkUp and based on testing may not necessarily provide better search results. Consider using Tavily or LinkUp for search, and Jina only for web page fetching if needed.
+
+### 4. Web Page Fetching
+
+Configure how MAESTRO fetches content from web pages when following search results.
+
+-   **Fetch Provider**: Choose your preferred method for fetching web page content.
+    -   **Original** (Built-in using newspaper3k and PyMuPDF - Fast, works for most sites)
+    -   **Jina** (Advanced browser rendering - Much slower, but avoids most 403 errors)
+    
+The Jina fetcher is particularly useful for:
+- Sites that heavily rely on JavaScript rendering
+- Content behind soft paywalls or cookie walls
+- Sites that block traditional scrapers (403 errors)
+- Complex web applications with dynamic content
+
+**Performance Note**: Jina fetching is significantly slower than the original fetcher due to full browser rendering, but it provides better results for problematic sites and avoids most 403 blocking errors. Use the original fetcher for general content and switch to Jina only when encountering blocked or JavaScript-heavy sites.
+
+When using Jina, the same API key from Search settings is used.
+
+### 5. Research
 
 Fine-tune the default parameters for the research process. These settings can be overridden for individual missions.
 

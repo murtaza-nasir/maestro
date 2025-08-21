@@ -155,6 +155,7 @@ def get_user_settings(current_user: User = Depends(get_current_user_from_cookie)
     return schemas.GlobalUserSettings(
         ai_endpoints=ai_endpoints_data,
         search=settings_data.get("search"),
+        web_fetch=settings_data.get("web_fetch"),
         research_parameters=settings_data.get("research_parameters"),
         writing_settings=settings_data.get("writing_settings"),
         appearance=schemas.AppearanceSettings(

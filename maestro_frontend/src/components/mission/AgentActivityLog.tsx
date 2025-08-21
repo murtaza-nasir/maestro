@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from '../ui/card';
-import { Bot, Activity } from 'lucide-react';
+import { Button } from '../ui/button';
+import { Bot, Activity, ChevronDown } from 'lucide-react';
 import { LogEntryCard } from './LogEntryCard.tsx';
 import { ResearchAgentLog } from './ResearchAgentLog.tsx';
 import { PlanningAgentLog } from './PlanningAgentLog.tsx';
@@ -47,12 +48,20 @@ interface AgentActivityLogProps {
   logs: ExecutionLogEntry[];
   isLoading?: boolean;
   missionStatus?: string;
+  missionId?: string;
+  hasMore?: boolean;
+  onLoadMore?: () => void;
+  isLoadingMore?: boolean;
 }
 
 export const AgentActivityLog: React.FC<AgentActivityLogProps> = ({ 
   logs, 
   isLoading = false, 
-  missionStatus 
+  missionStatus,
+  missionId,
+  hasMore = false,
+  onLoadMore,
+  isLoadingMore = false
 }) => {
   const [expandedLogs, setExpandedLogs] = useState<Set<number>>(new Set());
   const logContainerRef = useRef<HTMLDivElement>(null);
@@ -149,6 +158,30 @@ export const AgentActivityLog: React.FC<AgentActivityLogProps> = ({
           )}
           
           {logs.map((log, index) => renderLogEntry(log, index))}
+          
+          {hasMore && onLoadMore && (
+            <div className="flex justify-center p-4 border-t">
+              <Button
+                onClick={onLoadMore}
+                disabled={isLoadingMore}
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2"
+              >
+                {isLoadingMore ? (
+                  <>
+                    <Activity className="h-4 w-4 animate-spin" />
+                    Loading more...
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-4 w-4" />
+                    Load More
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

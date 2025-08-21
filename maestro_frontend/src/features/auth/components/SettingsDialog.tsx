@@ -6,12 +6,13 @@ import { useSettingsStore } from './SettingsStore'
 import { useAuthStore } from '../store'
 import { AISettingsTab } from './AISettingsTab'
 import { SearchSettingsTab } from './SearchSettingsTab'
+import { WebFetchSettingsTab } from './WebFetchSettingsTab'
 import { ResearchSettingsTab } from './ResearchSettingsTab'
 import { ProfileSettingsTab } from './ProfileSettingsTab'
 import { AppearanceSettingsTab } from './AppearanceSettingsTab'
 import { AdminSettingsTab } from './AdminSettingsTab'
 import { Card, CardContent } from '../../../components/ui/card'
-import { AlertCircle, Loader2, User, Cpu, Search, Beaker, Paintbrush, Shield } from 'lucide-react'
+import { AlertCircle, Loader2, User, Cpu, Search, Beaker, Paintbrush, Shield, FileText } from 'lucide-react'
 
 interface SettingsDialogProps {
   open: boolean
@@ -74,7 +75,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onOpenChan
           )}
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex-1 flex flex-col min-h-0 px-6 pt-4">
-            <TabsList className={`grid w-full ${user?.is_admin ? 'grid-cols-6' : 'grid-cols-5'} h-10 flex-shrink-0 mb-4`}>
+            <TabsList className={`grid w-full ${user?.is_admin ? 'grid-cols-7' : 'grid-cols-6'} h-10 flex-shrink-0 mb-4`}>
               <TabsTrigger value="profile" className="text-sm">
                 <User className="w-4 h-4 mr-2" />
                 Profile
@@ -90,6 +91,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onOpenChan
               <TabsTrigger value="search" className="text-sm">
                 <Search className="w-4 h-4 mr-2" />
                 Search
+              </TabsTrigger>
+              <TabsTrigger value="web-fetch" className="text-sm">
+                <FileText className="w-4 h-4 mr-2" />
+                Web Fetch
               </TabsTrigger>
               <TabsTrigger value="research" className="text-sm">
                 <Beaker className="w-4 h-4 mr-2" />
@@ -118,6 +123,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onOpenChan
 
               <TabsContent value="search" className="h-full overflow-y-auto settings-scrollbar data-[state=active]:flex data-[state=active]:flex-col pr-2 pb-4">
                 <SearchSettingsTab />
+              </TabsContent>
+
+              <TabsContent value="web-fetch" className="h-full overflow-y-auto settings-scrollbar data-[state=active]:flex data-[state=active]:flex-col pr-2 pb-4">
+                <WebFetchSettingsTab />
               </TabsContent>
 
               <TabsContent value="research" className="h-full overflow-y-auto settings-scrollbar data-[state=active]:flex data-[state=active]:flex-col pr-2 pb-4">

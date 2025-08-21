@@ -63,6 +63,7 @@ interface MissionState {
   setMissionNotes: (missionId: string, notes: Note[]) => void
   appendMissionNotes: (missionId: string, newNotes: Note[]) => void
   setMissionLogs: (missionId: string, logs: Log[]) => void
+  appendMissionLogs: (missionId: string, newLogs: Log[]) => void
   setMissionDraft: (missionId: string, draft: string) => void
   updateMissionReport: (missionId: string, report: string) => void
   updateMissionStats: (missionId: string, stats: Mission['stats']) => void
@@ -488,6 +489,27 @@ export const useMissionStore = create<MissionState>((set, get) => ({
     // Store logs in IndexedDB asynchronously (non-blocking)
     missionDB.storeLogs(missionId, processedLogs).catch((error) => {
       console.error('Failed to store logs in IndexedDB:', error)
+    })
+  },
+
+  appendMissionLogs: (missionId: string, newLogs: Log[]) => {
+    const processedNewLogs = newLogs.map(l => ({ ...l, timestamp: ensureDate(l.timestamp) }))
+    
+    set((state) => {
+      const existingLogs = state.missionLogs[missionId] || []
+      const combinedLogs = [...existingLogs, ...processedNewLogs]
+      
+      // Store combined logs in IndexedDB asynchronously
+      missionDB.storeLogs(missionId, combinedLogs).catch((error) => {
+        console.error('Failed to store logs in IndexedDB:', error)
+      })
+      
+      return {
+        missionLogs: {
+          ...state.missionLogs,
+          [missionId]: combinedLogs,
+        },
+      }
     })
   },
 

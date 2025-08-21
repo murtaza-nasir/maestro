@@ -74,7 +74,9 @@ Your rewritten query should specifically target these types of sources by includ
 qualifiers, or phrases that would help retrieve information from these specific source types.
 """
 
-        prompt = f"""Given the user query below, rewrite it to be clearer and more effective for searching a database of research documents, considering the domain context if provided. Focus on the core information need, using specific terminology. Output *only* the rewritten query.
+        prompt = f"""Given the user query below, rewrite it to be clearer and more effective for searching a database of research documents, considering the domain context if provided. Focus on the core information need, using specific terminology. 
+
+CRITICAL: If the query contains vague references like "these", "those", "the mentioned", "the above", etc., you MUST expand them with the actual specific names/terms from the context. Never use vague references in search queries.
 
 {context_block}
 {source_types_instruction}
@@ -85,10 +87,22 @@ Good Query: What are the key factors influencing user adoption and trust in mobi
 Bad Query: Risks and benefits?
 Good Query: Analyze the perceived risks and benefits affecting user intentions to adopt mobile health applications, comparing public versus private providers.
 
+Bad Query: What did these researchers discover?
+Good Query: What did Dr. Smith, Prof. Johnson, and the MIT research team discover?
+
+Bad Query: How do those technologies compare?
+Good Query: How do CRISPR gene editing, zinc finger nucleases, and TALENs compare?
+
+Bad Query: What restaurants are in these towns?
+Good Query: What restaurants are in Stowe Vermont, Manchester Vermont, and Brattleboro Vermont?
+
+Bad Query: Applications in the mentioned fields
+Good Query: Applications in quantum computing, artificial intelligence, and biotechnology
+
 **User Query:**
 Original Query: {user_query}
 
-Rewritten Query:"""
+Rewritten Query (with all vague references expanded):"""
         rewritten_query, model_details = await self._call_rewriter_llm(prompt, max_tokens=150, temperature=0.2) # <-- Use await
 
         if not rewritten_query or rewritten_query.strip() == "":
@@ -122,7 +136,11 @@ Your sub-queries should specifically target these types of sources by including 
 qualifiers, or phrases that would help retrieve information from these specific source types.
 """
 
-        prompt = f"""You are an expert query analyzer. Given the user query below and optional domain context, decompose it into {max_subqueries} or fewer distinct sub-queries that cover the main aspects of the original question. Each sub-query should be specific, answerable independently based on research documents, and use relevant terminology. Output *only* the sub-queries, each on a new line. Do not number them or add any other text.
+        prompt = f"""You are an expert query analyzer. Given the user query below and optional domain context, decompose it into {max_subqueries} or fewer distinct sub-queries that cover the main aspects of the original question. Each sub-query should be specific, answerable independently based on research documents, and use relevant terminology. 
+
+CRITICAL: If the original query or context contains vague references like "these", "those", "the mentioned", "the above", "such", etc., you MUST expand them with the actual specific names/terms in your sub-queries. Never use vague references - always be explicit and specific with names, locations, technologies, concepts, etc.
+
+Output *only* the sub-queries, each on a new line. Do not number them or add any other text.
 
 {context_block}
 {source_types_instruction}
@@ -133,10 +151,26 @@ How does user trust in public vs. private mobile health providers influence adop
 What role does perceived provider governance play in user trust formation for health apps?
 Analyze the relationship between trust dynamics and adoption rates of mobile health apps in chronic disease management.
 
+**Example with researcher references:**
+Original Query: Compare the findings of these researchers on climate change
+Context: Discussing work by Dr. Hansen, Prof. Mann, and Dr. Trenberth
+Sub-queries:
+Dr. James Hansen's findings on global temperature trends and climate sensitivity
+Prof. Michael Mann's hockey stick graph and paleoclimate reconstructions
+Dr. Kevin Trenberth's research on extreme weather events and climate change
+
+**Example with technology references:**
+Original Query: What are the advantages and limitations of those methods?
+Context: Discussing machine learning methods: neural networks, SVM, random forests
+Sub-queries:
+Advantages and limitations of neural networks in pattern recognition
+Support vector machines (SVM) performance and computational requirements
+Random forest algorithms strengths and weaknesses compared to other ensemble methods
+
 **User Query:**
 Original Query: {user_query}
 
-Sub-queries:"""
+Sub-queries (with all vague references expanded to specific names/terms):"""
         response, model_details = await self._call_rewriter_llm(prompt, max_tokens=200 + (max_subqueries * 50), temperature=0.1) # <-- Use await
 
         if not response:
@@ -182,7 +216,11 @@ Your step-back question should specifically target these types of sources by inc
 qualifiers, or phrases that would help retrieve information from these specific source types.
 """
 
-        prompt = f"""You are an expert in generating broader context questions. Given the specific user query below and optional domain context, generate a single, more general "step-back" question that explores the higher-level concepts or underlying principles relevant for finding context in research documents. Output *only* the step-back question.
+        prompt = f"""You are an expert in generating broader context questions. Given the specific user query below and optional domain context, generate a single, more general "step-back" question that explores the higher-level concepts or underlying principles relevant for finding context in research documents. 
+
+CRITICAL: Even in step-back questions, if there are specific names, entities, technologies, or concepts mentioned, keep them specific. Don't use vague references like "these", "those", "the mentioned", etc. Use the actual names/terms.
+
+Output *only* the step-back question.
 
 {context_block}
 {source_types_instruction}
@@ -190,10 +228,20 @@ qualifiers, or phrases that would help retrieve information from these specific 
 Specific User Query: What specific feedback messages improve engagement in the 'HeartHelper' mobile health app?
 Step-back Question: What are general principles and theories regarding user engagement and feedback mechanisms in mobile health applications?
 
+**Example with researcher names:**
+Specific User Query: How did these scientists contribute to quantum mechanics?
+Context: Discussing Heisenberg, Schrödinger, and Dirac
+Step-back Question: What were the foundational contributions of Heisenberg, Schrödinger, and Dirac to the development of quantum mechanics?
+
+**Example with technology terms:**
+Specific User Query: What are the best use cases for those frameworks?
+Context: Discussing React, Angular, and Vue.js
+Step-back Question: What are the architectural principles and design philosophies of React, Angular, and Vue.js that determine their optimal use cases?
+
 **User Query:**
 Specific User Query: {user_query}
 
-Step-back Question:"""
+Step-back Question (with specific names/terms preserved):"""
         step_back_q, model_details = await self._call_rewriter_llm(prompt, max_tokens=150, temperature=0.2) # <-- Use await
 
         if not step_back_q or len(step_back_q.strip()) < 10 :

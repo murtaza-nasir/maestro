@@ -14,9 +14,19 @@ import type { MissionContext } from '../types'
 interface ResearchTabsProps {
   missionId: string
   isWebSocketConnected?: boolean
+  hasMoreLogs?: boolean
+  onLoadMoreLogs?: () => void
+  isLoadingMoreLogs?: boolean
+  totalLogsCount?: number
 }
 
-export const ResearchTabs: React.FC<ResearchTabsProps> = ({ missionId }) => {
+export const ResearchTabs: React.FC<ResearchTabsProps> = ({ 
+  missionId, 
+  hasMoreLogs,
+  onLoadMoreLogs,
+  isLoadingMoreLogs,
+  totalLogsCount
+}) => {
   const { activeTab, setActiveTab, ensureMissionInStore, missionContexts, fetchMissionContext } = useMissionStore()
   const [activePlanTab, setActivePlanTab] = useState('outline')
   
@@ -83,7 +93,13 @@ export const ResearchTabs: React.FC<ResearchTabsProps> = ({ missionId }) => {
         </TabsContent>
 
         <TabsContent value="agents" className="mt-2 flex-1 overflow-auto">
-          <AgentsTab missionId={missionId} />
+          <AgentsTab 
+            missionId={missionId}
+            hasMoreLogs={hasMoreLogs}
+            onLoadMoreLogs={onLoadMoreLogs}
+            isLoadingMoreLogs={isLoadingMoreLogs}
+            totalLogsCount={totalLogsCount}
+          />
         </TabsContent>
 
         <TabsContent value="notes" className="mt-2 flex-1 overflow-auto">

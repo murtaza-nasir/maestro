@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Globe, Settings, ChevronDown } from 'lucide-react'
 import { Button } from '../../../components/ui/button'
 import { Checkbox } from '../../../components/ui/checkbox'
+import { Switch } from '../../../components/ui/switch'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../../../components/ui/dropdown-menu'
 
 // SearXNG category options
@@ -27,7 +28,7 @@ const SEARXNG_CATEGORIES = [
 export const SearchSettingsTab: React.FC = () => {
   const { draftSettings, setDraftSettings } = useSettingsStore()
 
-  const handleProviderChange = (provider: 'tavily' | 'linkup' | 'searxng') => {
+  const handleProviderChange = (provider: 'tavily' | 'linkup' | 'searxng' | 'jina') => {
     if (!draftSettings) return
     
     const newSearch = {
@@ -38,7 +39,7 @@ export const SearchSettingsTab: React.FC = () => {
     setDraftSettings({ search: newSearch })
   }
 
-  const handleApiKeyChange = (field: string, value: string) => {
+  const handleApiKeyChange = (field: string, value: string | boolean) => {
     if (!draftSettings) return
     
     const newSearch = {
@@ -118,6 +119,7 @@ export const SearchSettingsTab: React.FC = () => {
                   <SelectItem value="tavily">Tavily</SelectItem>
                   <SelectItem value="linkup">LinkUp</SelectItem>
                   <SelectItem value="searxng">SearXNG</SelectItem>
+                  <SelectItem value="jina">Jina</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -178,6 +180,37 @@ export const SearchSettingsTab: React.FC = () => {
                   >
                     LinkUp Dashboard
                   </a>
+                </p>
+              </div>
+            )}
+
+            {draftSettings.search.provider === 'jina' && (
+              <div className="space-y-3 pl-3 border-l-2 border-orange-200 bg-orange-50/30 rounded-r-lg p-3">
+                <p className="text-xs text-muted-foreground-foreground mb-2">
+                  AI-powered search and web page reading with advanced extraction capabilities.
+                </p>
+                <div className="space-y-1.5">
+                  <Label htmlFor="jina-api-key" className="text-sm">Jina API Key</Label>
+                  <Input
+                    id="jina-api-key"
+                    type="password"
+                    value={draftSettings.search.jina_api_key || ''}
+                    onChange={(e) => handleApiKeyChange('jina_api_key', e.target.value)}
+                    placeholder="jina_..."
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Get your API key from{' '}
+                  <a 
+                    href="https://jina.ai/reader" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-orange-600 hover:underline"
+                  >
+                    Jina.ai Dashboard
+                  </a>
+                  . Free tier available with rate limits.
                 </p>
               </div>
             )}
@@ -267,7 +300,7 @@ export const SearchSettingsTab: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Provider-specific search configuration */}
+      {/* Provider-specific search configuration for Tavily and LinkUp */}
       {(draftSettings.search.provider === 'tavily' || draftSettings.search.provider === 'linkup') && (
         <Card>
           <CardHeader className="pb-3">
@@ -327,6 +360,91 @@ export const SearchSettingsTab: React.FC = () => {
                   {draftSettings.search.provider === 'tavily' 
                     ? 'Advanced search provides more comprehensive results but costs 2x API credits.'
                     : 'Deep search uses an agentic workflow for more comprehensive results but takes longer.'}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Jina-specific configuration */}
+      {draftSettings.search.provider === 'jina' && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Settings className="h-4 w-4" />
+              Jina Search Configuration
+            </CardTitle>
+            <CardDescription className="text-sm">
+              Configure search parameters for Jina.ai.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="max-search-results-jina" className="text-sm">Maximum Search Results</Label>
+                <Input
+                  id="max-search-results-jina"
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={draftSettings.search.max_results || 5}
+                  onChange={(e) => {
+                    const value = Math.max(1, Math.min(10, parseInt(e.target.value) || 5))
+                    handleApiKeyChange('max_results', value.toString())
+                  }}
+                  className="h-8 text-sm"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Number of search results to return per query (1-10).
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="jina-read-full"
+                    checked={draftSettings.search.jina_read_full_content || false}
+                    onCheckedChange={(checked) => handleApiKeyChange('jina_read_full_content', checked)}
+                  />
+                  <Label htmlFor="jina-read-full" className="text-sm font-normal cursor-pointer">
+                    Read Full Content of SERP
+                  </Label>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Visit every URL in search results and return full content using Reader. This provides more comprehensive information but takes longer.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="jina-fetch-favicons"
+                    checked={draftSettings.search.jina_fetch_favicons || false}
+                    onCheckedChange={(checked) => handleApiKeyChange('jina_fetch_favicons', checked)}
+                  />
+                  <Label htmlFor="jina-fetch-favicons" className="text-sm font-normal cursor-pointer">
+                    Fetch Favicons
+                  </Label>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Include website favicons in search results for better visual identification.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="jina-bypass-cache"
+                    checked={draftSettings.search.jina_bypass_cache || false}
+                    onCheckedChange={(checked) => handleApiKeyChange('jina_bypass_cache', checked)}
+                  />
+                  <Label htmlFor="jina-bypass-cache" className="text-sm font-normal cursor-pointer">
+                    Bypass Cached Content
+                  </Label>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Ignore cached results and fetch fresh content directly. Useful for time-sensitive searches.
                 </p>
               </div>
             </div>

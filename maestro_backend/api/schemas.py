@@ -77,10 +77,24 @@ class SearchSettings(BaseModel):
     provider: str
     tavily_api_key: Optional[str] = None
     linkup_api_key: Optional[str] = None
+    jina_api_key: Optional[str] = None
     searxng_base_url: Optional[str] = None
     searxng_categories: Optional[str] = None
     max_results: Optional[int] = None
     search_depth: Optional[str] = None
+    # Jina-specific settings
+    jina_read_full_content: Optional[bool] = None
+    jina_fetch_favicons: Optional[bool] = None
+    jina_bypass_cache: Optional[bool] = None
+
+class WebFetchSettings(BaseModel):
+    provider: str = "original"  # "original", "jina", or "original_with_jina_fallback"
+    jina_browser_engine: Optional[str] = "default"
+    jina_content_format: Optional[str] = "default"
+    jina_timeout: Optional[int] = 10
+    jina_remove_images: Optional[bool] = True  # Default to removing images
+    jina_gather_links: Optional[bool] = False
+    jina_gather_images: Optional[bool] = False
 
 class ResearchParameters(BaseModel):
     initial_research_max_depth: int
@@ -109,6 +123,7 @@ class ResearchParameters(BaseModel):
 class GlobalUserSettings(BaseModel):
     ai_endpoints: Optional[AISettings] = None
     search: Optional[SearchSettings] = None
+    web_fetch: Optional[WebFetchSettings] = None
     research_parameters: Optional[ResearchParameters] = None
     appearance: Optional[AppearanceSettings] = None
     writing_settings: Optional[Dict[str, Any]] = None  # For writing-specific settings like custom system prompt
@@ -261,6 +276,10 @@ class MissionLog(BaseModel):
 class MissionLogs(BaseModel):
     mission_id: str
     logs: List[MissionLog]
+    total: int = 0
+    has_more: bool = False
+    skip: int = 0
+    limit: int = 100
 
 class MissionDraft(BaseModel):
     mission_id: str

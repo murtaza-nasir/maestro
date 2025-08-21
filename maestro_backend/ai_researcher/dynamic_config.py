@@ -153,6 +153,18 @@ def get_linkup_api_key(mission_id: Optional[str] = None) -> Optional[str]:
     # Fallback to environment variable
     return os.getenv("LINKUP_API_KEY")
 
+def get_jina_api_key(mission_id: Optional[str] = None) -> Optional[str]:
+    """Get the Jina API key from user settings or environment."""
+    # Check user settings first
+    user_settings = get_user_settings()
+    if user_settings:
+        search_settings = user_settings.get("search", {})
+        if search_settings and search_settings.get("jina_api_key"):
+            return search_settings["jina_api_key"]
+    
+    # Fallback to environment variable
+    return os.getenv("JINA_API_KEY")
+
 def get_searxng_base_url(mission_id: Optional[str] = None) -> Optional[str]:
     """Get the SearXNG base URL from user settings or environment."""
     # Check user settings first
@@ -210,6 +222,75 @@ def get_search_depth(mission_id: Optional[str] = None) -> str:
     
     # Fallback to environment variable then default
     return os.getenv("SEARCH_DEPTH", "standard")
+
+# --- Web Fetch Provider Settings ---
+def get_web_fetch_provider(mission_id: Optional[str] = None) -> str:
+    """Get the web fetch provider from user settings or environment."""
+    # Check user settings first
+    user_settings = get_user_settings()
+    if user_settings:
+        web_fetch_settings = user_settings.get("web_fetch", {})
+        if web_fetch_settings and web_fetch_settings.get("provider"):
+            return web_fetch_settings["provider"].lower()
+    
+    # Fallback to environment variable
+    env_value = os.getenv("WEB_FETCH_PROVIDER", "original")
+    return env_value.lower()
+
+def get_jina_browser_engine(mission_id: Optional[str] = None) -> str:
+    """Get Jina browser engine setting."""
+    user_settings = get_user_settings()
+    if user_settings:
+        web_fetch_settings = user_settings.get("web_fetch", {})
+        if web_fetch_settings and web_fetch_settings.get("jina_browser_engine"):
+            return web_fetch_settings["jina_browser_engine"]
+    return os.getenv("JINA_BROWSER_ENGINE", "default")
+
+def get_jina_content_format(mission_id: Optional[str] = None) -> str:
+    """Get Jina content format setting."""
+    user_settings = get_user_settings()
+    if user_settings:
+        web_fetch_settings = user_settings.get("web_fetch", {})
+        if web_fetch_settings and web_fetch_settings.get("jina_content_format"):
+            return web_fetch_settings["jina_content_format"]
+    return os.getenv("JINA_CONTENT_FORMAT", "default")
+
+# --- Jina Search Settings ---
+def get_jina_read_full_content(mission_id: Optional[str] = None) -> bool:
+    """Get Jina read full content setting for search."""
+    user_settings = get_user_settings()
+    if user_settings:
+        search_settings = user_settings.get("search", {})
+        if search_settings and "jina_read_full_content" in search_settings:
+            return bool(search_settings["jina_read_full_content"])
+    return False
+
+def get_jina_remove_images(mission_id: Optional[str] = None) -> bool:
+    """Get Jina remove images setting."""
+    user_settings = get_user_settings()
+    if user_settings:
+        web_fetch_settings = user_settings.get("web_fetch", {})
+        if web_fetch_settings and "jina_remove_images" in web_fetch_settings:
+            return bool(web_fetch_settings["jina_remove_images"])
+    return True  # Default to True (remove images)
+
+def get_jina_fetch_favicons(mission_id: Optional[str] = None) -> bool:
+    """Get Jina fetch favicons setting for search."""
+    user_settings = get_user_settings()
+    if user_settings:
+        search_settings = user_settings.get("search", {})
+        if search_settings and "jina_fetch_favicons" in search_settings:
+            return bool(search_settings["jina_fetch_favicons"])
+    return False
+
+def get_jina_bypass_cache(mission_id: Optional[str] = None) -> bool:
+    """Get Jina bypass cache setting for search."""
+    user_settings = get_user_settings()
+    if user_settings:
+        search_settings = user_settings.get("search", {})
+        if search_settings and "jina_bypass_cache" in search_settings:
+            return bool(search_settings["jina_bypass_cache"])
+    return False
 
 # --- AI Provider Settings ---
 def get_ai_provider_config(provider_name: str, mission_id: Optional[str] = None) -> Dict[str, Any]:

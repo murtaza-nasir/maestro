@@ -31,13 +31,18 @@ interface AISettings {
 }
 
 interface SearchSettings {
-  provider: 'tavily' | 'linkup' | 'searxng'
+  provider: 'tavily' | 'linkup' | 'searxng' | 'jina'
   tavily_api_key: string | null
   linkup_api_key: string | null
+  jina_api_key: string | null
   searxng_base_url: string | null
   searxng_categories: string | null
   max_results?: number
   search_depth?: 'standard' | 'advanced'
+  // Jina-specific settings
+  jina_read_full_content?: boolean
+  jina_fetch_favicons?: boolean
+  jina_bypass_cache?: boolean
 }
 
 export interface ResearchParameters {
@@ -70,6 +75,16 @@ export interface ResearchParameters {
   writing_deep_search_queries?: number
 }
 
+interface WebFetchSettings {
+  provider: 'original' | 'jina' | 'original_with_jina_fallback'
+  jina_browser_engine?: string
+  jina_content_format?: string
+  jina_timeout?: number
+  jina_remove_images?: boolean
+  jina_gather_links?: boolean
+  jina_gather_images?: boolean
+}
+
 interface AppearanceSettings {
   theme: 'light' | 'dark'
   color_scheme: 'default' | 'blue' | 'emerald' | 'purple' | 'rose' | 'amber' | 'teal'
@@ -78,6 +93,7 @@ interface AppearanceSettings {
 interface UserSettings {
   ai_endpoints: AISettings
   search: SearchSettings
+  web_fetch?: WebFetchSettings
   research_parameters: ResearchParameters
   appearance: AppearanceSettings
 }
@@ -231,10 +247,20 @@ const defaultSettings: UserSettings = {
     provider: 'linkup',
     tavily_api_key: null,
     linkup_api_key: null,
+    jina_api_key: null,
     searxng_base_url: null,
     searxng_categories: null,
     max_results: 5,
     search_depth: 'standard'
+  },
+  web_fetch: {
+    provider: 'original',
+    jina_browser_engine: 'default',
+    jina_content_format: 'default',
+    jina_timeout: 10,
+    jina_remove_images: false,
+    jina_gather_links: false,
+    jina_gather_images: false
   },
   research_parameters: {
     initial_research_max_depth: 2,
@@ -289,6 +315,10 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
           ...defaultSettings.search,
           ...userSettings?.search
         },
+        web_fetch: userSettings?.web_fetch ? {
+          ...defaultSettings.web_fetch,
+          ...userSettings.web_fetch
+        } : defaultSettings.web_fetch,
         research_parameters: {
           ...defaultSettings.research_parameters,
           ...userSettings?.research_parameters
@@ -353,6 +383,10 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
             ...state.draftSettings.search,
             ...newDraftSettings.search
           } : state.draftSettings.search,
+          web_fetch: newDraftSettings.web_fetch ? {
+            ...(state.draftSettings.web_fetch || defaultSettings.web_fetch),
+            ...newDraftSettings.web_fetch
+          } : state.draftSettings.web_fetch,
           research_parameters: newDraftSettings.research_parameters ? {
             ...state.draftSettings.research_parameters,
             ...newDraftSettings.research_parameters

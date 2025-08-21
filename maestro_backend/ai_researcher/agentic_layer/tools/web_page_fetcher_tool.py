@@ -13,6 +13,7 @@ import pathlib
 import json
 from ai_researcher import config # Import config to access cache settings
 from ai_researcher.core_rag.metadata_extractor import MetadataExtractor # Import the extractor
+from ai_researcher.dynamic_config import get_web_fetch_provider
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,8 @@ class WebPageFetcherTool:
         # Consider making API key/model configurable if needed outside default .env/config
         self.metadata_extractor = MetadataExtractor()
         logger.info("WebPageFetcherTool initialized with MetadataExtractor.")
+        # Cache the Jina fetcher instance to avoid re-initialization
+        self._jina_fetcher = None
         # Ensure cache directory exists
         try:
             CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -68,6 +71,26 @@ class WebPageFetcherTool:
             A dictionary containing the extracted text under the key 'text', 'title', and 'metadata' on success,
             or a dictionary with an 'error' key on failure.
         """
+        # Check if we should use Jina fetcher
+        fetch_provider = get_web_fetch_provider(mission_id)
+        
+        # If Jina is explicitly requested, use it directly
+        if fetch_provider == "jina":
+            try:
+                # Use cached Jina fetcher instance or create new one
+                if not self._jina_fetcher:
+                    from ai_researcher.agentic_layer.tools.jina_web_fetcher_tool import JinaWebFetcherTool
+                    self._jina_fetcher = JinaWebFetcherTool()
+                    logger.debug("Created new JinaWebFetcherTool instance (cached for reuse)")
+                return await self._jina_fetcher.execute(url, update_callback, log_queue, mission_id)
+            except ImportError:
+                logger.warning("Jina fetcher requested but not available, falling back to original fetcher")
+            except Exception as e:
+                logger.error(f"Error using Jina fetcher, falling back to original: {e}")
+        
+        # For fallback mode, we'll try original first, then Jina if it fails
+        use_jina_fallback = fetch_provider == "original_with_jina_fallback"
+        
         logger.info(f"Executing WebPageFetcherTool for URL: {url}")
 
         # --- Cache Check ---
@@ -344,18 +367,32 @@ class WebPageFetcherTool:
         except requests.exceptions.Timeout:
             error_msg = f"Timeout occurred while trying to fetch URL: {url}"
             logger.error(error_msg)
-            return {"error": error_msg, "error_type": "timeout", "url": url}
+            original_error = {"error": error_msg, "error_type": "timeout", "url": url}
+            
+            # Try Jina fallback if configured
+            if use_jina_fallback:
+                logger.info(f"Original fetcher timed out, attempting Jina fallback for {url}")
+                return await self._try_jina_fallback(url, update_callback, log_queue, mission_id, original_error)
+            
+            return original_error
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 403:
                 error_msg = f"Access denied (403 Forbidden) for URL: {url}. This website blocks automated access."
                 logger.warning(error_msg)
-                return {
+                original_error = {
                     "error": error_msg, 
                     "error_type": "access_denied", 
                     "status_code": 403,
                     "url": url,
                     "suggestion": "This website restricts automated access. Consider using alternative sources or manual research for this content."
                 }
+                
+                # Try Jina fallback if configured
+                if use_jina_fallback:
+                    logger.info(f"Original fetcher got 403, attempting Jina fallback for {url}")
+                    return await self._try_jina_fallback(url, update_callback, log_queue, mission_id, original_error)
+                
+                return original_error
             elif e.response.status_code == 404:
                 error_msg = f"Page not found (404) for URL: {url}"
                 logger.warning(error_msg)
@@ -363,16 +400,69 @@ class WebPageFetcherTool:
             else:
                 error_msg = f"HTTP error {e.response.status_code} occurred while fetching URL {url}: {e}"
                 logger.error(error_msg)
-                return {"error": error_msg, "error_type": "http_error", "status_code": e.response.status_code, "url": url}
+                original_error = {"error": error_msg, "error_type": "http_error", "status_code": e.response.status_code, "url": url}
+                
+                # Try Jina fallback if configured
+                if use_jina_fallback:
+                    logger.info(f"Original fetcher got HTTP error {e.response.status_code}, attempting Jina fallback for {url}")
+                    return await self._try_jina_fallback(url, update_callback, log_queue, mission_id, original_error)
+                
+                return original_error
         except requests.exceptions.RequestException as e:
             error_msg = f"Network error occurred while fetching URL {url}: {e}"
             logger.error(error_msg, exc_info=True)
-            return {"error": error_msg, "error_type": "network_error", "url": url}
+            original_error = {"error": error_msg, "error_type": "network_error", "url": url}
+            
+            # Try Jina fallback if configured
+            if use_jina_fallback:
+                logger.info(f"Original fetcher got network error, attempting Jina fallback for {url}")
+                return await self._try_jina_fallback(url, update_callback, log_queue, mission_id, original_error)
+            
+            return original_error
         except ArticleException as e:
             error_msg = f"Newspaper3k failed to process URL {url}: {e}"
             logger.error(error_msg, exc_info=True)
-            return {"error": error_msg}
+            original_error = {"error": error_msg}
+            
+            # Try Jina fallback if configured
+            if use_jina_fallback:
+                logger.info(f"Newspaper3k failed, attempting Jina fallback for {url}")
+                return await self._try_jina_fallback(url, update_callback, log_queue, mission_id, original_error)
+            
+            return original_error
         except Exception as e:
             error_msg = f"An unexpected error occurred while processing URL {url}: {e}"
             logger.error(error_msg, exc_info=True)
-            return {"error": error_msg}
+            original_error = {"error": error_msg}
+            
+            # Try Jina fallback if configured
+            if use_jina_fallback:
+                logger.info(f"Original fetcher got unexpected error, attempting Jina fallback for {url}")
+                return await self._try_jina_fallback(url, update_callback, log_queue, mission_id, original_error)
+            
+            return original_error
+    
+    async def _try_jina_fallback(self, url: str, update_callback, log_queue, mission_id, original_error: dict) -> dict:
+        """Try Jina as a fallback when original fetcher fails."""
+        try:
+            # Use cached Jina fetcher instance or create new one
+            if not self._jina_fetcher:
+                from ai_researcher.agentic_layer.tools.jina_web_fetcher_tool import JinaWebFetcherTool
+                self._jina_fetcher = JinaWebFetcherTool()
+                logger.debug("Created new JinaWebFetcherTool instance for fallback")
+            
+            logger.info(f"Attempting Jina fallback fetch for {url}")
+            result = await self._jina_fetcher.execute(url, update_callback, log_queue, mission_id)
+            
+            # If Jina succeeds, add a note that it was a fallback
+            if "error" not in result:
+                result["fetched_via"] = "jina_fallback"
+                result["original_error"] = original_error.get("error_type", "unknown")
+                logger.info(f"Jina fallback succeeded for {url}")
+            
+            return result
+        except Exception as e:
+            logger.error(f"Jina fallback also failed for {url}: {e}")
+            # Return the original error if Jina also fails
+            original_error["jina_fallback_error"] = str(e)
+            return original_error

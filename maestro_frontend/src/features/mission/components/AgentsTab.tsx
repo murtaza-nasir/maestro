@@ -9,9 +9,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../components/ui
 
 interface AgentsTabProps {
   missionId: string;
+  hasMoreLogs?: boolean;
+  onLoadMoreLogs?: () => void;
+  isLoadingMoreLogs?: boolean;
+  totalLogsCount?: number;
 }
 
-export const AgentsTab: React.FC<AgentsTabProps> = ({ missionId }) => {
+export const AgentsTab: React.FC<AgentsTabProps> = ({ 
+  missionId,
+  hasMoreLogs,
+  onLoadMoreLogs,
+  isLoadingMoreLogs,
+  totalLogsCount
+}) => {
   const { activeMission, missionLogs } = useMissionStore();
   const [isLoading, setIsLoading] = useState(false);
 
@@ -58,6 +68,10 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({ missionId }) => {
             logs={memoizedLogs}
             isLoading={isLoading}
             missionStatus={activeMission?.status}
+            missionId={missionId}
+            hasMore={hasMoreLogs}
+            onLoadMore={onLoadMoreLogs}
+            isLoadingMore={isLoadingMoreLogs}
           />
         </TabsContent>
         

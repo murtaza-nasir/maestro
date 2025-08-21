@@ -8,6 +8,12 @@
 [![Version](https://img.shields.io/badge/Version-2.1.0-green.svg)](https://github.com/murtaza-nasir/maestro.git)
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://hub.docker.com/r/yourusername/maestro)
 
+> **Version 0.1.4 Update (08/20/2025)**
+> 
+> - **New**: Jina.ai integration for web search and content fetching
+> - **Improved**: Search queries now expand vague references automatically  
+> - **Enhanced**: Better handling of JavaScript-heavy sites with Jina fetcher but will be slower
+>
 > **⚠️ Version 0.1.3 - BREAKING CHANGE (08/15/2025)** 
 > 
 > Complete migration from SQLite/ChromaDB to PostgreSQL with pgvector. 

@@ -1,6 +1,8 @@
 import os
 import logging
 import queue
+import aiohttp
+import asyncio
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional, Callable
 from datetime import datetime
@@ -8,7 +10,8 @@ from datetime import datetime
 # Import dynamic config to access user-specific provider settings
 from ai_researcher.dynamic_config import (
     get_web_search_provider, get_tavily_api_key, get_linkup_api_key, get_searxng_base_url, get_searxng_categories,
-    get_search_max_results, get_search_depth
+    get_jina_api_key, get_search_max_results, get_search_depth,
+    get_jina_read_full_content, get_jina_fetch_favicons, get_jina_bypass_cache
 )
 
 logger = logging.getLogger(__name__)
@@ -97,6 +100,17 @@ class WebSearchTool:
                 self.client = base_url.rstrip('/')  # Store the base URL as the "client"
                 self.api_key_configured = True
                 logger.info("WebSearchTool initialized with SearXNG.")
+            elif self.provider == "jina":
+                if not requests:
+                    raise ImportError("Jina provider selected, but 'requests' library not installed.")
+                api_key = get_jina_api_key()
+                if not api_key:
+                    logger.warning("Jina API key not configured in user settings or environment variables.")
+                    self.api_key_configured = False
+                    return
+                self.client = api_key  # Store the API key as the "client" for Jina
+                self.api_key_configured = True
+                logger.info("WebSearchTool initialized with Jina.")
             else:
                 raise ValueError(f"Unsupported web search provider configured: {self.provider}")
         except Exception as e:
@@ -141,6 +155,8 @@ class WebSearchTool:
         if not self.api_key_configured:
             if self.provider == "searxng":
                 user_friendly_error = f"Web search is not available. Please configure your SearXNG base URL in Settings > Search to enable web search functionality."
+            elif self.provider == "jina":
+                user_friendly_error = f"Web search is not available. Please configure your Jina API key in Settings > Search to enable web search functionality."
             else:
                 user_friendly_error = f"Web search is not available. Please configure your {self.provider.capitalize()} API key in Settings > Search to enable web search functionality."
             logger.warning(f"Web search attempted but {self.provider} configuration not available")
@@ -165,13 +181,20 @@ class WebSearchTool:
         if max_results is None:
             max_results = get_search_max_results(mission_id)
         
-        if depth is None:
-            depth = get_search_depth(mission_id)
+        # Validate max_results based on provider
+        if self.provider == 'jina':
+            max_results = max(1, min(10, max_results))  # Jina: 1-10
+        else:
+            max_results = max(1, min(20, max_results))  # Others: 1-20
         
-        # Validate max_results
-        max_results = max(1, min(20, max_results))  # Ensure between 1 and 20
-        
-        logger.info(f"Executing {self.provider.capitalize()} search for '{query}' with max_results={max_results}, depth={depth}")
+        # Only get depth for providers that use it
+        if self.provider in ['tavily', 'linkup']:
+            if depth is None:
+                depth = get_search_depth(mission_id)
+            logger.info(f"Executing {self.provider.capitalize()} search for '{query}' with max_results={max_results}, depth={depth}")
+        else:
+            # For Jina and SearXNG, depth is not applicable
+            logger.info(f"Executing {self.provider.capitalize()} search for '{query}' with max_results={max_results}")
         formatted_results = []
         error_msg = None
 
@@ -285,10 +308,10 @@ class WebSearchTool:
                     'safesearch': '1'
                 }
                 
-                response = requests.get(search_url, params=params, timeout=30)
-                response.raise_for_status()
-                
-                search_data = response.json()
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(search_url, params=params, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                        response.raise_for_status()
+                        search_data = await response.json()
                 search_results = search_data.get('results', [])
                 
                 # Limit results and format them
@@ -298,6 +321,96 @@ class WebSearchTool:
                         "snippet": result.get('content', 'No Snippet'),
                         "url": result.get('url', '#')
                     })
+
+            elif self.provider == "jina":
+                # Jina search using s.jina.ai API
+                search_url = "https://s.jina.ai/"
+                
+                # Get Jina-specific settings
+                read_full_content = get_jina_read_full_content(mission_id)
+                fetch_favicons = get_jina_fetch_favicons(mission_id)
+                bypass_cache = get_jina_bypass_cache(mission_id)
+                
+                headers = {
+                    "Authorization": f"Bearer {self.client}",  # self.client stores the API key
+                    "Accept": "application/json",
+                    "X-Respond-With": "json"
+                }
+                
+                # Build Jina search parameters
+                params = {
+                    "q": search_query
+                }
+                
+                # Add optional parameters based on settings
+                if read_full_content:
+                    params["read_full_content"] = "true"
+                if fetch_favicons:
+                    params["fetch_favicons"] = "true"
+                if bypass_cache:
+                    params["bypass_cache"] = "true"
+                
+                # Add optional parameters if provided
+                if from_date or to_date:
+                    # Jina doesn't support date filtering directly, add to query
+                    if from_date:
+                        search_query += f" after:{from_date}"
+                    if to_date:
+                        search_query += f" before:{to_date}"
+                    params["q"] = search_query
+                
+                if include_domains:
+                    # Add site restrictions to query
+                    site_query = " OR ".join([f"site:{domain}" for domain in include_domains])
+                    params["q"] = f"{search_query} ({site_query})"
+                
+                if exclude_domains:
+                    # Add exclusions to query
+                    for domain in exclude_domains:
+                        params["q"] = f"{params['q']} -site:{domain}"
+                
+                # Make the request
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(search_url, params=params, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                        response.raise_for_status()
+                        # Parse Jina response
+                        search_results = await response.json()
+                
+                # Jina returns a dict with 'code', 'status', 'data', 'meta' fields
+                if isinstance(search_results, dict):
+                    # Check if results are in 'data' field (standard Jina format)
+                    if 'data' in search_results:
+                        results_list = search_results['data']
+                        # Also check for API errors
+                        if search_results.get('code') != 200:
+                            logger.warning(f"Jina API returned non-200 code: {search_results.get('code')}, status: {search_results.get('status')}")
+                    elif 'results' in search_results:
+                        # Alternative format
+                        results_list = search_results['results']
+                    else:
+                        # Unexpected format
+                        logger.warning(f"Jina returned dict without 'data' or 'results' field: {search_results.keys()}")
+                        results_list = []
+                elif isinstance(search_results, list):
+                    # Direct list format (less common)
+                    results_list = search_results
+                else:
+                    logger.warning(f"Unexpected Jina response format: {type(search_results)}")
+                    results_list = []
+                
+                # Process the results
+                for i, result in enumerate(results_list[:max_results]):
+                    if isinstance(result, dict):
+                        # Each result has 'title', 'url', 'description', and optionally 'content' fields
+                        formatted_results.append({
+                            "title": result.get('title', 'No Title'),
+                            "snippet": result.get('description') or result.get('content', 'No Snippet')[:500],  # Limit snippet length
+                            "url": result.get('url', '#')
+                        })
+                
+                if not formatted_results and not error_msg:
+                    logger.info(f"Jina search returned no results for query: {search_query}")
+                    # Don't set error_msg here, just return empty results
 
             if error_msg:
                  return {"error": error_msg}
