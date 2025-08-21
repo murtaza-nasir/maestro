@@ -660,7 +660,7 @@ async def get_mission_notes(
 async def get_mission_logs(
     mission_id: str,
     skip: int = Query(0, ge=0, description="Number of records to skip"),
-    limit: int = Query(100, ge=1, le=10000, description="Number of records to return"),
+    limit: int = Query(1000, ge=1, le=10000, description="Number of records to return"),
     current_user: User = Depends(get_current_user_from_cookie),
     context_mgr: ContextManager = Depends(get_context_manager),
     db: Session = Depends(get_db)

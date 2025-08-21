@@ -279,7 +279,7 @@ class MissionLogs(BaseModel):
     total: int = 0
     has_more: bool = False
     skip: int = 0
-    limit: int = 100
+    limit: int = 1000
 
 class MissionDraft(BaseModel):
     mission_id: str

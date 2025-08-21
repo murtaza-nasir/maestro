@@ -42,8 +42,8 @@ export const ResearchPanel: React.FC = () => {
     }
     
     try {
-      // Fetch initial batch of logs with pagination support
-      const response = await apiClient.get(`/api/missions/${activeChat.missionId}/logs?skip=0&limit=100`)
+      // Fetch initial batch of logs with pagination support (1000 at a time)
+      const response = await apiClient.get(`/api/missions/${activeChat.missionId}/logs?skip=0&limit=1000`)
       if (response.data && response.data.logs) {
         const persistentLogs = response.data.logs.map((log: any) => ({
           ...log,
@@ -79,7 +79,7 @@ export const ResearchPanel: React.FC = () => {
       const currentLogs = missionLogs[activeChat.missionId] || []
       const skip = currentLogs.length
       
-      const response = await apiClient.get(`/api/missions/${activeChat.missionId}/logs?skip=${skip}&limit=100`)
+      const response = await apiClient.get(`/api/missions/${activeChat.missionId}/logs?skip=${skip}&limit=1000`)
       if (response.data && response.data.logs) {
         const newLogs = response.data.logs.map((log: any) => ({
           ...log,
