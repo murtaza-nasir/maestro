@@ -11,6 +11,7 @@ interface AgentsTabProps {
   missionId: string;
   hasMoreLogs?: boolean;
   onLoadMoreLogs?: () => void;
+  onLoadAllLogs?: () => void;
   isLoadingMoreLogs?: boolean;
   totalLogsCount?: number;
 }
@@ -19,6 +20,7 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
   missionId,
   hasMoreLogs,
   onLoadMoreLogs,
+  onLoadAllLogs,
   isLoadingMoreLogs,
   totalLogsCount
 }) => {
@@ -71,6 +73,7 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
             missionId={missionId}
             hasMore={hasMoreLogs}
             onLoadMore={onLoadMoreLogs}
+            onLoadAll={onLoadAllLogs}
             isLoadingMore={isLoadingMoreLogs}
             totalLogs={totalLogsCount}
           />

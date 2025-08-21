@@ -51,6 +51,7 @@ interface AgentActivityLogProps {
   missionId?: string;
   hasMore?: boolean;
   onLoadMore?: () => void;
+  onLoadAll?: () => void;
   isLoadingMore?: boolean;
   totalLogs?: number;
 }
@@ -62,6 +63,7 @@ export const AgentActivityLog: React.FC<AgentActivityLogProps> = ({
   missionId,
   hasMore = false,
   onLoadMore,
+  onLoadAll,
   isLoadingMore = false,
   totalLogs = 0
 }) => {
@@ -126,18 +128,37 @@ export const AgentActivityLog: React.FC<AgentActivityLogProps> = ({
 
   return (
     <div className="flex flex-col h-full max-h-full overflow-hidden space-y-2">
-      <div className="flex items-center space-x-2 flex-shrink-0">
-        <Bot className="h-4 w-4 text-primary" />
-        <h3 className="text-base font-semibold text-foreground">Agent Activity Log</h3>
-        {logs.length > 0 && (
-          <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between flex-shrink-0">
+        <div className="flex items-center space-x-2">
+          <Bot className="h-4 w-4 text-primary" />
+          <h3 className="text-base font-semibold text-foreground">Agent Activity Log</h3>
+          {logs.length > 0 && (
             <span className="text-xs text-muted-foreground bg-secondary px-2 py-1 rounded">
-              {logs.length} entries
+              {logs.length} entries{totalLogs > 0 && totalLogs > logs.length ? ` of ${totalLogs} total` : ''}
             </span>
-            {totalLogs > 0 && totalLogs > logs.length && (
-              <span className="text-xs text-muted-foreground">
-                of {totalLogs} total
-              </span>
+          )}
+        </div>
+        {(hasMore || (totalLogs > 0 && logs.length < totalLogs)) && onLoadMore && (
+          <div className="flex gap-2">
+            <Button
+              onClick={onLoadMore}
+              disabled={isLoadingMore || (!hasMore && logs.length >= totalLogs)}
+              variant="outline"
+              size="sm"
+              className="text-xs h-7"
+            >
+              {isLoadingMore ? 'Loading...' : 'Load More'}
+            </Button>
+            {hasMore && onLoadAll && (
+              <Button
+                onClick={onLoadAll}
+                disabled={isLoadingMore}
+                variant="outline"
+                size="sm"
+                className="text-xs h-7"
+              >
+                Load All
+              </Button>
             )}
           </div>
         )}
@@ -167,37 +188,6 @@ export const AgentActivityLog: React.FC<AgentActivityLogProps> = ({
           )}
           
           {logs.map((log, index) => renderLogEntry(log, index))}
-          
-          {(hasMore || (totalLogs > 0 && logs.length < totalLogs)) && onLoadMore && (
-            <div className="p-4 border-t space-y-3">
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>
-                  Showing {logs.length} of {totalLogs || logs.length} logs
-                </span>
-              </div>
-              <div className="flex justify-center">
-                <Button
-                  onClick={onLoadMore}
-                  disabled={isLoadingMore || (!hasMore && logs.length >= totalLogs)}
-                  variant="outline"
-                  size="sm"
-                  className="flex items-center gap-2"
-                >
-                  {isLoadingMore ? (
-                    <>
-                      <Activity className="h-4 w-4 animate-spin" />
-                      Loading more...
-                    </>
-                  ) : (
-                    <>
-                      <ChevronDown className="h-4 w-4" />
-                      Load More
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-          )}
         </CardContent>
       </Card>
     </div>

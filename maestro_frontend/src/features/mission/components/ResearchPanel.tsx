@@ -110,6 +110,44 @@ export const ResearchPanel: React.FC = () => {
     }
   }, [activeChat?.missionId, hasMoreLogs, isLoadingMoreLogs, missionLogs, appendMissionLogs, addToast])
 
+  // Load all logs function
+  const loadAllLogs = useCallback(async () => {
+    if (!activeChat?.missionId || !hasMoreLogs || isLoadingMoreLogs) {
+      return
+    }
+    
+    setIsLoadingMoreLogs(true)
+    try {
+      // Fetch all remaining logs in one request
+      const response = await apiClient.get(`/api/missions/${activeChat.missionId}/logs?skip=0&limit=10000`)
+      if (response.data && response.data.logs) {
+        const allLogs = response.data.logs.map((log: any) => ({
+          ...log,
+          timestamp: ensureDate(log.timestamp),
+        }))
+        
+        // Sort all logs by timestamp
+        const sortedAllLogs = allLogs.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+        
+        // Replace existing logs with all logs
+        setMissionLogs(activeChat.missionId, sortedAllLogs)
+        
+        // Update pagination state
+        setHasMoreLogs(false)
+        setTotalLogsCount(response.data.total || sortedAllLogs.length)
+      }
+    } catch (error) {
+      console.error('Failed to load all logs:', error)
+      addToast({
+        type: 'error',
+        title: 'Failed to load all logs',
+        message: 'Please try again'
+      })
+    } finally {
+      setIsLoadingMoreLogs(false)
+    }
+  }, [activeChat?.missionId, hasMoreLogs, isLoadingMoreLogs, setMissionLogs, addToast])
+
   // Set up single WebSocket connection for ALL research updates
   const { isConnected, subscribeMission, unsubscribeMission } = useResearchWebSocket()
   
@@ -403,6 +441,7 @@ export const ResearchPanel: React.FC = () => {
             isWebSocketConnected={isConnected}
             hasMoreLogs={hasMoreLogs}
             onLoadMoreLogs={loadMoreLogs}
+            onLoadAllLogs={loadAllLogs}
             isLoadingMoreLogs={isLoadingMoreLogs}
             totalLogsCount={totalLogsCount}
           />

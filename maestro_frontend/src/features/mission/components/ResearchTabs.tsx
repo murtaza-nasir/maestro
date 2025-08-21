@@ -16,6 +16,7 @@ interface ResearchTabsProps {
   isWebSocketConnected?: boolean
   hasMoreLogs?: boolean
   onLoadMoreLogs?: () => void
+  onLoadAllLogs?: () => void
   isLoadingMoreLogs?: boolean
   totalLogsCount?: number
 }
@@ -24,6 +25,7 @@ export const ResearchTabs: React.FC<ResearchTabsProps> = ({
   missionId, 
   hasMoreLogs,
   onLoadMoreLogs,
+  onLoadAllLogs,
   isLoadingMoreLogs,
   totalLogsCount
 }) => {
@@ -97,6 +99,7 @@ export const ResearchTabs: React.FC<ResearchTabsProps> = ({
             missionId={missionId}
             hasMoreLogs={hasMoreLogs}
             onLoadMoreLogs={onLoadMoreLogs}
+            onLoadAllLogs={onLoadAllLogs}
             isLoadingMoreLogs={isLoadingMoreLogs}
             totalLogsCount={totalLogsCount}
           />
