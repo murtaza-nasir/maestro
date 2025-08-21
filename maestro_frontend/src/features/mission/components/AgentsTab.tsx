@@ -72,6 +72,7 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
             hasMore={hasMoreLogs}
             onLoadMore={onLoadMoreLogs}
             isLoadingMore={isLoadingMoreLogs}
+            totalLogs={totalLogsCount}
           />
         </TabsContent>
         

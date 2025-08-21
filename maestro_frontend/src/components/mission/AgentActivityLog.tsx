@@ -52,6 +52,7 @@ interface AgentActivityLogProps {
   hasMore?: boolean;
   onLoadMore?: () => void;
   isLoadingMore?: boolean;
+  totalLogs?: number;
 }
 
 export const AgentActivityLog: React.FC<AgentActivityLogProps> = ({ 
@@ -61,7 +62,8 @@ export const AgentActivityLog: React.FC<AgentActivityLogProps> = ({
   missionId,
   hasMore = false,
   onLoadMore,
-  isLoadingMore = false
+  isLoadingMore = false,
+  totalLogs = 0
 }) => {
   const [expandedLogs, setExpandedLogs] = useState<Set<number>>(new Set());
   const logContainerRef = useRef<HTMLDivElement>(null);
@@ -128,9 +130,16 @@ export const AgentActivityLog: React.FC<AgentActivityLogProps> = ({
         <Bot className="h-4 w-4 text-primary" />
         <h3 className="text-base font-semibold text-foreground">Agent Activity Log</h3>
         {logs.length > 0 && (
-          <span className="text-xs text-muted-foreground bg-secondary px-2 py-1 rounded">
-            {logs.length} entries
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground bg-secondary px-2 py-1 rounded">
+              {logs.length} entries
+            </span>
+            {totalLogs > 0 && totalLogs > logs.length && (
+              <span className="text-xs text-muted-foreground">
+                of {totalLogs} total
+              </span>
+            )}
+          </div>
         )}
       </div>
 
@@ -159,27 +168,34 @@ export const AgentActivityLog: React.FC<AgentActivityLogProps> = ({
           
           {logs.map((log, index) => renderLogEntry(log, index))}
           
-          {hasMore && onLoadMore && (
-            <div className="flex justify-center p-4 border-t">
-              <Button
-                onClick={onLoadMore}
-                disabled={isLoadingMore}
-                variant="outline"
-                size="sm"
-                className="flex items-center gap-2"
-              >
-                {isLoadingMore ? (
-                  <>
-                    <Activity className="h-4 w-4 animate-spin" />
-                    Loading more...
-                  </>
-                ) : (
-                  <>
-                    <ChevronDown className="h-4 w-4" />
-                    Load More
-                  </>
-                )}
-              </Button>
+          {(hasMore || (totalLogs > 0 && logs.length < totalLogs)) && onLoadMore && (
+            <div className="p-4 border-t space-y-3">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>
+                  Showing {logs.length} of {totalLogs || logs.length} logs
+                </span>
+              </div>
+              <div className="flex justify-center">
+                <Button
+                  onClick={onLoadMore}
+                  disabled={isLoadingMore || (!hasMore && logs.length >= totalLogs)}
+                  variant="outline"
+                  size="sm"
+                  className="flex items-center gap-2"
+                >
+                  {isLoadingMore ? (
+                    <>
+                      <Activity className="h-4 w-4 animate-spin" />
+                      Loading more...
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="h-4 w-4" />
+                      Load More
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>
