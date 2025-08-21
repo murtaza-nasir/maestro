@@ -995,6 +995,11 @@ def get_execution_log_count(db: Session, mission_id: str, user_id: int) -> int:
     
     return db.query(MissionExecutionLog).filter(MissionExecutionLog.mission_id == mission_id).count()
 
+# Alias for consistency with other function names
+def get_mission_execution_logs_count(db: Session, mission_id: str, user_id: int) -> int:
+    """Alias for get_execution_log_count for consistency."""
+    return get_execution_log_count(db, mission_id, user_id)
+
 def get_latest_execution_logs(
     db: Session,
     mission_id: str,
