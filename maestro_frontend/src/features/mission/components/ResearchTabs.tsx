@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../../components/ui/tabs'
 import { useMissionStore } from '../store'
 import { PlanTab } from './PlanTab'
@@ -9,8 +10,7 @@ import { GoalPadTab } from './GoalPadTab'
 import { ScratchpadTab } from './ScratchpadTab'
 import { ThoughtPadTab } from './ThoughtPadTab'
 import { FileText, BookOpen, Edit3, Bot, } from 'lucide-react'
-import { apiClient } from '../../../config/api'
-import type { MissionContext } from '../types'
+
 interface ResearchTabsProps {
   missionId: string
   isWebSocketConnected?: boolean
@@ -29,25 +29,20 @@ export const ResearchTabs: React.FC<ResearchTabsProps> = ({
   isLoadingMoreLogs,
   totalLogsCount
 }) => {
+  const { t } = useTranslation();
   const { activeTab, setActiveTab, ensureMissionInStore, missionContexts, fetchMissionContext } = useMissionStore()
   const [activePlanTab, setActivePlanTab] = useState('outline')
   
-  // Get mission context from store - will be updated via WebSocket
   const missionContext = missionContexts[missionId] || null
-
-  // Removed duplicate WebSocket connection - ResearchPanel already handles mission WebSocket
 
   useEffect(() => {
     if (missionId) {
       ensureMissionInStore(missionId)
-      // Only fetch context if we don't have it in the store yet
       if (!missionContext) {
         fetchMissionContext(missionId)
       }
     }
   }, [missionId, ensureMissionInStore, fetchMissionContext, missionContext])
-
-  // Removed WebSocket message handling - ResearchPanel handles mission WebSocket updates
 
   return (
     <div className="w-full h-full flex flex-col">
@@ -55,29 +50,29 @@ export const ResearchTabs: React.FC<ResearchTabsProps> = ({
         <TabsList className="grid w-full grid-cols-4 flex-shrink-0 bg-secondary">
           <TabsTrigger value="plan" className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
-            <span className="hidden sm:inline">Plan</span>
+            <span className="hidden sm:inline">{t('researchTabs.plan')}</span>
           </TabsTrigger>
           <TabsTrigger value="agents" className="flex items-center gap-2">
             <Bot className="h-4 w-4" />
-            <span className="hidden sm:inline">Agents</span>
+            <span className="hidden sm:inline">{t('researchTabs.agents')}</span>
           </TabsTrigger>
           <TabsTrigger value="notes" className="flex items-center gap-2">
             <BookOpen className="h-4 w-4" />
-            <span className="hidden sm:inline">Notes</span>
+            <span className="hidden sm:inline">{t('researchTabs.notes')}</span>
           </TabsTrigger>
           <TabsTrigger value="draft" className="flex items-center gap-2">
             <Edit3 className="h-4 w-4" />
-            <span className="hidden sm:inline">Draft</span>
+            <span className="hidden sm:inline">{t('researchTabs.draft')}</span>
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="plan" className="mt-2 flex-1 overflow-auto">
           <Tabs value={activePlanTab} onValueChange={setActivePlanTab} className="h-full flex flex-col">
             <TabsList className="grid w-full grid-cols-4 bg-secondary">
-              <TabsTrigger value="outline">Outline</TabsTrigger>
-              <TabsTrigger value="goal_pad">Goal Pad</TabsTrigger>
-              <TabsTrigger value="scratchpad">Scratchpad</TabsTrigger>
-              <TabsTrigger value="thought_pad">Thought Pad</TabsTrigger>
+              <TabsTrigger value="outline">{t('researchTabs.outline')}</TabsTrigger>
+              <TabsTrigger value="goal_pad">{t('researchTabs.goalPad')}</TabsTrigger>
+              <TabsTrigger value="scratchpad">{t('researchTabs.scratchpad')}</TabsTrigger>
+              <TabsTrigger value="thought_pad">{t('researchTabs.thoughtPad')}</TabsTrigger>
             </TabsList>
             <TabsContent value="outline" className="mt-2 flex-1 overflow-auto">
               <PlanTab missionId={missionId} />

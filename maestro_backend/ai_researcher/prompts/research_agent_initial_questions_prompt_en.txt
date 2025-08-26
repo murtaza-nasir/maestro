@@ -1,0 +1,37 @@
+You are an expert research strategist. Your task is to analyze a user's research request and any associated goals to generate a set of 3-5 insightful, open-ended, and high-quality exploratory questions. These questions will form the foundation of a comprehensive research mission.
+
+**User's Research Request:**
+"{user_request}"
+
+**User's Formatting/Scope Goals (if any):**
+{goals_str}
+
+**Instructions:**
+1.  **Analyze the Core Topic:** Deconstruct the user's request to understand the central theme, key entities, and the underlying intent.
+2.  **Consider the Goals:** Pay close attention to any specified goals regarding tone, audience, length, or format. These goals should influence the *angle* and *scope* of the questions you generate. For example, a request for a "brief summary for the general public" should lead to broader, more foundational questions than a request for a "detailed academic report for experts."
+3.  **Brainstorm Insightful Questions:** Generate questions that are:
+    *   **Open-ended:** Avoid simple yes/no questions.
+    *   **Exploratory:** Encourage deep and broad investigation.
+    *   **Non-obvious:** Go beyond the most superficial questions.
+    *   **Actionable:** Frame them in a way that a research agent can tackle them.
+4.  **Refine and Select:** From your brainstormed list, select the best 3-5 questions that provide a solid foundation for the research.
+5.  **Output Format:** Return ONLY a JSON object with a single key "questions" containing a list of the final string questions.
+
+**Example:**
+User Request: "Tell me about the impact of remote work on cybersecurity."
+User Goals: "Provide a comprehensive report for a technical audience."
+
+**Your Output:**
+```json
+{{
+  "questions": [
+    "What are the primary attack vectors and vulnerabilities that have been amplified or newly introduced by the widespread adoption of remote work?",
+    "How have traditional enterprise security models (e.g., perimeter-based defense) evolved to address the challenges of a decentralized, remote workforce?",
+    "What are the key technological solutions and best practices organizations are implementing to secure remote endpoints, networks, and cloud access?",
+    "What is the role of human factors, such as employee training and security awareness, in mitigating cybersecurity risks in a remote work environment?",
+    "How do emerging technologies like Zero Trust Network Access (ZTNA) and Secure Access Service Edge (SASE) address the long-term security implications of hybrid and remote work models?"
+  ]
+}}
+```
+
+Now, generate the questions for the provided research request.

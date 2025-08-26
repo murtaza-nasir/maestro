@@ -79,7 +79,6 @@ class ResearchAgent(BaseAgent):
             agent_name=agent_name,
             model_dispatcher=model_dispatcher,
             tool_registry=tool_registry,
-            system_prompt=system_prompt or self._default_system_prompt(),
             model_name=effective_model_name
         )
         self.query_preparer = query_preparer # <-- Store QueryPreparer
@@ -91,43 +90,17 @@ class ResearchAgent(BaseAgent):
         # Initialize paragraph split pattern for content windows
         self._paragraph_split_pattern = re.compile(r'(\n\s*\n+)')
 
-    def _default_system_prompt(self) -> str:
+    def _default_system_prompt(self, language: str = "en") -> str:
         """Generates the default system prompt for the Research Agent."""
-        # Updated prompt to include synthesis task and active goals
-        return """You are a specialized Research Agent. Your primary goal is to gather and synthesize information relevant to a specific research section topic, ensuring alignment with the overall mission goals.
-
-**Active Mission Goals:**
-- The user prompt will contain a section listing the 'Overall Mission Goals'.
-- **CRITICAL:** You MUST consult these goals (e.g., original request, tone, audience) at every step: when generating search queries, evaluating relevance of information, and synthesizing notes or summaries.
-- Ensure your outputs (notes, synthesis) directly contribute to achieving these active goals. Prioritize information that addresses open goals.
-- Review the 'Recent Thoughts' (if provided in the user prompt) to maintain focus and build on previous insights.
-
-You will be given a section topic/goal and potentially specific focus questions or existing notes.
-
-**Mode 1: Answering Focus Questions**
-If you receive 'Focus Questions':
-1. Generate relevant search queries based on the section goal AND the focus questions.
-2. Execute searches using available tools (`document_search`, `web_search`).
-3. Analyze the search results (snippets or full documents if necessary via `read_full_document`).
-4. For each piece of information found that DIRECTLY answers a focus question, create a structured "Note".
-5. Return a list of generated Note objects. Focus on accuracy, relevance to the questions, and capturing source info.
-
-**Mode 2: Synthesizing Existing Notes**
-If you DO NOT receive 'Focus Questions' but receive 'Existing Relevant Notes':
-1. Review the 'Existing Relevant Notes' provided for the section.
-2. Synthesize the key information related to the 'Section Goal'.
-3. Identify any obvious gaps or contradictions if present.
-4. Produce a concise summary (1-3 sentences) of the synthesized information as a new 'internal' note.
-5. If the existing notes are insufficient or irrelevant, state that clearly in the output.
-6. Return ONLY the single synthesis note (or the statement of insufficiency).
-
-**General Guidelines:**
-- Focus on accuracy and relevance to the section topic/goal or specific questions.
-- Capture source information meticulously for later citation when generating notes from searches. Use the `[doc_id]` format as specified in note generation prompts.
-- Use the 'Agent Scratchpad' for context about previous actions or thoughts. Keep your own contributions to the scratchpad concise.
-- Consult 'Recent Thoughts' (if provided) for additional context and focus.
-- **CRITICAL: Base ALL generated notes and synthesis *strictly* on the information found in the provided search results or existing notes. DO NOT use any external knowledge or information not present in the context provided to you.**
-"""
+        prompt_path = f"maestro_backend/ai_researcher/prompts/research_agent_system_prompt_{language}.txt"
+        try:
+            with open(prompt_path, "r", encoding="utf-8") as f:
+                return f.read()
+        except FileNotFoundError:
+            logger.warning(f"Prompt file not found for language '{language}', falling back to English.")
+            prompt_path = "maestro_backend/ai_researcher/prompts/research_agent_system_prompt_en.txt"
+            with open(prompt_path, "r", encoding="utf-8") as f:
+                return f.read()
 
     # --- Helper Methods ---
 
@@ -186,7 +159,8 @@ If you DO NOT receive 'Focus Questions' but receive 'Existing Relevant Notes':
         tool_registry: Optional[ToolRegistry] = None, # <-- Add optional tool_registry override
         all_mission_notes: Optional[List[Note]] = None, # <-- NEW: Add all notes for synthesis trace-back
         active_goals: Optional[List[GoalEntry]] = None, # <-- NEW: Add active goals
-        active_thoughts: Optional[List[ThoughtEntry]] = None # <-- NEW: Add active thoughts
+        active_thoughts: Optional[List[ThoughtEntry]] = None, # <-- NEW: Add active thoughts
+        lang: str = "en"
     ) -> Tuple[List[Note], Dict[str, Any], Optional[str]]:
         """
         Generates research notes for a specific section, guided by active goals, using the provided tool_registry if available.
@@ -715,6 +689,7 @@ If you DO NOT receive 'Focus Questions' but receive 'Existing Relevant Notes':
         active_goals: Optional[List[GoalEntry]] = None,
         log_queue: Optional[queue.Queue] = None,
         update_callback: Optional[Callable] = None,
+        lang: str = "en"
     ) -> Tuple[List[str], Optional[Dict[str, Any]]]:
         """
         Generates high-quality initial research questions based on the user's request
@@ -726,45 +701,17 @@ If you DO NOT receive 'Focus Questions' but receive 'Existing Relevant Notes':
 
         goals_str = "\n".join([f"- {g.text}" for g in active_goals]) if active_goals else "None"
 
-        prompt = f"""
-You are an expert research strategist. Your task is to analyze a user's research request and any associated goals to generate a set of 3-5 insightful, open-ended, and high-quality exploratory questions. These questions will form the foundation of a comprehensive research mission.
+        prompt_path = f"maestro_backend/ai_researcher/prompts/research_agent_initial_questions_prompt_{lang}.txt"
+        try:
+            with open(prompt_path, "r", encoding="utf-8") as f:
+                prompt_template = f.read()
+        except FileNotFoundError:
+            logger.warning(f"Prompt file not found for language '{lang}', falling back to English.")
+            prompt_path = "maestro_backend/ai_researcher/prompts/research_agent_initial_questions_prompt_en.txt"
+            with open(prompt_path, "r", encoding="utf-8") as f:
+                prompt_template = f.read()
 
-**User's Research Request:**
-"{user_request}"
-
-**User's Formatting/Scope Goals (if any):**
-{goals_str}
-
-**Instructions:**
-1.  **Analyze the Core Topic:** Deconstruct the user's request to understand the central theme, key entities, and the underlying intent.
-2.  **Consider the Goals:** Pay close attention to any specified goals regarding tone, audience, length, or format. These goals should influence the *angle* and *scope* of the questions you generate. For example, a request for a "brief summary for the general public" should lead to broader, more foundational questions than a request for a "detailed academic report for experts."
-3.  **Brainstorm Insightful Questions:** Generate questions that are:
-    *   **Open-ended:** Avoid simple yes/no questions.
-    *   **Exploratory:** Encourage deep and broad investigation.
-    *   **Non-obvious:** Go beyond the most superficial questions.
-    *   **Actionable:** Frame them in a way that a research agent can tackle them.
-4.  **Refine and Select:** From your brainstormed list, select the best 3-5 questions that provide a solid foundation for the research.
-5.  **Output Format:** Return ONLY a JSON object with a single key "questions" containing a list of the final string questions.
-
-**Example:**
-User Request: "Tell me about the impact of remote work on cybersecurity."
-User Goals: "Provide a comprehensive report for a technical audience."
-
-**Your Output:**
-```json
-{{
-  "questions": [
-    "What are the primary attack vectors and vulnerabilities that have been amplified or newly introduced by the widespread adoption of remote work?",
-    "How have traditional enterprise security models (e.g., perimeter-based defense) evolved to address the challenges of a decentralized, remote workforce?",
-    "What are the key technological solutions and best practices organizations are implementing to secure remote endpoints, networks, and cloud access?",
-    "What is the role of human factors, such as employee training and security awareness, in mitigating cybersecurity risks in a remote work environment?",
-    "How do emerging technologies like Zero Trust Network Access (ZTNA) and Secure Access Service Edge (SASE) address the long-term security implications of hybrid and remote work models?"
-  ]
-}}
-```
-
-Now, generate the questions for the provided research request.
-"""
+        prompt = prompt_template.format(user_request=user_request, goals_str=goals_str)
         messages = [{"role": "user", "content": prompt}]
         model_details = None
         questions = []

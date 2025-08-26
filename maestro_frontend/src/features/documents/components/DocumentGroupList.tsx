@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { getDocumentGroups, createDocumentGroup, renameDocumentGroup, deleteDocumentGroup } from '../api';
 import type { DocumentGroup } from '../types';
 import { Button } from '../../../components/ui/button';
@@ -10,6 +11,7 @@ interface DocumentGroupListProps {
 }
 
 const DocumentGroupList: React.FC<DocumentGroupListProps> = ({ onSelectGroup }) => {
+  const { t } = useTranslation();
   const [documentGroups, setDocumentGroups] = useState<DocumentGroup[]>([]);
   const [newGroupName, setNewGroupName] = useState('');
   const [loading, setLoading] = useState(true);
@@ -27,7 +29,7 @@ const DocumentGroupList: React.FC<DocumentGroupListProps> = ({ onSelectGroup }) 
       setDocumentGroups(groups);
       setError(null);
     } catch (err) {
-      setError('Failed to fetch document groups.');
+      setError(t('documentGroupList.failedToFetch'));
       console.error(err);
     } finally {
       setLoading(false);
@@ -40,10 +42,9 @@ const DocumentGroupList: React.FC<DocumentGroupListProps> = ({ onSelectGroup }) 
       const newGroup = await createDocumentGroup(newGroupName);
       setNewGroupName('');
       await fetchGroups();
-      // Automatically select the newly created group
       onSelectGroup(newGroup);
     } catch (err) {
-      setError('Failed to create document group.');
+      setError(t('documentGroupList.failedToCreate'));
       console.error(err);
     }
   };
@@ -53,7 +54,7 @@ const DocumentGroupList: React.FC<DocumentGroupListProps> = ({ onSelectGroup }) 
       await deleteDocumentGroup(id);
       fetchGroups();
     } catch (err) {
-      setError('Failed to delete document group.');
+      setError(t('documentGroupList.failedToDelete'));
       console.error(err);
     }
   };
@@ -65,7 +66,7 @@ const DocumentGroupList: React.FC<DocumentGroupListProps> = ({ onSelectGroup }) 
       setRenamingGroup(null);
       fetchGroups();
     } catch (err) {
-      setError('Failed to rename document group.');
+      setError(t('documentGroupList.failedToRename'));
       console.error(err);
     }
   };
@@ -84,20 +85,20 @@ const DocumentGroupList: React.FC<DocumentGroupListProps> = ({ onSelectGroup }) 
           type="text"
           value={newGroupName}
           onChange={(e) => setNewGroupName(e.target.value)}
-          placeholder="New group name"
+          placeholder={t('documentGroupList.newGroupName')}
           className="mr-2 bg-background-alt border-border placeholder:text-text-secondary"
         />
-        <Button onClick={handleCreateGroup}>Create</Button>
+        <Button onClick={handleCreateGroup}>{t('documentGroupList.create')}</Button>
       </div>
-      {loading && <p className="text-text-secondary">Loading...</p>}
+      {loading && <p className="text-text-secondary">{t('documentGroupList.loading')}</p>}
       {error && <p className="text-destructive">{error}</p>}
       <ul>
         {documentGroups.map((group) => (
           <li key={group.id} className="flex justify-between items-center p-2 border-b border-border cursor-pointer hover:bg-muted" onClick={() => onSelectGroup(group)}>
             <span>{group.name}</span>
             <div>
-              <Button variant="ghost" size="sm" className="mr-2 text-text-secondary hover:text-text-primary" onClick={(e) => { e.stopPropagation(); setRenamingGroup(group); }}>Rename</Button>
-              <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive/80" onClick={(e) => { e.stopPropagation(); handleDeleteGroup(group.id); }}>Delete</Button>
+              <Button variant="ghost" size="sm" className="mr-2 text-text-secondary hover:text-text-primary" onClick={(e) => { e.stopPropagation(); setRenamingGroup(group); }}>{t('documentGroupList.rename')}</Button>
+              <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive/80" onClick={(e) => { e.stopPropagation(); handleDeleteGroup(group.id); }}>{t('documentGroupList.delete')}</Button>
             </div>
           </li>
         ))}

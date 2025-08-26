@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Dialog,
   DialogContent,
@@ -37,6 +38,7 @@ export const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
   isOpen,
   onClose,
 }) => {
+  const { t } = useTranslation();
   const [documentContent, setDocumentContent] = useState<DocumentViewResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +60,7 @@ export const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
       setDocumentContent(content);
     } catch (err: any) {
       console.error('Error loading document content:', err);
-      setError(err.response?.data?.detail || 'Failed to load document content');
+      setError(err.response?.data?.detail || t('documentView.failedToLoad'));
     } finally {
       setIsLoading(false);
     }
@@ -74,7 +76,6 @@ export const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
 
   const metadata = documentProp.metadata_ || {};
   
-  // Parse authors
   let authorsArray: string[] = [];
   if (metadata.authors) {
     if (Array.isArray(metadata.authors)) {
@@ -90,16 +91,16 @@ export const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
   }
 
   const formatFileSize = (bytes?: number) => {
-    if (!bytes) return 'Unknown size';
+    if (!bytes) return t('documentView.unknownSize');
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
     return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
   };
 
   const formatDate = (dateString?: string) => {
-    if (!dateString) return 'Unknown';
+    if (!dateString) return t('documentView.unknown');
     try {
-      return new Date(dateString).toLocaleDateString('en-US', {
+      return new Date(dateString).toLocaleDateString(undefined, {
         year: 'numeric',
         month: 'long',
         day: 'numeric',
@@ -128,7 +129,7 @@ export const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
             <div className="flex items-center justify-center flex-1">
               <div className="text-center">
                 <Loader2 className="h-12 w-12 animate-spin mx-auto mb-4 text-blue-600" />
-                <p className="text-gray-600 text-lg">Loading document content...</p>
+                <p className="text-gray-600 text-lg">{t('documentView.loading')}</p>
               </div>
             </div>
           ) : error ? (
@@ -141,20 +142,19 @@ export const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
                     size="default"
                     onClick={loadDocumentContent}
                   >
-                    Retry Loading
+                    {t('documentView.retry')}
                   </Button>
                 </div>
               </div>
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 flex-1 overflow-hidden">
-              {/* Metadata Sidebar */}
               <div className="lg:col-span-1 bg-muted/30 rounded-lg p-4 space-y-3 overflow-y-auto">
-                <h3 className="text-base font-semibold text-foreground mb-2 border-b border-border pb-1">Document Information</h3>
+                <h3 className="text-base font-semibold text-foreground mb-2 border-b border-border pb-1">{t('documentView.documentInfo')}</h3>
                 
                 <div className="space-y-3">
                   <div className="bg-background rounded-lg p-3 border border-border shadow-sm">
-                    <label className="text-xs font-semibold text-foreground block mb-1">Original Filename</label>
+                    <label className="text-xs font-semibold text-foreground block mb-1">{t('documentView.originalFilename')}</label>
                     <p className="text-xs text-muted-foreground break-words">{documentProp.original_filename}</p>
                   </div>
 
@@ -162,7 +162,7 @@ export const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
                     <div className="bg-background rounded-lg p-3 border border-border shadow-sm">
                       <label className="text-xs font-semibold text-foreground flex items-center mb-2">
                         <Users className="h-3 w-3 mr-1 text-muted-foreground" />
-                        Authors
+                        {t('documentView.authors')}
                       </label>
                       <div className="flex flex-wrap gap-1">
                         {authorsArray.map((author, index) => (
@@ -178,7 +178,7 @@ export const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
                     <div className="bg-background rounded-lg p-3 border border-border shadow-sm">
                       <label className="text-xs font-semibold text-foreground flex items-center mb-1">
                         <BookOpen className="h-3 w-3 mr-1 text-muted-foreground" />
-                        Journal/Source
+                        {t('documentView.journalSource')}
                       </label>
                       <p className="text-xs text-muted-foreground">{metadata.journal_or_source}</p>
                     </div>
@@ -188,7 +188,7 @@ export const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
                     <div className="bg-background rounded-lg p-3 border border-border shadow-sm">
                       <label className="text-xs font-semibold text-foreground flex items-center mb-1">
                         <Calendar className="h-3 w-3 mr-1 text-muted-foreground" />
-                        Publication Year
+                        {t('documentView.publicationYear')}
                       </label>
                       <p className="text-xs text-muted-foreground">{metadata.publication_year}</p>
                     </div>
@@ -198,7 +198,7 @@ export const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
                     <div className="bg-background rounded-lg p-3 border border-border shadow-sm">
                       <label className="text-xs font-semibold text-foreground flex items-center mb-2">
                         <Tags className="h-3 w-3 mr-1 text-muted-foreground" />
-                        Keywords
+                        {t('documentView.keywords')}
                       </label>
                       <div className="flex flex-wrap gap-1">
                         {metadata.keywords.map((keyword: string, index: number) => (
@@ -211,18 +211,18 @@ export const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
                   )}
 
                   <div className="bg-background rounded-lg p-3 border border-border shadow-sm">
-                    <label className="text-xs font-semibold text-foreground block mb-1">File Size</label>
+                    <label className="text-xs font-semibold text-foreground block mb-1">{t('documentView.fileSize')}</label>
                     <p className="text-xs text-muted-foreground">{formatFileSize(documentProp.file_size)}</p>
                   </div>
 
                   <div className="bg-background rounded-lg p-3 border border-border shadow-sm">
-                    <label className="text-xs font-semibold text-foreground block mb-1">Added</label>
+                    <label className="text-xs font-semibold text-foreground block mb-1">{t('documentView.added')}</label>
                     <p className="text-xs text-muted-foreground">{formatDate(documentProp.created_at)}</p>
                   </div>
 
                   {documentProp.processing_status && (
                     <div className="bg-background rounded-lg p-3 border border-border shadow-sm">
-                      <label className="text-xs font-semibold text-foreground block mb-1">Status</label>
+                      <label className="text-xs font-semibold text-foreground block mb-1">{t('documentView.status')}</label>
                       <Badge 
                         variant={documentProp.processing_status === 'completed' ? 'default' : 'secondary'}
                         className="text-xs px-2 py-0.5"
@@ -235,7 +235,7 @@ export const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
 
                 {metadata.abstract && (
                   <div className="bg-background rounded-lg p-3 border border-border shadow-sm">
-                    <label className="text-xs font-semibold text-foreground mb-2 block">Abstract</label>
+                    <label className="text-xs font-semibold text-foreground mb-2 block">{t('documentView.abstract')}</label>
                     <p className="text-xs text-muted-foreground leading-relaxed">
                       {metadata.abstract}
                     </p>
@@ -243,10 +243,9 @@ export const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
                 )}
               </div>
 
-              {/* Content Area */}
               <div className="lg:col-span-3 flex flex-col min-h-0">
                 <div className="flex items-center justify-between mb-3 pb-2 border-b border-border">
-                  <h3 className="text-base font-semibold text-foreground">Document Content</h3>
+                  <h3 className="text-base font-semibold text-foreground">{t('documentView.documentContent')}</h3>
                   {documentContent?.content && (
                     <Button
                       variant="outline"
@@ -263,7 +262,7 @@ export const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
                       }}
                     >
                       <Download className="h-3 w-3" />
-                      Download Markdown
+                      {t('documentView.downloadMarkdown')}
                     </Button>
                   )}
                 </div>
@@ -276,7 +275,6 @@ export const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
                         remarkPlugins={[remarkGfm, remarkMath]}
                         rehypePlugins={[rehypeRaw, rehypeKatex]}
                         components={{
-                          // Custom link component to open external links in new tab
                           a: ({ ...props }) => (
                               <a 
                                 {...props} 
@@ -285,7 +283,6 @@ export const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
                                 className="text-primary hover:text-primary/80 underline"
                               />
                             ),
-                            // Custom table styling
                             table: ({ ...props }) => (
                               <div className="overflow-x-auto my-4">
                                 <table {...props} className="min-w-full divide-y divide-border border border-border rounded-lg" />
@@ -297,11 +294,9 @@ export const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
                             td: ({ ...props }) => (
                               <td {...props} className="px-4 py-3 text-sm text-foreground border-b border-border last:border-b-0" />
                             ),
-                            // Better paragraph spacing
                             p: ({ ...props }) => (
                               <p {...props} className="mb-4 leading-relaxed text-foreground" />
                             ),
-                            // Better heading styles
                             h1: ({ ...props }) => (
                               <h1 {...props} className="text-2xl font-bold text-foreground mt-8 mb-4" />
                             ),
@@ -311,21 +306,18 @@ export const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
                             h3: ({ ...props }) => (
                               <h3 {...props} className="text-lg font-semibold text-foreground mt-4 mb-2" />
                             ),
-                            // Better list styling
                             ul: ({ ...props }) => (
                               <ul {...props} className="list-disc pl-6 mb-4 space-y-1 text-foreground" />
                             ),
                             ol: ({ ...props }) => (
                               <ol {...props} className="list-decimal pl-6 mb-4 space-y-1 text-foreground" />
                             ),
-                            // Code blocks
                             pre: ({ ...props }) => (
                               <pre {...props} className="bg-muted p-4 rounded-lg overflow-x-auto mb-4 text-sm" />
                             ),
                             code: ({ ...props }) => (
                               <code {...props} className="bg-muted px-1 py-0.5 rounded text-sm font-mono" />
                             ),
-                            // Handle superscript and subscript
                             sup: ({ ...props }) => (
                               <sup {...props} className="text-xs align-super" />
                             ),
@@ -341,10 +333,10 @@ export const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
                     <div className="text-center py-16">
                       <FileText className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
                       <p className="text-foreground text-lg font-medium mb-2">
-                        No content available for this document
+                        {t('documentView.noContent')}
                       </p>
                       <p className="text-muted-foreground">
-                        The document may still be processing or an error occurred during processing
+                        {t('documentView.noContentDescription')}
                       </p>
                     </div>
                   )}

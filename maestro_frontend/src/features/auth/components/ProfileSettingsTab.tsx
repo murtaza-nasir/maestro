@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../../components/ui/card';
 import { Label } from '../../../components/ui/label';
 import { Input } from '../../../components/ui/input';
@@ -6,12 +7,11 @@ import { Button } from '../../../components/ui/button';
 import { useToast } from '../../../components/ui/toast';
 import { User, Lock } from 'lucide-react';
 import { useSettingsStore } from './SettingsStore';
-// import { useAuthStore } from '../store';
 import { apiClient } from '../../../config/api';
 
 export const ProfileSettingsTab: React.FC = () => {
+  const { t } = useTranslation();
   const { draftProfile, setProfileField } = useSettingsStore();
-  // const { getCsrfToken } = useAuthStore();
   const { addToast } = useToast();
   
   const [passwordData, setPasswordData] = useState({
@@ -25,8 +25,8 @@ export const ProfileSettingsTab: React.FC = () => {
     if (passwordData.new_password !== passwordData.confirm_password) {
       addToast({
         type: 'error',
-        title: 'Error',
-        message: 'New passwords do not match'
+        title: t('profileSettings.error'),
+        message: t('profileSettings.passwordsDoNotMatch')
       });
       return;
     }
@@ -34,8 +34,8 @@ export const ProfileSettingsTab: React.FC = () => {
     if (passwordData.new_password.length < 6) {
       addToast({
         type: 'error',
-        title: 'Error',
-        message: 'Password must be at least 6 characters long'
+        title: t('profileSettings.error'),
+        message: t('profileSettings.passwordTooShort')
       });
       return;
     }
@@ -49,8 +49,8 @@ export const ProfileSettingsTab: React.FC = () => {
 
       addToast({
         type: 'success',
-        title: 'Success',
-        message: 'Password changed successfully'
+        title: t('profileSettings.success'),
+        message: t('profileSettings.passwordChanged')
       });
 
       // Clear the form
@@ -63,8 +63,8 @@ export const ProfileSettingsTab: React.FC = () => {
       console.error('Failed to change password:', error);
       addToast({
         type: 'error',
-        title: 'Error',
-        message: error.response?.data?.detail || 'Failed to change password'
+        title: t('profileSettings.error'),
+        message: error.response?.data?.detail || t('profileSettings.failedToChangePassword')
       });
     } finally {
       setIsChangingPassword(false);
@@ -72,7 +72,7 @@ export const ProfileSettingsTab: React.FC = () => {
   };
 
   if (!draftProfile) {
-    return <div>Loading profile...</div>;
+    return <div>{t('profileSettings.loading')}</div>;
   }
 
   return (
@@ -82,36 +82,36 @@ export const ProfileSettingsTab: React.FC = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <User className="h-4 w-4" />
-            User Profile
+            {t('profileSettings.userProfile')}
           </CardTitle>
-          <CardDescription>Update your personal information.</CardDescription>
+          <CardDescription>{t('profileSettings.userProfileDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="full_name">Full Name</Label>
+            <Label htmlFor="full_name">{t('profileSettings.fullName')}</Label>
             <Input
               id="full_name"
               value={draftProfile.full_name || ''}
               onChange={(e) => setProfileField('full_name', e.target.value)}
-              placeholder="Enter your full name"
+              placeholder={t('profileSettings.fullNamePlaceholder')}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="location">Location</Label>
+            <Label htmlFor="location">{t('profileSettings.location')}</Label>
             <Input
               id="location"
               value={draftProfile.location || ''}
               onChange={(e) => setProfileField('location', e.target.value)}
-              placeholder="e.g., San Francisco, CA"
+              placeholder={t('profileSettings.locationPlaceholder')}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="job_title">Job Title</Label>
+            <Label htmlFor="job_title">{t('profileSettings.jobTitle')}</Label>
             <Input
               id="job_title"
               value={draftProfile.job_title || ''}
               onChange={(e) => setProfileField('job_title', e.target.value)}
-              placeholder="e.g., Software Engineer"
+              placeholder={t('profileSettings.jobTitlePlaceholder')}
             />
           </div>
         </CardContent>
@@ -122,39 +122,39 @@ export const ProfileSettingsTab: React.FC = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Lock className="h-4 w-4" />
-            Change Password
+            {t('profileSettings.changePassword')}
           </CardTitle>
-          <CardDescription>Update your account password for security.</CardDescription>
+          <CardDescription>{t('profileSettings.changePasswordDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="current_password">Current Password</Label>
+            <Label htmlFor="current_password">{t('profileSettings.currentPassword')}</Label>
             <Input
               id="current_password"
               type="password"
               value={passwordData.current_password}
               onChange={(e) => setPasswordData(prev => ({ ...prev, current_password: e.target.value }))}
-              placeholder="Enter your current password"
+              placeholder={t('profileSettings.currentPasswordPlaceholder')}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="new_password">New Password</Label>
+            <Label htmlFor="new_password">{t('profileSettings.newPassword')}</Label>
             <Input
               id="new_password"
               type="password"
               value={passwordData.new_password}
               onChange={(e) => setPasswordData(prev => ({ ...prev, new_password: e.target.value }))}
-              placeholder="Enter your new password"
+              placeholder={t('profileSettings.newPasswordPlaceholder')}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="confirm_password">Confirm New Password</Label>
+            <Label htmlFor="confirm_password">{t('profileSettings.confirmNewPassword')}</Label>
             <Input
               id="confirm_password"
               type="password"
               value={passwordData.confirm_password}
               onChange={(e) => setPasswordData(prev => ({ ...prev, confirm_password: e.target.value }))}
-              placeholder="Confirm your new password"
+              placeholder={t('profileSettings.confirmNewPasswordPlaceholder')}
             />
           </div>
           <Button 
@@ -162,7 +162,7 @@ export const ProfileSettingsTab: React.FC = () => {
             disabled={isChangingPassword || !passwordData.current_password || !passwordData.new_password || !passwordData.confirm_password}
             className="w-full"
           >
-            {isChangingPassword ? 'Changing Password...' : 'Change Password'}
+            {isChangingPassword ? t('profileSettings.changingPassword') : t('profileSettings.changePassword')}
           </Button>
         </CardContent>
       </Card>

@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useViewStore } from '../stores/viewStore'
 import { useTheme } from '../contexts/ThemeContext'
 import { apiClient } from '../config/api'
-// import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { 
   Search, 
@@ -30,6 +30,7 @@ interface DashboardStats {
 }
 
 export const Dashboard: React.FC = () => {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { setView } = useViewStore()
   const { theme } = useTheme()
@@ -77,31 +78,31 @@ export const Dashboard: React.FC = () => {
 
   const actionCards = [
     {
-      title: 'Start Research',
-      description: 'Begin a new AI-powered research project',
+      title: t('dashboard.actionCards.startResearch.title'),
+      description: t('dashboard.actionCards.startResearch.description'),
       icon: Search,
       action: handleStartResearch,
-      stats: `${stats.research_sessions} research sessions`,
+      stats: t('dashboard.actionCards.startResearch.stats', { count: stats.research_sessions }),
       gradient: 'from-blue-500/10 to-cyan-500/10',
       iconColor: 'text-blue-600 dark:text-blue-400',
       borderColor: 'border-blue-200/50 dark:border-blue-800/50'
     },
     {
-      title: 'Start Writing',
-      description: 'Create and edit documents with AI assistance',
+      title: t('dashboard.actionCards.startWriting.title'),
+      description: t('dashboard.actionCards.startWriting.description'),
       icon: PenTool,
       action: handleStartWriting,
-      stats: `${stats.writing_sessions} writing sessions`,
+      stats: t('dashboard.actionCards.startWriting.stats', { count: stats.writing_sessions }),
       gradient: 'from-purple-500/10 to-pink-500/10',
       iconColor: 'text-purple-600 dark:text-purple-400',
       borderColor: 'border-purple-200/50 dark:border-purple-800/50'
     },
     {
-      title: 'Manage Documents',
-      description: 'Organize and access your research materials',
+      title: t('dashboard.actionCards.manageDocuments.title'),
+      description: t('dashboard.actionCards.manageDocuments.description'),
       icon: FolderOpen,
       action: handleManageDocuments,
-      stats: `${stats.total_documents} documents`,
+      stats: t('dashboard.actionCards.manageDocuments.stats', { count: stats.total_documents }),
       gradient: 'from-emerald-500/10 to-teal-500/10',
       iconColor: 'text-emerald-600 dark:text-emerald-400',
       borderColor: 'border-emerald-200/50 dark:border-emerald-800/50'
@@ -125,17 +126,17 @@ export const Dashboard: React.FC = () => {
           </div>
           
           <h1 className="text-4xl font-bold text-foreground mb-4 tracking-tight">
-            MAESTRO
+            {t('dashboard.greeting')}
           </h1>
           
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            Your intelligent research and writing companion.
+            {t('dashboard.tagline')}
           </p>
           
           {stats.recent_activity !== 'No recent activity' && (
             <div className="flex items-center justify-center mt-6 text-sm text-muted-foreground">
               <Clock className="h-4 w-4 mr-2" />
-              Last activity: {stats.recent_activity}
+              {t('dashboard.lastActivity', { activity: stats.recent_activity })}
             </div>
           )}
         </div>
@@ -182,7 +183,7 @@ export const Dashboard: React.FC = () => {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">Total Sessions</p>
+                  <p className="text-sm font-medium text-muted-foreground">{t('dashboard.stats.totalSessions')}</p>
                   <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
                     {stats.total_chats}
                   </p>
@@ -192,7 +193,7 @@ export const Dashboard: React.FC = () => {
                 </div>
               </div>
               <div className="mt-2 text-xs text-muted-foreground">
-                Research + Writing combined
+                {t('dashboard.stats.totalSessionsTooltip')}
               </div>
             </CardContent>
           </Card>
@@ -202,7 +203,7 @@ export const Dashboard: React.FC = () => {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">Missions</p>
+                  <p className="text-sm font-medium text-muted-foreground">{t('dashboard.stats.missions')}</p>
                   <p className="text-2xl font-bold text-green-600 dark:text-green-400">
                     {stats.completed_missions}/{stats.total_missions}
                   </p>
@@ -213,8 +214,8 @@ export const Dashboard: React.FC = () => {
               </div>
               <div className="mt-2 text-xs text-muted-foreground">
                 {stats.total_missions > 0 ? 
-                  `${Math.round((stats.completed_missions / stats.total_missions) * 100)}% completion rate` : 
-                  'No missions yet'
+                  t('dashboard.stats.completionRate', { rate: Math.round((stats.completed_missions / stats.total_missions) * 100) }) :
+                  t('dashboard.stats.noMissions')
                 }
               </div>
             </CardContent>
@@ -225,7 +226,7 @@ export const Dashboard: React.FC = () => {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">Active Missions</p>
+                  <p className="text-sm font-medium text-muted-foreground">{t('dashboard.stats.activeMissions')}</p>
                   <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">
                     {stats.active_missions}
                   </p>
@@ -235,9 +236,9 @@ export const Dashboard: React.FC = () => {
                 </div>
               </div>
               <div className="mt-2 text-xs text-muted-foreground">
-                {stats.active_missions > 0 ? 'Currently in progress' : 'No active work'}
+                {stats.active_missions > 0 ? t('dashboard.stats.inProgress') : t('dashboard.stats.noActiveWork')}
               </div>
-            </CardContent>
+            </_CardContent>
           </Card>
 
           {/* Session Mix */}
@@ -245,7 +246,7 @@ export const Dashboard: React.FC = () => {
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">Session Mix</p>
+                  <p className="text-sm font-medium text-muted-foreground">{t('dashboard.stats.sessionMix')}</p>
                   <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
                     {stats.total_chats > 0 ? Math.round((stats.research_sessions / stats.total_chats) * 100) : 0}%
                   </p>
@@ -279,11 +280,11 @@ export const Dashboard: React.FC = () => {
                 <div className="flex justify-between text-xs text-muted-foreground">
                   <div className="flex items-center gap-1">
                     <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                    <span>Research {stats.total_chats > 0 ? Math.round((stats.research_sessions / stats.total_chats) * 100) : 0}%</span>
+                    <span>{t('dashboard.stats.research')} {stats.total_chats > 0 ? Math.round((stats.research_sessions / stats.total_chats) * 100) : 0}%</span>
                   </div>
                   <div className="flex items-center gap-1">
                     <div className="w-2 h-2 rounded-full bg-purple-500"></div>
-                    <span>Writing {stats.total_chats > 0 ? Math.round((stats.writing_sessions / stats.total_chats) * 100) : 0}%</span>
+                    <span>{t('dashboard.stats.writing')} {stats.total_chats > 0 ? Math.round((stats.writing_sessions / stats.total_chats) * 100) : 0}%</span>
                   </div>
                 </div>
               </div>

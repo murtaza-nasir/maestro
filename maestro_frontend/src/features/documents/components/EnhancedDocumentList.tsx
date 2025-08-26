@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { 
   CheckSquare, 
   Square, 
@@ -30,7 +31,7 @@ interface EnhancedDocumentListProps {
   onDocumentDeleted?: () => void;
   onDocumentAdded?: () => void;
   showGroupActions?: boolean;
-  isGroupView?: boolean; // true when viewing documents within a group, false when browsing to add to group
+  isGroupView?: boolean;
   title?: string;
 }
 
@@ -42,6 +43,7 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
   showGroupActions = false,
   isGroupView = false,
 }) => {
+  const { t } = useTranslation();
   const { refreshGroups } = useDocumentContext();
   const { startUploads } = useDocumentUploadManager();
   const [selectedDocuments, setSelectedDocuments] = useState<Set<string>>(new Set());
@@ -51,63 +53,10 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   
-  // Modal state
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
 
-  // Extract unique filter options from documents
-  const filterOptions = useMemo(() => {
-    // console.log("EnhancedDocumentList: documents prop", documents);
-    const authors = new Set<string>();
-    const years = new Set<string>();
-    const statuses = new Set<string>();
-
-    documents.forEach(doc => {
-      // Extract authors
-      const docAuthors = doc.metadata_?.authors || doc.authors;
-      if (docAuthors) {
-        if (Array.isArray(docAuthors)) {
-          docAuthors.forEach(author => authors.add(author));
-        } else if (typeof docAuthors === 'string') {
-          try {
-            const parsed = JSON.parse(docAuthors);
-            if (Array.isArray(parsed)) {
-              parsed.forEach(author => authors.add(author));
-            } else {
-              authors.add(docAuthors);
-            }
-          } catch {
-            authors.add(docAuthors);
-          }
-        }
-      }
-
-      // Extract years
-      const year = doc.metadata_?.publication_year;
-      if (year) {
-        years.add(year.toString());
-      }
-
-      // Extract statuses
-      if (doc.processing_status) {
-        statuses.add(doc.processing_status);
-      }
-    });
-
-    return {
-      authors: Array.from(authors).sort(),
-      years: Array.from(years).sort().reverse(),
-      statuses: Array.from(statuses).sort()
-    };
-  }, [documents]);
-
-  useEffect(() => {
-    // console.log("EnhancedDocumentList: filterOptions", filterOptions);
-  }, [filterOptions]);
-
-
-  // Use documents directly since filtering is now handled server-side
   const filteredDocuments = documents;
 
   const handleSelectAll = () => {
@@ -139,11 +88,11 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
       await bulkDeleteDocuments(Array.from(selectedDocuments));
       setSelectedDocuments(new Set());
       onDocumentDeleted?.();
-      refreshGroups(); // Update group counts in sidebar and breadcrumb
+      refreshGroups();
       setError(null);
       setDeleteModalOpen(false);
     } catch (err) {
-      setError('Failed to delete documents');
+      setError(t('enhancedDocumentList.failedToDelete'));
       console.error('Bulk delete error:', err);
     } finally {
       setIsDeleting(false);
@@ -163,10 +112,10 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
       await bulkAddDocumentsToGroup(selectedGroupId, Array.from(selectedDocuments));
       setSelectedDocuments(new Set());
       onDocumentAdded?.();
-      refreshGroups(); // Update group counts in sidebar and breadcrumb
+      refreshGroups();
       setError(null);
     } catch (err) {
-      setError('Failed to add documents to group');
+      setError(t('enhancedDocumentList.failedToAdd'));
       console.error('Bulk add error:', err);
     } finally {
       setIsProcessing(false);
@@ -176,7 +125,7 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
   const handleBulkRemoveFromGroup = async () => {
     if (!selectedGroupId || selectedDocuments.size === 0) return;
 
-    const confirmMessage = `Remove ${selectedDocuments.size} document(s) from this group?`;
+    const confirmMessage = t('enhancedDocumentList.removeConfirmation', { count: selectedDocuments.size });
     if (!confirm(confirmMessage)) return;
 
     try {
@@ -184,10 +133,10 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
       await bulkRemoveDocumentsFromGroup(selectedGroupId, Array.from(selectedDocuments));
       setSelectedDocuments(new Set());
       onDocumentAdded?.();
-      refreshGroups(); // Update group counts in sidebar and breadcrumb
+      refreshGroups();
       setError(null);
     } catch (err) {
-      setError('Failed to remove documents from group');
+      setError(t('enhancedDocumentList.failedToRemove'));
       console.error('Bulk remove error:', err);
     } finally {
       setIsProcessing(false);
@@ -195,7 +144,7 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
   };
 
   const formatAuthors = (authors: string | string[] | undefined): string => {
-    if (!authors) return 'Unknown';
+    if (!authors) return t('enhancedDocumentList.unknown');
     if (typeof authors === 'string') {
       try {
         const parsed = JSON.parse(authors);
@@ -204,7 +153,7 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
         return authors;
       }
     }
-    return Array.isArray(authors) ? authors.join(', ') : 'Unknown';
+    return Array.isArray(authors) ? authors.join(', ') : t('enhancedDocumentList.unknown');
   };
 
   const formatFileSize = (bytes: number | undefined) => {
@@ -215,7 +164,6 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  // Drag and drop handlers
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(true);
@@ -232,55 +180,40 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
     e.preventDefault();
     setIsDragOver(false);
     
-    // Accept multiple file types: PDF, Word documents, and Markdown files
     const supportedTypes = [
       'application/pdf',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
-      'application/msword', // .doc
-      'text/markdown', // .md
-      'text/x-markdown' // alternative .md MIME type
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword',
+      'text/markdown',
+      'text/x-markdown'
     ];
     
     const supportedExtensions = ['.pdf', '.docx', '.doc', '.md', '.markdown'];
     
     const allFiles = Array.from(e.dataTransfer.files);
-    // console.log(`EnhancedDocumentList: Files dropped:`, allFiles.map(f => `${f.name} (type: ${f.type})`));
     
     const files = allFiles.filter(file => {
       const hasValidType = supportedTypes.includes(file.type);
       const hasValidExtension = supportedExtensions.some(ext => 
         file.name.toLowerCase().endsWith(ext)
       );
-      
-      const isValid = hasValidType || hasValidExtension;
-      // console.log(`File ${file.name}: type=${file.type}, extension valid=${hasValidExtension}, type valid=${hasValidType}, accepted=${isValid}`);
-      
-      // Accept file if either MIME type OR file extension matches
-      return isValid;
+      return hasValidType || hasValidExtension;
     });
-    
-    // console.log(`EnhancedDocumentList: ${files.length}/${allFiles.length} files passed validation`);
     
     if (files.length > 0) {
       startUploads(files, selectedGroupId);
       onDocumentAdded?.();
     } else if (allFiles.length > 0) {
       console.error('All files were rejected by validation');
-      setError(`Unsupported file types. Supported: PDF, Word (docx/doc), Markdown (md/markdown)`);
+      setError(t('enhancedDocumentList.unsupportedFiles'));
     }
-  }, [selectedGroupId, startUploads, onDocumentAdded]);
+  }, [selectedGroupId, startUploads, onDocumentAdded, t]);
 
   const handleFilesSelected = useCallback((files: File[]) => {
-    // console.log(`handleFilesSelected called with ${files.length} files:`, files.map(f => f.name));
-    // console.log('selectedGroupId:', selectedGroupId);
-    
-    // Allow uploads without a group - they go to general documents
-    // console.log('Starting uploads...');
     startUploads(files, selectedGroupId || null);
     onDocumentAdded?.();
   }, [selectedGroupId, startUploads, onDocumentAdded]);
 
-  // Modal handlers
   const handleEditDocument = useCallback((document: Document) => {
     setSelectedDocument(document);
     setEditModalOpen(true);
@@ -292,8 +225,7 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
   }, []);
 
   const handleDocumentUpdated = useCallback((_updatedDocument: Document) => {
-    // Refresh the documents list
-    onDocumentAdded?.(); // This will trigger a refresh
+    onDocumentAdded?.();
   }, [onDocumentAdded]);
 
   const handleCloseModals = useCallback(() => {
@@ -309,29 +241,25 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {/* Drag overlay */}
       {isDragOver && (
         <div className="absolute inset-0 bg-primary/10 bg-opacity-75 flex items-center justify-center z-50 pointer-events-none">
           <div className="bg-background rounded-lg p-8 shadow-lg text-center border-2 border-primary border-dashed">
             <Upload className="h-16 w-16 text-primary mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-foreground mb-2">Drop documents here</h3>
+            <h3 className="text-xl font-semibold text-foreground mb-2">{t('enhancedDocumentList.dropDocuments')}</h3>
             <p className="text-muted-foreground">
-              Supports PDF, Word (docx/doc), and Markdown (md) files
+              {t('enhancedDocumentList.supportedFiles')}
             </p>
           </div>
         </div>
       )}
 
-      {/* Error Section */}
       {error && (
         <div className="flex-shrink-0 mx-4 mt-3 p-3 bg-destructive/10 border border-destructive/20 rounded-md">
           <p className="text-sm text-destructive">{error}</p>
         </div>
       )}
 
-      {/* Document List */}
       <div className="flex-1 overflow-y-auto min-h-0">
-        {/* Select All Header */}
         {filteredDocuments.length > 0 && (
           <div className="flex-shrink-0 p-4 border-b border-border sticky top-0 z-10 bg-sidebar-background">
             <div className="flex items-center justify-between">
@@ -344,14 +272,13 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
                 ) : (
                   <Square className="h-4 w-4" />
                 )}
-                Select all {filteredDocuments.length} document{filteredDocuments.length !== 1 ? 's' : ''}
+                {t('enhancedDocumentList.selectAll', { count: filteredDocuments.length })}
               </button>
 
-              {/* Bulk Actions */}
               {selectedDocuments.size > 0 && (
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-primary mr-2">
-                    {selectedDocuments.size} selected
+                    {t('enhancedDocumentList.selected', { count: selectedDocuments.size })}
                   </span>
                   {showGroupActions && isGroupView && selectedGroupId && (
                     <button
@@ -360,7 +287,7 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
                       className="flex items-center gap-1 px-3 py-1 text-sm bg-yellow-500 text-white rounded hover:bg-yellow-600 disabled:opacity-50"
                     >
                       <Minus className="h-3 w-3" />
-                      Remove from Group
+                      {t('enhancedDocumentList.removeFromGroup')}
                     </button>
                   )}
                   {showGroupActions && !isGroupView && selectedGroupId && (
@@ -370,7 +297,7 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
                       className="flex items-center gap-1 px-3 py-1 text-sm bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50"
                     >
                       <Plus className="h-3 w-3" />
-                      Add to Group
+                      {t('enhancedDocumentList.addToGroup')}
                     </button>
                   )}
                   <button
@@ -379,7 +306,7 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
                     className="flex items-center gap-1 px-3 py-1 text-sm bg-destructive text-destructive-foreground rounded hover:bg-destructive/80 disabled:opacity-50"
                   >
                     <Trash2 className="h-3 w-3" />
-                    Delete
+                    {t('enhancedDocumentList.delete')}
                   </button>
                 </div>
               )}
@@ -392,14 +319,14 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
             <div className="text-center">
               <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <h3 className="text-lg font-medium text-foreground mb-2">
-                {documents.length === 0 ? 'No documents yet' : 'No documents match your filters'}
+                {documents.length === 0 ? t('enhancedDocumentList.noDocumentsYet') : t('enhancedDocumentList.noMatchingDocuments')}
               </h3>
               <p className="text-muted-foreground">
                 {documents.length === 0 
                   ? selectedGroupId 
-                    ? 'Drag and drop files here or use "Browse & Add" to get started.'
-                    : 'Drag and drop files here to upload to your library.'
-                  : 'Try adjusting your search terms or filters.'
+                    ? t('enhancedDocumentList.dragAndDropOrBrowse')
+                    : t('enhancedDocumentList.dragAndDrop')
+                  : t('enhancedDocumentList.adjustFilters')
                 }
               </p>
             </div>
@@ -423,7 +350,6 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
                 }`}
               >
                 <div className="flex items-start gap-2">
-                  {/* Selection Checkbox */}
                   <button
                     onClick={() => handleSelectDocument(doc.id)}
                     className="flex-shrink-0 mt-0.5"
@@ -435,28 +361,23 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
                     )}
                   </button>
 
-                  {/* Document Icon */}
                   <div className="flex-shrink-0 mt-0.5">
                     <FileText className={`h-4 w-4 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
                   </div>
 
-                  {/* Document Content */}
                   <div className="flex-1 min-w-0">
-                    {/* Title */}
                     <h4 className={`font-medium text-sm leading-tight mb-1 line-clamp-2 ${
                       isSelected ? 'text-primary' : 'text-foreground'
                     }`} title={title}>
                       {title}
                     </h4>
 
-                    {/* Authors subtitle */}
-                    {authors !== 'Unknown' && (
+                    {authors !== t('enhancedDocumentList.unknown') && (
                       <p className="text-xs text-muted-foreground mb-1 line-clamp-1" title={authors}>
                         {authors}
                       </p>
                     )}
 
-                    {/* Metadata */}
                     <div className="space-y-0.5 mb-1">
                       {(journal || year) && (
                         <div className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -469,16 +390,14 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
                         </div>
                       )}
 
-                      {/* Filename if different from title */}
                       {title !== doc.original_filename && (
                         <div className="flex items-center gap-1 text-xs text-muted-foreground">
                           <FileText className="h-3 w-3 flex-shrink-0" />
-                          <span className="truncate">File: {doc.original_filename}</span>
+                          <span className="truncate">{t('enhancedDocumentList.file', { filename: doc.original_filename })}</span>
                         </div>
                       )}
                     </div>
 
-                    {/* Bottom Row: Date and File Size */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4 text-xs text-muted-foreground">
                         <div className="flex items-center gap-1">
@@ -490,7 +409,6 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
                         )}
                       </div>
                       
-                      {/* Action buttons - show for all documents that are not actively processing */}
                       {(!doc.processing_status || doc.processing_status === 'completed' || doc.processing_status === 'failed') && (
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
@@ -499,7 +417,7 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
                               handleViewDocument(doc);
                             }}
                             className="p-1 text-muted-foreground hover:text-primary rounded transition-colors"
-                            title="View document"
+                            title={t('enhancedDocumentList.viewDocument')}
                           >
                             <Eye className="h-4 w-4" />
                           </button>
@@ -509,7 +427,7 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
                               handleEditDocument(doc);
                             }}
                             className="p-1 text-muted-foreground hover:text-primary rounded transition-colors"
-                            title="Edit metadata"
+                            title={t('enhancedDocumentList.editMetadata')}
                           >
                             <Edit className="h-4 w-4" />
                           </button>
@@ -517,14 +435,12 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
                       )}
                     </div>
 
-                    {/* Abstract preview */}
                     {doc.metadata_?.abstract && (
                       <div className="mt-2 text-xs text-muted-foreground">
                         <p className="line-clamp-2">{doc.metadata_.abstract}</p>
                       </div>
                     )}
 
-                    {/* Processing Status */}
                     {doc.processing_status && doc.processing_status !== 'completed' && (
                       <div className="mt-2">
                         <div className="flex items-center space-x-2">
@@ -535,9 +451,9 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
                               ? 'bg-destructive/10 text-destructive'
                               : 'bg-yellow-400/10 text-yellow-400'
                           }`}>
-                            {doc.processing_status === 'processing' ? 'Processing...' :
-                             doc.processing_status === 'failed' ? 'Processing Failed' :
-                             'Pending Processing'}
+                            {doc.processing_status === 'processing' ? t('enhancedDocumentList.processing') :
+                             doc.processing_status === 'failed' ? t('enhancedDocumentList.processingFailed') :
+                             t('enhancedDocumentList.pendingProcessing')}
                           </span>
                           {doc.upload_progress !== undefined && doc.processing_status === 'processing' && (
                             <span className="text-xs text-muted-foreground">
@@ -569,20 +485,17 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
         )}
       </div>
 
-
-      {/* Delete Confirmation Modal */}
       <DeleteConfirmationModal
         isOpen={deleteModalOpen}
         onClose={handleDeleteCancel}
         onConfirm={handleDeleteConfirm}
-        title="Delete Documents"
-        description={`Are you sure you want to delete ${selectedDocuments.size} document${selectedDocuments.size !== 1 ? 's' : ''}? This action cannot be undone.`}
-        itemName={selectedDocuments.size === 1 ? 'document' : `${selectedDocuments.size} documents`}
+        title={t('enhancedDocumentList.deleteDocuments')}
+        description={t('enhancedDocumentList.deleteConfirmation', { count: selectedDocuments.size })}
+        itemName={t('enhancedDocumentList.document', { count: selectedDocuments.size })}
         itemType="document"
         isLoading={isDeleting}
       />
 
-      {/* Document Metadata Edit Modal */}
       <DocumentMetadataEditModal
         document={selectedDocument}
         isOpen={editModalOpen}
@@ -590,7 +503,6 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
         onSave={handleDocumentUpdated}
       />
 
-      {/* Document View Modal */}
       <DocumentViewModal
         document={selectedDocument}
         isOpen={viewModalOpen}

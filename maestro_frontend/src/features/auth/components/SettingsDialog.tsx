@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../../../components/ui/dialog'
 import { Button } from '../../../components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../components/ui/tabs'
@@ -20,6 +21,7 @@ interface SettingsDialogProps {
 }
 
 export const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onOpenChange }) => {
+  const { t } = useTranslation()
   const { settings, profile, isLoading, error, loadSettings, updateSettings } = useSettingsStore()
   const { user } = useAuthStore()
   const [activeTab, setActiveTab] = useState('profile')
@@ -35,18 +37,13 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onOpenChan
     onOpenChange(false)
   }
 
-  // const handleClose = () => {
-  //   discardDraftChanges()
-  //   onOpenChange(false)
-  // }
-
   if (isLoading && !settings) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-visible">
           <div className="flex items-center justify-center p-8">
             <Loader2 className="h-8 w-8 animate-spin" />
-            <span className="ml-2">Loading settings...</span>
+            <span className="ml-2">{t('settingsDialog.loading')}</span>
           </div>
         </DialogContent>
       </Dialog>
@@ -57,7 +54,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onOpenChan
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl h-[85vh] flex flex-col overflow-hidden">
         <DialogHeader className="px-6 pt-6 pb-4 flex-shrink-0 border-b border-border">
-          <DialogTitle className="text-foreground">Settings</DialogTitle>
+          <DialogTitle className="text-foreground">{t('settingsDialog.title')}</DialogTitle>
         </DialogHeader>
 
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
@@ -78,32 +75,32 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onOpenChan
             <TabsList className={`grid w-full ${user?.is_admin ? 'grid-cols-7' : 'grid-cols-6'} h-10 flex-shrink-0 mb-4`}>
               <TabsTrigger value="profile" className="text-sm">
                 <User className="w-4 h-4 mr-2" />
-                Profile
+                {t('settingsDialog.tabs.profile')}
               </TabsTrigger>
               <TabsTrigger value="appearance" className="text-sm">
                 <Paintbrush className="w-4 h-4 mr-2" />
-                Appearance
+                {t('settingsDialog.tabs.appearance')}
               </TabsTrigger>
               <TabsTrigger value="ai" className="text-sm">
                 <Cpu className="w-4 h-4 mr-2" />
-                AI Config
+                {t('settingsDialog.tabs.aiConfig')}
               </TabsTrigger>
               <TabsTrigger value="search" className="text-sm">
                 <Search className="w-4 h-4 mr-2" />
-                Search
+                {t('settingsDialog.tabs.search')}
               </TabsTrigger>
               <TabsTrigger value="web-fetch" className="text-sm">
                 <FileText className="w-4 h-4 mr-2" />
-                Web Fetch
+                {t('settingsDialog.tabs.webFetch')}
               </TabsTrigger>
               <TabsTrigger value="research" className="text-sm">
                 <Beaker className="w-4 h-4 mr-2" />
-                Research
+                {t('settingsDialog.tabs.research')}
               </TabsTrigger>
               {user?.is_admin && (
                 <TabsTrigger value="admin" className="text-sm">
                   <Shield className="w-4 h-4 mr-2" />
-                  Admin
+                  {t('settingsDialog.tabs.admin')}
                 </TabsTrigger>
               )}
             </TabsList>
@@ -146,10 +143,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onOpenChan
             {isLoading ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                Saving...
+                {t('settingsDialog.saving')}
               </>
             ) : (
-              'Save & Close'
+              t('settingsDialog.saveAndClose')
             )}
           </Button>
         </DialogFooter>

@@ -462,7 +462,8 @@ Instructions:
         initial_scratchpad: Optional[str],
         tool_selection: Dict[str, bool],
         log_queue: Optional[queue.Queue] = None,
-        update_callback: Optional[Callable[[queue.Queue, ExecutionLogEntry], None]] = None
+        update_callback: Optional[Callable[[queue.Queue, ExecutionLogEntry], None]] = None,
+        lang: str = "en"
     ) -> Optional[SimplifiedPlan]:
         """
         Generates the initial research outline based on the richer context from the initial research phase,
@@ -573,7 +574,8 @@ Instructions:
                             agent_scratchpad=context_scratchpad,
                             mission_id=mission_id,
                             log_queue=log_queue,
-                            update_callback=update_callback
+                            update_callback=update_callback,
+                            lang=lang
                         )
                     log_action = "Generate Preliminary Outline (Batch 1)"
 
@@ -649,7 +651,8 @@ Instructions:
                             agent_scratchpad=current_scratchpad,
                             mission_id=mission_id,
                             log_queue=log_queue,
-                            update_callback=update_callback
+                            update_callback=update_callback,
+                            lang=lang
                         )
                     log_action = f"Revise Outline (Batch {i+1})"
 

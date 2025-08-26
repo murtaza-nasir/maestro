@@ -14,6 +14,7 @@ from database.database import get_db
 from services.background_document_processor import background_processor
 from services.websocket_manager import websocket_manager
 from api.utils import _make_serializable
+from api.locales import get_message
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -78,13 +79,14 @@ async def websocket_document_updates(websocket: WebSocket, user_id: str):
     Uses the centralized WebSocketManager to prevent duplicate connections.
     """
     connection_id = None
+    lang = websocket.query_params.get("lang", "en")
     try:
         # Extract and validate JWT token from query parameters
         token = websocket.query_params.get("token")
         
         if not token:
             logger.debug(f"WebSocket connection rejected: No authentication token for user {user_id}")
-            await websocket.close(code=1008, reason="Authentication required")
+            await websocket.close(code=1008, reason=get_message("websockets.authRequired", lang))
             return
         
         # Verify the token
@@ -93,12 +95,12 @@ async def websocket_document_updates(websocket: WebSocket, user_id: str):
             username = verify_token(token)
             if username is None:
                 logger.debug(f"WebSocket connection rejected: Token verification failed for user {user_id}")
-                await websocket.close(code=1008, reason="Invalid token")
+                await websocket.close(code=1008, reason=get_message("websockets.invalidToken", lang))
                 return
             logger.debug(f"WebSocket token verification successful for user {username}")
         except Exception as e:
             logger.debug(f"WebSocket token verification error: {str(e)}")
-            await websocket.close(code=1008, reason="Token verification error")
+            await websocket.close(code=1008, reason=get_message("websockets.tokenVerificationError", lang))
             return
         
         # Verify user exists in database and matches the user_id
@@ -109,7 +111,7 @@ async def websocket_document_updates(websocket: WebSocket, user_id: str):
             user = crud.get_user_by_username(db, username=username)
             if user is None or str(user.id) != user_id:
                 logger.debug(f"WebSocket connection rejected: User mismatch. Expected {user_id}, got {user.id if user else None}")
-                await websocket.close(code=1008, reason="User not found or mismatch")
+                await websocket.close(code=1008, reason=get_message("websockets.userMismatch", lang))
                 return
         finally:
             db.close()
@@ -127,7 +129,7 @@ async def websocket_document_updates(websocket: WebSocket, user_id: str):
         # Send initial connection confirmation
         await websocket.send_text(json.dumps({
             "type": "connection_established",
-            "message": "Connected to document updates",
+            "message": get_message("websockets.connectedToDocUpdates", lang),
             "user_id": user_id
         }))
         
@@ -174,6 +176,7 @@ async def websocket_research_updates(websocket: WebSocket):
     Handles updates for all missions using the centralized WebSocketManager.
     """
     connection_id = None
+    lang = websocket.query_params.get("lang", "en")
     try:
         # Extract and validate JWT token
         token = websocket.query_params.get("token")
@@ -181,7 +184,7 @@ async def websocket_research_updates(websocket: WebSocket):
             token = websocket.cookies.get("access_token")
             
         if not token:
-            await websocket.close(code=1008, reason="Missing authentication token")
+            await websocket.close(code=1008, reason=get_message("websockets.missingAuthToken", lang))
             return
             
         # Validate token and get user
@@ -190,12 +193,12 @@ async def websocket_research_updates(websocket: WebSocket):
             username = verify_token(token)
             if username is None:
                 logger.debug(f"WebSocket connection rejected: Token verification failed")
-                await websocket.close(code=1008, reason="Invalid token")
+                await websocket.close(code=1008, reason=get_message("websockets.invalidToken", lang))
                 return
             logger.debug(f"WebSocket token verification successful for user: {username}")
         except Exception as e:
             logger.error(f"Token validation failed: {e}")
-            await websocket.close(code=1008, reason="Invalid token")
+            await websocket.close(code=1008, reason=get_message("websockets.invalidToken", lang))
             return
         
         # Verify user exists in database
@@ -206,7 +209,7 @@ async def websocket_research_updates(websocket: WebSocket):
             user = crud.get_user_by_username(db, username=username)
             if user is None:
                 logger.debug(f"WebSocket connection rejected: User not found")
-                await websocket.close(code=1008, reason="User not found")
+                await websocket.close(code=1008, reason=get_message("websockets.userNotFound", lang))
                 return
             user_id = str(user.id)
         finally:
@@ -225,7 +228,7 @@ async def websocket_research_updates(websocket: WebSocket):
         # Send initial connection confirmation
         await websocket.send_text(json.dumps({
             "type": "connection_established",
-            "message": "Connected to research updates",
+            "message": get_message("websockets.connectedToResearchUpdates", lang),
             "connection_id": connection_id
         }))
         
@@ -273,7 +276,7 @@ async def websocket_research_updates(websocket: WebSocket):
                             # Send a test message directly to confirm WebSocket works
                             await websocket.send_text(json.dumps({
                                 "type": "test_direct_message",
-                                "message": f"Direct test for mission {mission_id}",
+                                "message": get_message("websockets.directTestForMission", lang, mission_id=mission_id),
                                 "timestamp": time.time()
                             }))
                             
@@ -310,7 +313,7 @@ async def websocket_research_updates(websocket: WebSocket):
                 
     except Exception as e:
         logger.error(f"Research WebSocket error: {e}")
-        await websocket.close(code=1011, reason="Internal error")
+        await websocket.close(code=1011, reason=get_message("websockets.internalError", lang))
 
 async def send_initial_mission_data(websocket: WebSocket, mission_id: str, username: str):
     """Send initial data when subscribing to a mission."""
@@ -480,13 +483,14 @@ async def websocket_writing_updates(websocket: WebSocket, session_id: str):
     Uses the centralized WebSocketManager to prevent duplicate connections.
     """
     connection_id = None
+    lang = websocket.query_params.get("lang", "en")
     try:
         # Extract and validate JWT token from query parameters
         token = websocket.query_params.get("token")
         
         if not token:
             logger.debug(f"WebSocket connection rejected: No authentication token for writing session {session_id}")
-            await websocket.close(code=1008, reason="Authentication required")
+            await websocket.close(code=1008, reason=get_message("websockets.authRequired", lang))
             return
         
         # Verify the token
@@ -495,12 +499,12 @@ async def websocket_writing_updates(websocket: WebSocket, session_id: str):
             username = verify_token(token)
             if username is None:
                 logger.debug(f"WebSocket connection rejected: Token verification failed for writing session {session_id}")
-                await websocket.close(code=1008, reason="Invalid token")
+                await websocket.close(code=1008, reason=get_message("websockets.invalidToken", lang))
                 return
             logger.debug(f"WebSocket token verification successful for user {username}")
         except Exception as e:
             logger.debug(f"WebSocket token verification error: {str(e)}")
-            await websocket.close(code=1008, reason="Token verification error")
+            await websocket.close(code=1008, reason=get_message("websockets.tokenVerificationError", lang))
             return
         
         # Verify user exists in database and owns the writing session
@@ -511,7 +515,7 @@ async def websocket_writing_updates(websocket: WebSocket, session_id: str):
             user = crud.get_user_by_username(db, username=username)
             if user is None:
                 logger.debug(f"WebSocket connection rejected: User not found for writing session {session_id}")
-                await websocket.close(code=1008, reason="User not found")
+                await websocket.close(code=1008, reason=get_message("websockets.userNotFound", lang))
                 return
             
             # Check if writing session exists and belongs to user
@@ -525,7 +529,7 @@ async def websocket_writing_updates(websocket: WebSocket, session_id: str):
             
             if not writing_session:
                 logger.debug(f"WebSocket connection rejected: Writing session {session_id} not found or not owned by user {username}")
-                await websocket.close(code=1008, reason="Writing session not found or access denied")
+                await websocket.close(code=1008, reason=get_message("websockets.writingSessionNotFound", lang))
                 return
             
             user_id = str(user.id)
@@ -548,7 +552,7 @@ async def websocket_writing_updates(websocket: WebSocket, session_id: str):
         # Send initial connection confirmation
         await websocket.send_text(json.dumps({
             "type": "connection_established",
-            "message": f"Connected to writing session {session_id}",
+            "message": get_message("websockets.connectedToWritingSession", lang, session_id=session_id),
             "session_id": session_id
         }))
         

@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -12,6 +12,7 @@ from database.database import get_db
 from services.document_service_v2 import UnifiedDocumentService
 import json
 from api.websockets import send_document_update
+from api.locales import get_message
 import logging
 
 router = APIRouter()
@@ -124,21 +125,24 @@ async def search_documents(
 async def add_existing_document_to_group(
     group_id: str,
     doc_id: str,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """
     Add an existing document from the vector store to a group.
     """
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     # For now, just add document directly to the group
     group_doc = crud.add_document_to_group(db, group_id=group_id, doc_id=doc_id, user_id=current_user.id)
     if not group_doc:
-        raise HTTPException(status_code=404, detail="Document not found or could not be added to group")
-    return {"message": "Document added to group successfully"}
+        raise HTTPException(status_code=404, detail=get_message("documents.notFoundOrCouldNotAdd", lang))
+    return {"message": get_message("documents.addedToGroupSuccess", lang)}
 
 # Upload document without group (to user's general documents)
 @router.post("/documents/upload")
 async def upload_document(
+    fastapi_request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
@@ -146,6 +150,7 @@ async def upload_document(
     """
     Upload a new document to user's general documents (no group).
     """
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     # Check for supported file formats
     filename_lower = file.filename.lower()
     supported_extensions = ['.pdf', '.docx', '.doc', '.md', '.markdown']
@@ -153,7 +158,7 @@ async def upload_document(
     if not any(filename_lower.endswith(ext) for ext in supported_extensions):
         raise HTTPException(
             status_code=400, 
-            detail="Only PDF, Word (docx, doc), and Markdown (md, markdown) files are supported"
+            detail=get_message("documents.unsupportedFileType", lang)
         )
     
     try:
@@ -190,7 +195,7 @@ async def upload_document(
                     "filename": existing.filename,
                     "status": "duplicate",
                     "processing_status": existing.processing_status,
-                    "message": f"This document has already been uploaded: {existing.filename}",
+                    "message": get_message("documents.alreadyUploaded", lang, filename=existing.filename),
                     "duplicate": True,
                     "existing_document_id": str(existing.id)
                 }
@@ -249,18 +254,19 @@ async def upload_document(
             "filename": file.filename,
             "status": "processing",
             "processing_status": "pending",
-            "message": "Document uploaded and processing started",
+            "message": get_message("documents.uploadStarted", lang),
             "duplicate": False
         }
         
     except Exception as e:
         logger.error(f"Error uploading document: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to upload document: {str(e)}")
+        raise HTTPException(status_code=500, detail=get_message("documents.uploadFailed", lang, error=str(e)))
 
 # New endpoint to upload and process documents to a specific group
 @router.post("/document-groups/{group_id}/upload/")
 async def upload_document_to_group(
     group_id: str,
+    fastapi_request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
@@ -268,6 +274,7 @@ async def upload_document_to_group(
     """
     Upload a new document and add it to a group.
     """
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     # Check for supported file formats
     filename_lower = file.filename.lower()
     supported_extensions = ['.pdf', '.docx', '.doc', '.md', '.markdown']
@@ -275,7 +282,7 @@ async def upload_document_to_group(
     if not any(filename_lower.endswith(ext) for ext in supported_extensions):
         raise HTTPException(
             status_code=400, 
-            detail="Only PDF, Word (docx, doc), and Markdown (md, markdown) files are supported"
+            detail=get_message("documents.unsupportedFileType", lang)
         )
     
     try:
@@ -323,7 +330,7 @@ async def upload_document_to_group(
                         "filename": existing.filename,
                         "status": "duplicate",
                         "processing_status": existing.processing_status,
-                        "message": f"Document '{existing.filename}' already exists in this group",
+                        "message": get_message("documents.alreadyInGroup", lang, filename=existing.filename),
                         "duplicate": True,
                         "existing_document_id": str(existing.id)
                     }
@@ -338,7 +345,7 @@ async def upload_document_to_group(
                         "filename": existing.filename,
                         "status": "existing",
                         "processing_status": existing.processing_status,
-                        "message": f"Existing document '{existing.filename}' was added to the group",
+                        "message": get_message("documents.existingAddedToGroup", lang, filename=existing.filename),
                         "duplicate": False,
                         "existing_document_id": str(existing.id)
                     }
@@ -400,13 +407,13 @@ async def upload_document_to_group(
             "filename": file.filename,
             "status": "processing",
             "processing_status": "pending",
-            "message": "Document uploaded and processing started",
+            "message": get_message("documents.uploadStarted", lang),
             "duplicate": False
         }
         
     except Exception as e:
         logger.error(f"Error uploading document: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to upload document: {str(e)}")
+        raise HTTPException(status_code=500, detail=get_message("documents.uploadFailed", lang, error=str(e)))
 
 # New endpoint to get documents in a group (integrates with existing vector store)
 @router.get("/document-groups/{group_id}/documents/", response_model=schemas.PaginatedDocumentResponse)
@@ -498,6 +505,7 @@ async def get_documents_in_group(
 # New endpoint to get filter options
 @router.get("/documents/filter-options", response_model=dict)
 async def get_filter_options(
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie),
     group_id: Optional[str] = Query(None, description="Optional group ID to filter options")
@@ -505,6 +513,7 @@ async def get_filter_options(
     """
     Get available filter options (authors, years, journals) from user's documents.
     """
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         from sqlalchemy import distinct, func
         
@@ -569,7 +578,7 @@ async def get_filter_options(
         
     except Exception as e:
         logger.error(f"Error getting filter options: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get filter options: {str(e)}")
+        raise HTTPException(status_code=500, detail=get_message("documents.getFilterOptionsFailed", lang, error=str(e)))
 
 # Document Groups Endpoints
 
@@ -636,27 +645,31 @@ async def read_user_document_groups(
 @router.get("/document-groups/{group_id}", response_model=schemas.DocumentGroup)
 def read_document_group(
     group_id: str,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """
     Retrieve a specific document group by its ID.
     """
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     db_group = crud.get_document_group(db, group_id=group_id, user_id=current_user.id)
     if db_group is None:
-        raise HTTPException(status_code=404, detail="Document group not found")
+        raise HTTPException(status_code=404, detail=get_message("documents.groupNotFound", lang))
     return db_group
 
 @router.put("/document-groups/{group_id}", response_model=schemas.DocumentGroup)
 def update_document_group(
     group_id: str,
     group: schemas.DocumentGroupUpdate,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """
     Update a document group's name and description.
     """
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     db_group = crud.update_document_group(
         db,
         group_id=group_id,
@@ -665,51 +678,57 @@ def update_document_group(
         description=group.description
     )
     if db_group is None:
-        raise HTTPException(status_code=404, detail="Document group not found")
+        raise HTTPException(status_code=404, detail=get_message("documents.groupNotFound", lang))
     return db_group
 
 @router.delete("/document-groups/{group_id}", status_code=204)
 def delete_document_group(
     group_id: str,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """
     Delete a document group by its ID.
     """
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     success = crud.delete_document_group(db, group_id=group_id, user_id=current_user.id)
     if not success:
-        raise HTTPException(status_code=404, detail="Document group not found")
+        raise HTTPException(status_code=404, detail=get_message("documents.groupNotFound", lang))
     return
 
 @router.post("/document-groups/{group_id}/documents/{doc_id}", response_model=schemas.DocumentGroup)
 def add_document_to_group(
     group_id: str,
     doc_id: str,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """
     Add a document to a document group.
     """
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     db_group = crud.add_document_to_group(db, group_id=group_id, doc_id=doc_id, user_id=current_user.id)
     if db_group is None:
-        raise HTTPException(status_code=404, detail="Document group or document not found")
+        raise HTTPException(status_code=404, detail=get_message("documents.groupOrDocumentNotFound", lang))
     return db_group
 
 @router.delete("/document-groups/{group_id}/documents/{doc_id}", response_model=schemas.DocumentGroup)
 def remove_document_from_group(
     group_id: str,
     doc_id: str,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """
     Remove a document from a document group.
     """
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     db_group = crud.remove_document_from_group(db, group_id=group_id, doc_id=doc_id, user_id=current_user.id)
     if db_group is None:
-        raise HTTPException(status_code=404, detail="Document group or document not found, or document not in group")
+        raise HTTPException(status_code=404, detail=get_message("documents.groupOrDocumentNotFoundOrNotInGroup", lang))
     return db_group
 
 @router.get("/documents/", response_model=List[schemas.Document])
@@ -728,26 +747,30 @@ def read_user_documents(
 @router.get("/documents/{doc_id}", response_model=schemas.Document)
 def read_document(
     doc_id: str,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """
     Retrieve a specific document by its ID.
     """
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     db_document = crud.get_document(db, doc_id=doc_id, user_id=current_user.id)
     if db_document is None:
-        raise HTTPException(status_code=404, detail="Document not found")
+        raise HTTPException(status_code=404, detail=get_message("documents.documentNotFound", lang))
     return db_document
 
 @router.delete("/documents/{doc_id}", status_code=204)
 async def delete_document(
     doc_id: str,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """
     Delete a document by its ID (unified ID system - deletes from all storage systems).
     """
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     # Use document service directly to avoid async issues
     try:
         # Initialize service and delete document
@@ -762,22 +785,24 @@ async def delete_document(
             logger.info(f"Document {doc_id} deleted - Vector/AI DB: {vector_success}, Main DB: {db_success}")
             return
         else:
-            raise HTTPException(status_code=404, detail="Document not found in any storage system")
+            raise HTTPException(status_code=404, detail=get_message("documents.documentNotFoundInAnyStorage", lang))
             
     except Exception as e:
         logger.error(f"Error deleting document {doc_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to delete document")
+        raise HTTPException(status_code=500, detail=get_message("documents.deleteFailed", lang))
 
 # Bulk operations endpoints
 @router.post("/documents/bulk-delete", status_code=204)
 async def bulk_delete_documents(
     document_ids: List[str],
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """
     Delete multiple documents by their IDs from all storage systems.
     """
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     deleted_count = 0
     failed_deletions = []
     
@@ -806,7 +831,7 @@ async def bulk_delete_documents(
     if failed_deletions:
         raise HTTPException(
             status_code=207,  # Multi-status
-            detail=f"Deleted {deleted_count} documents. Failed to delete: {failed_deletions}"
+            detail=get_message("documents.bulkDeleteFailed", lang, count=deleted_count, failed_ids=failed_deletions)
         )
     
     return
@@ -815,12 +840,14 @@ async def bulk_delete_documents(
 async def bulk_add_documents_to_group(
     group_id: str,
     document_ids: List[str],
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """
     Add multiple existing documents to a group.
     """
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         # For now, just add documents directly to the group without checking vector store
         # This avoids the crash issue with vector store initialization
@@ -848,7 +875,7 @@ async def bulk_add_documents_to_group(
         return {
             "added_count": added_count,
             "failed_additions": failed_additions,
-            "message": f"Added {added_count} documents to group"
+            "message": get_message("documents.bulkAddedToGroup", lang, count=added_count)
         }
     except Exception as e:
         logger.error(f"Critical error in bulk_add_documents_to_group: {e}")
@@ -860,12 +887,14 @@ async def bulk_add_documents_to_group(
 async def bulk_remove_documents_from_group(
     group_id: str,
     document_ids: List[str],
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """
     Remove multiple documents from a group.
     """
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     removed_count = 0
     failed_removals = []
     
@@ -883,7 +912,7 @@ async def bulk_remove_documents_from_group(
     return {
         "removed_count": removed_count,
         "failed_removals": failed_removals,
-        "message": f"Removed {removed_count} documents from group"
+        "message": get_message("documents.bulkRemovedFromGroup", lang, count=removed_count)
     }
 
 # Document Metadata and Content endpoints
@@ -891,18 +920,20 @@ async def bulk_remove_documents_from_group(
 async def update_document_metadata(
     doc_id: str,
     metadata_update: schemas.DocumentMetadataUpdate,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """
     Update document metadata across all databases (Main DB, AI DB, Vector Store).
     """
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         # For now, update metadata directly in the database
         # The document service needs proper async implementation
         document = crud.get_document(db, doc_id=doc_id, user_id=current_user.id)
         if not document:
-            raise HTTPException(status_code=404, detail="Document not found")
+            raise HTTPException(status_code=404, detail=get_message("documents.documentNotFound", lang))
         
         # Get existing metadata or create new
         existing_metadata = document.metadata_ or {}
@@ -981,21 +1012,23 @@ async def update_document_metadata(
         
     except Exception as e:
         logger.error(f"Error updating metadata for document {doc_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update document metadata")
+        raise HTTPException(status_code=500, detail=get_message("documents.updateMetadataFailed", lang))
 
 @router.get("/documents/{doc_id}/view", response_model=schemas.DocumentViewResponse)
 async def view_document_content(
     doc_id: str,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """
     Get document content for viewing (includes markdown content and metadata).
     """
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         document = crud.get_document(db, doc_id=doc_id, user_id=current_user.id)
         if not document:
-            raise HTTPException(status_code=404, detail="Document not found")
+            raise HTTPException(status_code=404, detail=get_message("documents.documentNotFound", lang))
         
         # Extract metadata from JSONB field
         metadata = document.metadata_ or {}
@@ -1040,7 +1073,7 @@ async def view_document_content(
         
         # Fallback if no markdown content found
         if not markdown_content:
-            markdown_content = f"# {title}\n\n*Document content is being processed or not available.*"
+            markdown_content = f"# {title}\n\n*{get_message('documents.contentProcessingOrUnavailable', lang)}*"
         
         document_data = {
             'id': document.id,
@@ -1056,22 +1089,24 @@ async def view_document_content(
         
     except Exception as e:
         logger.error(f"Error retrieving content for document {doc_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve document content")
+        raise HTTPException(status_code=500, detail=get_message("documents.retrieveContentFailed", lang))
 
 @router.post("/documents/{doc_id}/cancel", status_code=200)
 async def cancel_document_processing(
     doc_id: str,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """
     Cancel document processing for a specific document.
     """
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         # Update document status to cancelled in database
         document = crud.get_document(db, doc_id=doc_id, user_id=current_user.id)
         if not document:
-            raise HTTPException(status_code=404, detail="Document not found")
+            raise HTTPException(status_code=404, detail=get_message("documents.documentNotFound", lang))
         
         if document.processing_status == 'processing':
             document.processing_status = 'cancelled'
@@ -1081,7 +1116,7 @@ async def cancel_document_processing(
             success = False
         
         if not success:
-            raise HTTPException(status_code=404, detail="Document not found or cannot be cancelled")
+            raise HTTPException(status_code=404, detail=get_message("documents.cannotCancel", lang))
         
         # Send cancellation update via WebSocket
         await send_document_update(str(current_user.id), {
@@ -1090,15 +1125,15 @@ async def cancel_document_processing(
             "document_id": doc_id,
             "progress": 0,
             "status": "cancelled",
-            "error": "Cancelled by user",
+            "error": get_message("documents.cancelledByUser", lang),
             "user_id": str(current_user.id),
             "timestamp": str(datetime.utcnow())
         })
         
-        return {"message": "Document processing cancelled successfully"}
+        return {"message": get_message("documents.cancelSuccess", lang)}
     except Exception as e:
         logger.debug(f"Error cancelling document processing: {e}")
-        raise HTTPException(status_code=500, detail="Failed to cancel document processing")
+        raise HTTPException(status_code=500, detail=get_message("documents.cancelFailed", lang))
 
 # Note: The following endpoint is for internal use by the doc-processor service
 @router.post("/internal/document-progress", status_code=202, include_in_schema=False)

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
@@ -46,6 +47,7 @@ interface SystemSettings {
 }
 
 export const AdminSettingsTab: React.FC = () => {
+  const { t } = useTranslation();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateUser, setShowCreateUser] = useState(false);
@@ -72,7 +74,6 @@ export const AdminSettingsTab: React.FC = () => {
     user_type: 'standard'
   });
 
-  // Consistency check states
   const [consistencyCheckRunning, setConsistencyCheckRunning] = useState(false);
   const [consistencyCheckResults, setConsistencyCheckResults] = useState<any>(null);
   const [showConsistencyResults, setShowConsistencyResults] = useState(false);
@@ -98,8 +99,8 @@ export const AdminSettingsTab: React.FC = () => {
       console.error('Failed to load users:', error);
       addToast({
         type: 'error',
-        title: 'Error',
-        message: 'Failed to load users'
+        title: t('adminSettings.error'),
+        message: t('adminSettings.failedToLoadUsers')
       });
     } finally {
       setLoading(false);
@@ -118,8 +119,8 @@ export const AdminSettingsTab: React.FC = () => {
       console.error('Failed to load system settings:', error);
       addToast({
         type: 'error',
-        title: 'Error',
-        message: 'Failed to load system settings'
+        title: t('adminSettings.error'),
+        message: t('adminSettings.failedToLoadSystemSettings')
       });
     }
   };
@@ -134,8 +135,8 @@ export const AdminSettingsTab: React.FC = () => {
       
       addToast({
         type: 'success',
-        title: 'Success',
-        message: 'User created successfully'
+        title: t('adminSettings.success'),
+        message: t('adminSettings.userCreated')
       });
       
       setShowCreateUser(false);
@@ -151,8 +152,8 @@ export const AdminSettingsTab: React.FC = () => {
       console.error('Failed to create user:', error);
       addToast({
         type: 'error',
-        title: 'Error',
-        message: 'Failed to create user'
+        title: t('adminSettings.error'),
+        message: t('adminSettings.failedToCreateUser')
       });
     }
   };
@@ -167,8 +168,8 @@ export const AdminSettingsTab: React.FC = () => {
       
       addToast({
         type: 'success',
-        title: 'Success',
-        message: 'User updated successfully'
+        title: t('adminSettings.success'),
+        message: t('adminSettings.userUpdated')
       });
       
       loadUsers();
@@ -176,14 +177,14 @@ export const AdminSettingsTab: React.FC = () => {
       console.error('Failed to update user:', error);
       addToast({
         type: 'error',
-        title: 'Error',
-        message: 'Failed to update user'
+        title: t('adminSettings.error'),
+        message: t('adminSettings.failedToUpdateUser')
       });
     }
   };
 
   const deleteUser = async (userId: number) => {
-    if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
+    if (!confirm(t('adminSettings.deleteUserConfirmation'))) {
       return;
     }
 
@@ -196,8 +197,8 @@ export const AdminSettingsTab: React.FC = () => {
       
       addToast({
         type: 'success',
-        title: 'Success',
-        message: 'User deleted successfully'
+        title: t('adminSettings.success'),
+        message: t('adminSettings.userDeleted')
       });
       
       loadUsers();
@@ -205,8 +206,8 @@ export const AdminSettingsTab: React.FC = () => {
       console.error('Failed to delete user:', error);
       addToast({
         type: 'error',
-        title: 'Error',
-        message: 'Failed to delete user'
+        title: t('adminSettings.error'),
+        message: t('adminSettings.failedToDeleteUser')
       });
     }
   };
@@ -249,29 +250,6 @@ export const AdminSettingsTab: React.FC = () => {
     }
   };
 
-  // const saveSystemSettings = async () => {
-  //   try {
-  //     await apiClient.put('/api/admin/settings', systemSettings, {
-  //       headers: {
-  //         'X-CSRF-Token': getCsrfToken()
-  //       }
-  //     });
-      
-  //     addToast({
-  //       type: 'success',
-  //       title: 'Success',
-  //       message: 'System settings saved successfully'
-  //     });
-  //   } catch (error) {
-  //     console.error('Failed to save system settings:', error);
-  //     addToast({
-  //       type: 'error',
-  //       title: 'Error',
-  //       message: 'Failed to save system settings'
-  //     });
-  //   }
-  // };
-
   const runConsistencyCheck = async () => {
     try {
       setConsistencyCheckRunning(true);
@@ -286,15 +264,15 @@ export const AdminSettingsTab: React.FC = () => {
       
       addToast({
         type: 'success',
-        title: 'Consistency Check Complete',
-        message: `Found ${response.data.result.total_consistency_issues || 0} issues`
+        title: t('adminSettings.consistencyCheckComplete'),
+        message: t('adminSettings.foundIssues', { count: response.data.result.total_consistency_issues || 0 })
       });
     } catch (error: any) {
       console.error('Failed to run consistency check:', error);
       addToast({
         type: 'error',
-        title: 'Error',
-        message: error.response?.data?.detail || 'Failed to run consistency check'
+        title: t('adminSettings.error'),
+        message: error.response?.data?.detail || t('adminSettings.failedToRunConsistencyCheck')
       });
     } finally {
       setConsistencyCheckRunning(false);
@@ -305,41 +283,40 @@ export const AdminSettingsTab: React.FC = () => {
     return (
       <div className="flex items-center justify-center p-8">
         <Loader2 className="h-8 w-8 animate-spin" />
-        <span className="ml-2">Loading admin settings...</span>
+        <span className="ml-2">{t('adminSettings.loading')}</span>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      {/* User Management Section */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Users className="h-5 w-5" />
-            User Management
+            {t('adminSettings.userManagement')}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex justify-between items-center mb-4">
             <p className="text-sm text-muted-foreground">
-              Manage user accounts, roles, and permissions
+              {t('adminSettings.userManagementDescription')}
             </p>
             <Button onClick={() => setShowCreateUser(true)} className="flex items-center gap-2">
               <UserPlus className="h-4 w-4" />
-              Create User
+              {t('adminSettings.createUser')}
             </Button>
           </div>
 
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Username</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Admin</TableHead>
-                <TableHead>Actions</TableHead>
+                <TableHead>{t('adminSettings.username')}</TableHead>
+                <TableHead>{t('adminSettings.role')}</TableHead>
+                <TableHead>{t('adminSettings.type')}</TableHead>
+                <TableHead>{t('adminSettings.status')}</TableHead>
+                <TableHead>{t('adminSettings.admin')}</TableHead>
+                <TableHead>{t('adminSettings.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -360,7 +337,7 @@ export const AdminSettingsTab: React.FC = () => {
                         <UserX className="h-4 w-4 text-red-500" />
                       )}
                       <span className={user.is_active ? 'text-green-600' : 'text-red-600'}>
-                        {user.is_active ? 'Active' : 'Inactive'}
+                        {user.is_active ? t('adminSettings.active') : t('adminSettings.inactive')}
                       </span>
                     </div>
                   </TableCell>
@@ -372,7 +349,7 @@ export const AdminSettingsTab: React.FC = () => {
                         <Shield className="h-4 w-4 text-muted" />
                       )}
                       <span className={user.is_admin ? 'text-blue-600' : 'text-muted-foreground'}>
-                        {user.is_admin ? 'Admin' : 'User'}
+                        {user.is_admin ? t('adminSettings.admin') : t('adminSettings.user')}
                       </span>
                     </div>
                   </TableCell>
@@ -383,14 +360,14 @@ export const AdminSettingsTab: React.FC = () => {
                         size="sm"
                         onClick={() => toggleUserStatus(user)}
                       >
-                        {user.is_active ? 'Deactivate' : 'Activate'}
+                        {user.is_active ? t('adminSettings.deactivate') : t('adminSettings.activate')}
                       </Button>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => toggleUserAdmin(user)}
                       >
-                        {user.is_admin ? 'Remove Admin' : 'Make Admin'}
+                        {user.is_admin ? t('adminSettings.removeAdmin') : t('adminSettings.makeAdmin')}
                       </Button>
                       <Button
                         variant="outline"
@@ -416,19 +393,18 @@ export const AdminSettingsTab: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* System Settings Section */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Settings className="h-5 w-5" />
-            System Configuration
+            {t('adminSettings.systemConfiguration')}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <Label htmlFor="registration-toggle">Enable New User Registration</Label>
-              <p className="text-sm text-muted-foreground">Allow new users to register accounts</p>
+              <Label htmlFor="registration-toggle">{t('adminSettings.enableRegistration')}</Label>
+              <p className="text-sm text-muted-foreground">{t('adminSettings.enableRegistrationDescription')}</p>
             </div>
             <Switch
               id="registration-toggle"
@@ -441,19 +417,17 @@ export const AdminSettingsTab: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Database Consistency Check Section */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <CheckCircle className="h-5 w-5" />
-            Database Consistency Check
+            {t('adminSettings.dbConsistencyCheck')}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <p className="text-sm text-muted-foreground">
-              Check for inconsistencies in document storage across the database, vector store, and file system.
-              This will identify orphaned files, missing data, and synchronization issues.
+              {t('adminSettings.dbConsistencyCheckDescription')}
             </p>
             <div className="flex items-center gap-4">
               <Button
@@ -464,12 +438,12 @@ export const AdminSettingsTab: React.FC = () => {
                 {consistencyCheckRunning ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Running Check...
+                    {t('adminSettings.runningCheck')}
                   </>
                 ) : (
                   <>
                     <Search className="h-4 w-4" />
-                    Run Consistency Check
+                    {t('adminSettings.runConsistencyCheck')}
                   </>
                 )}
               </Button>
@@ -480,14 +454,14 @@ export const AdminSettingsTab: React.FC = () => {
                     <>
                       <AlertCircle className="h-4 w-4 text-yellow-500" />
                       <span className="text-sm text-yellow-600">
-                        {consistencyCheckResults.total_consistency_issues} issues found
+                        {t('adminSettings.issuesFound', { count: consistencyCheckResults.total_consistency_issues })}
                       </span>
                     </>
                   ) : (
                     <>
                       <CheckCircle className="h-4 w-4 text-green-500" />
                       <span className="text-sm text-green-600">
-                        No issues found
+                        {t('adminSettings.noIssuesFound')}
                       </span>
                     </>
                   )}
@@ -496,31 +470,30 @@ export const AdminSettingsTab: React.FC = () => {
             </div>
           </div>
           
-          {/* Display results if available */}
           {consistencyCheckResults && showConsistencyResults && (
             <div className="mt-4 p-4 bg-muted rounded-lg space-y-3">
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <span className="font-medium">Total Users:</span> {consistencyCheckResults.total_users || 0}
+                  <span className="font-medium">{t('adminSettings.totalUsers')}</span> {consistencyCheckResults.total_users || 0}
                 </div>
                 <div>
-                  <span className="font-medium">Total Documents:</span> {consistencyCheckResults.total_documents || 0}
+                  <span className="font-medium">{t('adminSettings.totalDocuments')}</span> {consistencyCheckResults.total_documents || 0}
                 </div>
                 <div>
-                  <span className="font-medium">Users Checked:</span> {consistencyCheckResults.users_checked || 0}
+                  <span className="font-medium">{t('adminSettings.usersChecked')}</span> {consistencyCheckResults.users_checked || 0}
                 </div>
                 <div>
-                  <span className="font-medium">Issues Found:</span> {consistencyCheckResults.total_consistency_issues || 0}
+                  <span className="font-medium">{t('adminSettings.issuesFoundLabel')}</span> {consistencyCheckResults.total_consistency_issues || 0}
                 </div>
               </div>
               
               {consistencyCheckResults.users_with_issues && consistencyCheckResults.users_with_issues.length > 0 && (
                 <div className="mt-3">
-                  <p className="font-medium text-sm mb-2">Users with Issues:</p>
+                  <p className="font-medium text-sm mb-2">{t('adminSettings.usersWithIssues')}</p>
                   <div className="space-y-1">
                     {consistencyCheckResults.users_with_issues.map((user: any, idx: number) => (
                       <div key={idx} className="text-sm p-2 bg-background rounded">
-                        <span className="font-medium">{user.username}</span>: {user.issues_count} issues in {user.inconsistent_documents} documents
+                        <span className="font-medium">{user.username}</span>: {t('adminSettings.userIssues', { issues_count: user.issues_count, inconsistent_documents: user.inconsistent_documents })}
                       </div>
                     ))}
                   </div>
@@ -529,10 +502,10 @@ export const AdminSettingsTab: React.FC = () => {
               
               {consistencyCheckResults.cleanup_performed && (
                 <div className="mt-3">
-                  <p className="font-medium text-sm mb-2">Cleanup Performed:</p>
+                  <p className="font-medium text-sm mb-2">{t('adminSettings.cleanupPerformed')}</p>
                   <div className="text-sm">
-                    <div>Documents deleted: {consistencyCheckResults.cleanup_performed.documents_deleted || 0}</div>
-                    <div>Files cleaned: {consistencyCheckResults.cleanup_performed.files_cleaned || 0}</div>
+                    <div>{t('adminSettings.documentsDeleted', { count: consistencyCheckResults.cleanup_performed.documents_deleted || 0 })}</div>
+                    <div>{t('adminSettings.filesCleaned', { count: consistencyCheckResults.cleanup_performed.files_cleaned || 0 })}</div>
                   </div>
                 </div>
               )}
@@ -542,25 +515,23 @@ export const AdminSettingsTab: React.FC = () => {
                 size="sm"
                 onClick={() => setShowConsistencyResults(false)}
               >
-                Hide Details
+                {t('adminSettings.hideDetails')}
               </Button>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Storage Management Section */}
       <StorageMonitor />
 
-      {/* Create User Dialog */}
       <Dialog open={showCreateUser} onOpenChange={setShowCreateUser}>
         <DialogContent className="sm:max-w-[425px] p-6">
           <DialogHeader className="pb-6">
-            <DialogTitle className="text-lg font-semibold">Create New User</DialogTitle>
+            <DialogTitle className="text-lg font-semibold">{t('adminSettings.createNewUser')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-6 px-1">
             <div className="space-y-2">
-              <Label htmlFor="new-username">Username</Label>
+              <Label htmlFor="new-username">{t('adminSettings.username')}</Label>
               <Input
                 id="new-username"
                 value={newUser.username}
@@ -569,7 +540,7 @@ export const AdminSettingsTab: React.FC = () => {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="new-password">Password</Label>
+              <Label htmlFor="new-password">{t('adminSettings.password')}</Label>
               <Input
                 id="new-password"
                 type="password"
@@ -579,29 +550,29 @@ export const AdminSettingsTab: React.FC = () => {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="new-role">Role</Label>
+              <Label htmlFor="new-role">{t('adminSettings.role')}</Label>
               <Select value={newUser.role} onValueChange={(value) => setNewUser(prev => ({ ...prev, role: value }))}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="user">User</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
-                  <SelectItem value="readonly">Read Only</SelectItem>
+                  <SelectItem value="user">{t('adminSettings.user')}</SelectItem>
+                  <SelectItem value="admin">{t('adminSettings.admin')}</SelectItem>
+                  <SelectItem value="readonly">{t('adminSettings.readOnly')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="new-user-type">User Type</Label>
+              <Label htmlFor="new-user-type">{t('adminSettings.type')}</Label>
               <Select value={newUser.user_type} onValueChange={(value) => setNewUser(prev => ({ ...prev, user_type: value }))}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="standard">Standard</SelectItem>
-                  <SelectItem value="premium">Premium</SelectItem>
-                  <SelectItem value="researcher">Researcher</SelectItem>
-                  <SelectItem value="student">Student</SelectItem>
+                  <SelectItem value="standard">{t('adminSettings.standard')}</SelectItem>
+                  <SelectItem value="premium">{t('adminSettings.premium')}</SelectItem>
+                  <SelectItem value="researcher">{t('adminSettings.researcher')}</SelectItem>
+                  <SelectItem value="student">{t('adminSettings.student')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -612,32 +583,31 @@ export const AdminSettingsTab: React.FC = () => {
                 onCheckedChange={(checked) => setNewUser(prev => ({ ...prev, is_admin: checked }))}
               />
               <Label htmlFor="new-admin" className="text-sm font-medium">
-                Administrator privileges
+                {t('adminSettings.adminPrivileges')}
               </Label>
             </div>
           </div>
           <DialogFooter className="pt-4">
             <Button variant="outline" onClick={() => setShowCreateUser(false)}>
-              Cancel
+              {t('adminSettings.cancel')}
             </Button>
             <Button onClick={createUser}>
-              Create User
+              {t('adminSettings.createUser')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Edit User Dialog */}
       <Dialog open={showEditUser} onOpenChange={setShowEditUser}>
         <DialogContent className="sm:max-w-[425px] p-6">
           <DialogHeader className="pb-6">
             <DialogTitle className="text-lg font-semibold">
-              Edit User: {editingUser?.username}
+              {t('adminSettings.editUser', { username: editingUser?.username })}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-6 px-1">
             <div className="space-y-2">
-              <Label htmlFor="edit-username">Username</Label>
+              <Label htmlFor="edit-username">{t('adminSettings.username')}</Label>
               <Input
                 id="edit-username"
                 value={editUser.username}
@@ -646,29 +616,29 @@ export const AdminSettingsTab: React.FC = () => {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-role">Role</Label>
+              <Label htmlFor="edit-role">{t('adminSettings.role')}</Label>
               <Select value={editUser.role} onValueChange={(value) => setEditUser(prev => ({ ...prev, role: value }))}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="user">User</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
-                  <SelectItem value="readonly">Read Only</SelectItem>
+                  <SelectItem value="user">{t('adminSettings.user')}</SelectItem>
+                  <SelectItem value="admin">{t('adminSettings.admin')}</SelectItem>
+                  <SelectItem value="readonly">{t('adminSettings.readOnly')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-user-type">User Type</Label>
+              <Label htmlFor="edit-user-type">{t('adminSettings.type')}</Label>
               <Select value={editUser.user_type} onValueChange={(value) => setEditUser(prev => ({ ...prev, user_type: value }))}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="standard">Standard</SelectItem>
-                  <SelectItem value="premium">Premium</SelectItem>
-                  <SelectItem value="researcher">Researcher</SelectItem>
-                  <SelectItem value="student">Student</SelectItem>
+                  <SelectItem value="standard">{t('adminSettings.standard')}</SelectItem>
+                  <SelectItem value="premium">{t('adminSettings.premium')}</SelectItem>
+                  <SelectItem value="researcher">{t('adminSettings.researcher')}</SelectItem>
+                  <SelectItem value="student">{t('adminSettings.student')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -679,16 +649,16 @@ export const AdminSettingsTab: React.FC = () => {
                 onCheckedChange={(checked) => setEditUser(prev => ({ ...prev, is_admin: checked }))}
               />
               <Label htmlFor="edit-admin" className="text-sm font-medium">
-                Administrator privileges
+                {t('adminSettings.adminPrivileges')}
               </Label>
             </div>
           </div>
           <DialogFooter className="pt-4">
             <Button variant="outline" onClick={() => setShowEditUser(false)}>
-              Cancel
+              {t('adminSettings.cancel')}
             </Button>
             <Button onClick={saveEditUser}>
-              Save Changes
+              {t('adminSettings.saveChanges')}
             </Button>
           </DialogFooter>
         </DialogContent>

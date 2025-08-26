@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../../components/ui/dialog'
 import { Button } from '../../../components/ui/button'
 import { Label } from '../../../components/ui/label'
@@ -62,44 +63,47 @@ const MissionParameterInput: React.FC<MissionParameterInputProps> = ({
   max,
   onChange,
   onReset
-}) => (
-  <div className="space-y-1.5">
-    <div className="flex items-center justify-between">
-      <Label htmlFor={field.toString()} className="text-xs font-medium text-gray-700">
-        {label}
-      </Label>
-      <div className="flex items-center gap-2">
-        <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-md font-mono">
-          {defaultValue}
-        </span>
-        {isOverridden && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-4 w-4 text-gray-500 hover:text-gray-800"
-            onClick={() => onReset(field)}
-          >
-            <X className="h-3 w-3" />
-          </Button>
-        )}
+}) => {
+  const { t } = useTranslation();
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <Label htmlFor={field.toString()} className="text-xs font-medium text-gray-700">
+          {label}
+        </Label>
+        <div className="flex items-center gap-2">
+          <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-md font-mono">
+            {defaultValue}
+          </span>
+          {isOverridden && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-4 w-4 text-gray-500 hover:text-gray-800"
+              onClick={() => onReset(field)}
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          )}
+        </div>
       </div>
+      <Input
+        id={field.toString()}
+        type="number"
+        min={min}
+        max={max}
+        value={currentValue ?? ''}
+        onChange={(e) => {
+          const value = e.target.value === '' ? undefined : parseInt(e.target.value, 10)
+          onChange(field, value)
+        }}
+        placeholder={t('missionSettingsDialog.default', { defaultValue })}
+        className={`h-8 text-sm ${isOverridden ? 'border-blue-400 bg-blue-50 ring-1 ring-blue-200' : 'border-gray-200'}`}
+      />
+      <p className="text-xs text-gray-500 leading-tight">{description}</p>
     </div>
-    <Input
-      id={field.toString()}
-      type="number"
-      min={min}
-      max={max}
-      value={currentValue ?? ''}
-      onChange={(e) => {
-        const value = e.target.value === '' ? undefined : parseInt(e.target.value, 10)
-        onChange(field, value)
-      }}
-      placeholder={`Default: ${defaultValue}`}
-      className={`h-8 text-sm ${isOverridden ? 'border-blue-400 bg-blue-50 ring-1 ring-blue-200' : 'border-gray-200'}`}
-    />
-    <p className="text-xs text-gray-500 leading-tight">{description}</p>
-  </div>
-)
+  )
+}
 
 export const MissionSettingsDialog: React.FC<MissionSettingsDialogProps> = ({
   missionId,
@@ -107,6 +111,7 @@ export const MissionSettingsDialog: React.FC<MissionSettingsDialogProps> = ({
   onOpenChange,
   onSettingsChange
 }) => {
+  const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [missionSettings, setMissionSettings] = useState<MissionSettings>({})
@@ -122,15 +127,14 @@ export const MissionSettingsDialog: React.FC<MissionSettingsDialogProps> = ({
       const { settings, effective_settings } = response.data
       setMissionSettings(settings || {})
       setOriginalSettings(settings || {})
-      // The "effective" settings are the defaults if not overridden
       setDefaultSettings(effective_settings)
     } catch (error) {
       console.error('Failed to load mission settings:', error)
-      addToast({ type: 'error', title: 'Settings Error', message: 'Failed to load mission settings.' })
+      addToast({ type: 'error', title: t('missionSettingsDialog.settingsError'), message: t('missionSettingsDialog.failedToLoad') })
     } finally {
       setIsLoading(false)
     }
-  }, [missionId, addToast])
+  }, [missionId, addToast, t])
 
   useEffect(() => {
     if (isOpen) {
@@ -151,11 +155,11 @@ export const MissionSettingsDialog: React.FC<MissionSettingsDialogProps> = ({
       setOriginalSettings(settings || {})
       setDefaultSettings(effective_settings)
       onSettingsChange?.(settings || {})
-      addToast({ type: 'success', title: 'Settings Saved', message: 'Mission settings updated.' })
+      addToast({ type: 'success', title: t('missionSettingsDialog.settingsSaved'), message: t('missionSettingsDialog.settingsUpdated') })
       onOpenChange(false)
     } catch (error) {
       console.error('Failed to save mission settings:', error)
-      addToast({ type: 'error', title: 'Save Error', message: 'Failed to save mission settings.' })
+      addToast({ type: 'error', title: t('missionSettingsDialog.saveError'), message: t('missionSettingsDialog.failedToSave') })
     } finally {
       setIsSaving(false)
     }
@@ -242,7 +246,6 @@ export const MissionSettingsDialog: React.FC<MissionSettingsDialogProps> = ({
           id={key.toString()}
           checked={currentValue ?? defaultValue}
           onCheckedChange={(checked) => {
-            // If toggling to the default value, we can remove the override
             if (checked === defaultValue) {
               resetOneSetting(key)
             } else {
@@ -261,7 +264,7 @@ export const MissionSettingsDialog: React.FC<MissionSettingsDialogProps> = ({
         <DialogHeader className="px-6 pt-6 pb-4">
           <DialogTitle className="flex items-center space-x-2">
             <Settings className="h-5 w-5" />
-            <span>Mission Settings</span>
+            <span>{t('missionSettingsDialog.title')}</span>
             {missionId && (
               <span className="text-sm text-gray-500 font-normal">
                 ({missionId.slice(0, 8)}...)
@@ -273,42 +276,38 @@ export const MissionSettingsDialog: React.FC<MissionSettingsDialogProps> = ({
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin mr-2" />
-            <span>Loading settings...</span>
+            <span>{t('missionSettingsDialog.loading')}</span>
           </div>
         ) : (
           <div className="px-6">
             <div className="space-y-6">
             <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded-md">
-              <p className="font-medium mb-1">Mission-Specific Settings</p>
+              <p className="font-medium mb-1">{t('missionSettingsDialog.missionSpecificSettings')}</p>
               <p>
-                These settings will override your user defaults for this mission only. 
-                Leave fields empty to use your default settings. 
-                Blue-highlighted fields have mission-specific overrides.
+                {t('missionSettingsDialog.missionSpecificSettingsDescription')}
               </p>
             </div>
 
-            {/* Compact Grid Layout */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* Research Configuration */}
               <Card className="h-fit">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
-                    🔍 Research Configuration
+                    🔍 {t('missionSettingsDialog.researchConfiguration')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="grid grid-cols-2 gap-3">
                     {renderNumberInput(
                       'initial_research_max_depth',
-                      'Max Depth',
-                      'Initial exploration depth',
+                      t('missionSettingsDialog.maxDepth'),
+                      t('missionSettingsDialog.maxDepthDescription'),
                       1,
                       10
                     )}
                     {renderNumberInput(
                       'initial_research_max_questions',
-                      'Max Questions',
-                      'Total questions in initial phase',
+                      t('missionSettingsDialog.maxQuestions'),
+                      t('missionSettingsDialog.maxQuestionsDescription'),
                       5,
                       100
                     )}
@@ -316,15 +315,15 @@ export const MissionSettingsDialog: React.FC<MissionSettingsDialogProps> = ({
                   <div className="grid grid-cols-2 gap-3">
                     {renderNumberInput(
                       'structured_research_rounds',
-                      'Research Rounds',
-                      'Structured research cycles',
+                      t('missionSettingsDialog.researchRounds'),
+                      t('missionSettingsDialog.researchRoundsDescription'),
                       1,
                       10
                     )}
                     {renderNumberInput(
                       'writing_passes',
-                      'Writing Passes',
-                      'Initial + revision passes',
+                      t('missionSettingsDialog.writingPasses'),
+                      t('missionSettingsDialog.writingPassesDescription'),
                       1,
                       10
                     )}
@@ -332,26 +331,25 @@ export const MissionSettingsDialog: React.FC<MissionSettingsDialogProps> = ({
                 </CardContent>
               </Card>
 
-              {/* Search Results */}
               <Card className="h-fit">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
-                    📄 Search Results
+                    📄 {t('missionSettingsDialog.searchResults')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="grid grid-cols-2 gap-3">
                     {renderNumberInput(
                       'initial_exploration_doc_results',
-                      'Initial Docs',
-                      'Documents for exploration',
+                      t('missionSettingsDialog.initialDocs'),
+                      t('missionSettingsDialog.initialDocsDescription'),
                       1,
                       20
                     )}
                     {renderNumberInput(
                       'initial_exploration_web_results',
-                      'Initial Web',
-                      'Web results for exploration',
+                      t('missionSettingsDialog.initialWeb'),
+                      t('missionSettingsDialog.initialWebDescription'),
                       1,
                       10
                     )}
@@ -359,15 +357,15 @@ export const MissionSettingsDialog: React.FC<MissionSettingsDialogProps> = ({
                   <div className="grid grid-cols-2 gap-3">
                     {renderNumberInput(
                       'main_research_doc_results',
-                      'Main Docs',
-                      'Documents for research',
+                      t('missionSettingsDialog.mainDocs'),
+                      t('missionSettingsDialog.mainDocsDescription'),
                       1,
                       20
                     )}
                     {renderNumberInput(
                       'main_research_web_results',
-                      'Main Web',
-                      'Web results for research',
+                      t('missionSettingsDialog.mainWeb'),
+                      t('missionSettingsDialog.mainWebDescription'),
                       1,
                       10
                     )}
@@ -375,11 +373,10 @@ export const MissionSettingsDialog: React.FC<MissionSettingsDialogProps> = ({
                 </CardContent>
               </Card>
 
-              {/* Performance & Options */}
               <Card className="lg:col-span-2">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
-                    ⚡ Performance & Options
+                    ⚡ {t('missionSettingsDialog.performanceAndOptions')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -387,8 +384,8 @@ export const MissionSettingsDialog: React.FC<MissionSettingsDialogProps> = ({
                     <div className="space-y-3">
                       {renderNumberInput(
                         'thought_pad_context_limit',
-                        'Context Limit',
-                        'Recent thoughts as context',
+                        t('missionSettingsDialog.contextLimit'),
+                        t('missionSettingsDialog.contextLimitDescription'),
                         5,
                         50
                       )}
@@ -396,8 +393,8 @@ export const MissionSettingsDialog: React.FC<MissionSettingsDialogProps> = ({
                     <div className="space-y-3">
                       {renderNumberInput(
                         'max_notes_for_assignment_reranking',
-                        'Max Notes',
-                        'Notes for reranking',
+                        t('missionSettingsDialog.maxNotes'),
+                        t('missionSettingsDialog.maxNotesDescription'),
                         20,
                         200
                       )}
@@ -405,8 +402,8 @@ export const MissionSettingsDialog: React.FC<MissionSettingsDialogProps> = ({
                     <div className="space-y-3">
                       {renderNumberInput(
                         'max_concurrent_requests',
-                        'Concurrent Requests',
-                        'Parallel operations',
+                        t('missionSettingsDialog.concurrentRequests'),
+                        t('missionSettingsDialog.concurrentRequestsDescription'),
                         1,
                         20
                       )}
@@ -415,8 +412,8 @@ export const MissionSettingsDialog: React.FC<MissionSettingsDialogProps> = ({
                   <div className="mt-4 pt-3 border-t">
                     {renderBooleanInput(
                       'skip_final_replanning',
-                      'Skip Final Replanning',
-                      'Skip final outline refinement for faster completion'
+                      t('missionSettingsDialog.skipFinalReplanning'),
+                      t('missionSettingsDialog.skipFinalReplanningDescription')
                     )}
                   </div>
                 </CardContent>
@@ -435,7 +432,7 @@ export const MissionSettingsDialog: React.FC<MissionSettingsDialogProps> = ({
               disabled={!hasChanges || isSaving}
             >
               <RotateCcw className="h-4 w-4 mr-2" />
-              Reset Changes
+              {t('missionSettingsDialog.resetChanges')}
             </Button>
             
             <div className="flex space-x-2">
@@ -444,7 +441,7 @@ export const MissionSettingsDialog: React.FC<MissionSettingsDialogProps> = ({
                 onClick={() => onOpenChange(false)}
                 disabled={isSaving}
               >
-                Cancel
+                {t('missionSettingsDialog.cancel')}
               </Button>
               <Button
                 onClick={saveSettings}
@@ -455,7 +452,7 @@ export const MissionSettingsDialog: React.FC<MissionSettingsDialogProps> = ({
                 ) : (
                   <Save className="h-4 w-4 mr-2" />
                 )}
-                Save Settings
+                {t('missionSettingsDialog.saveSettings')}
               </Button>
             </div>
           </div>

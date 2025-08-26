@@ -1,4 +1,5 @@
 import React, { useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { type ResearchParameters, useSettingsStore } from './SettingsStore'
 import { Button } from '../../../components/ui/button'
 import { Input } from '../../../components/ui/input'
@@ -18,18 +19,17 @@ import {
 const DEFAULT_RESEARCH_PARAMS: ResearchParameters = {
   initial_research_max_depth: 3,
   initial_research_max_questions: 15,
-  structured_research_rounds: 2,  // Changed from 3 to 2
-  writing_passes: 2,  // Changed from 4 to 2
+  structured_research_rounds: 2,
+  writing_passes: 2,
   initial_exploration_doc_results: 5,
   initial_exploration_web_results: 3,
   main_research_doc_results: 5,
   main_research_web_results: 5,
   thought_pad_context_limit: 5,
-  max_notes_for_assignment_reranking: 80,  // Changed from 0 to 80
-  max_concurrent_requests: 10,  // Changed from 80 to 10
+  max_notes_for_assignment_reranking: 80,
+  max_concurrent_requests: 10,
   skip_final_replanning: false,
   auto_optimize_params: false,
-  // Advanced parameters with defaults
   max_research_cycles_per_section: 2,
   max_total_iterations: 40,
   max_total_depth: 2,
@@ -38,128 +38,10 @@ const DEFAULT_RESEARCH_PARAMS: ResearchParameters = {
   max_planning_context_chars: 250000,
   writing_previous_content_preview_chars: 30000,
   research_note_content_limit: 32000,
-  // Writing mode search parameters
   writing_search_max_iterations: 1,
   writing_search_max_queries: 3,
   writing_deep_search_iterations: 3,
   writing_deep_search_queries: 5
-}
-
-// Preset configurations for different use cases
-const RESEARCH_PRESETS = {
-  'quick': {
-    name: 'Quick & Simple',
-    description: 'Minimal depth, fast results',
-    params: {
-      initial_research_max_depth: 1,
-      initial_research_max_questions: 5,
-      structured_research_rounds: 1,
-      writing_passes: 1,
-      initial_exploration_doc_results: 3,
-      initial_exploration_web_results: 2,
-      main_research_doc_results: 3,
-      main_research_web_results: 0,
-      thought_pad_context_limit: 3,
-      max_notes_for_assignment_reranking: 30,
-      max_concurrent_requests: 5,
-      skip_final_replanning: true,
-      auto_optimize_params: false,
-      max_research_cycles_per_section: 1,
-      max_total_iterations: 20,
-      max_total_depth: 1,
-      min_notes_per_section_assignment: 3,
-      max_notes_per_section_assignment: 20,
-      max_planning_context_chars: 150000,
-      writing_previous_content_preview_chars: 20000,
-      research_note_content_limit: 20000
-    }
-  },
-  'balanced': {
-    name: 'Balanced Research',
-    description: 'Default balanced settings',
-    params: DEFAULT_RESEARCH_PARAMS
-  },
-  'deep': {
-    name: 'Deep Analysis',
-    description: 'Maximum depth and iterations',
-    params: {
-      initial_research_max_depth: 5,
-      initial_research_max_questions: 30,
-      structured_research_rounds: 4,
-      writing_passes: 4,
-      initial_exploration_doc_results: 8,
-      initial_exploration_web_results: 5,
-      main_research_doc_results: 10,
-      main_research_web_results: 5,
-      thought_pad_context_limit: 10,
-      max_notes_for_assignment_reranking: 150,
-      max_concurrent_requests: 20,
-      skip_final_replanning: false,
-      auto_optimize_params: false,
-      max_research_cycles_per_section: 4,
-      max_total_iterations: 80,
-      max_total_depth: 4,
-      min_notes_per_section_assignment: 10,
-      max_notes_per_section_assignment: 80,
-      max_planning_context_chars: 400000,
-      writing_previous_content_preview_chars: 40000,
-      research_note_content_limit: 40000
-    }
-  },
-  'academic': {
-    name: 'Academic Paper',
-    description: 'High doc results, multiple rounds',
-    params: {
-      initial_research_max_depth: 4,
-      initial_research_max_questions: 25,
-      structured_research_rounds: 3,
-      writing_passes: 3,
-      initial_exploration_doc_results: 10,
-      initial_exploration_web_results: 2,
-      main_research_doc_results: 15,
-      main_research_web_results: 0,
-      thought_pad_context_limit: 8,
-      max_notes_for_assignment_reranking: 120,
-      max_concurrent_requests: 15,
-      skip_final_replanning: false,
-      auto_optimize_params: false,
-      max_research_cycles_per_section: 3,
-      max_total_iterations: 60,
-      max_total_depth: 3,
-      min_notes_per_section_assignment: 8,
-      max_notes_per_section_assignment: 60,
-      max_planning_context_chars: 350000,
-      writing_previous_content_preview_chars: 35000,
-      research_note_content_limit: 35000
-    }
-  },
-  'current_events': {
-    name: 'Current Events',
-    description: 'High web results, fewer rounds',
-    params: {
-      initial_research_max_depth: 2,
-      initial_research_max_questions: 12,
-      structured_research_rounds: 2,
-      writing_passes: 2,
-      initial_exploration_doc_results: 2,
-      initial_exploration_web_results: 8,
-      main_research_doc_results: 2,
-      main_research_web_results: 10,
-      thought_pad_context_limit: 5,
-      max_notes_for_assignment_reranking: 60,
-      max_concurrent_requests: 10,
-      skip_final_replanning: true,
-      auto_optimize_params: false,
-      max_research_cycles_per_section: 2,
-      max_total_iterations: 30,
-      max_total_depth: 2,
-      min_notes_per_section_assignment: 4,
-      max_notes_per_section_assignment: 30,
-      max_planning_context_chars: 200000,
-      writing_previous_content_preview_chars: 25000,
-      research_note_content_limit: 25000
-    }
-  }
 }
 
 interface ResearchParameterInputProps {
@@ -230,7 +112,36 @@ const ResearchParameterInput: React.FC<ResearchParameterInputProps> = ({
 }
 
 export const ResearchSettingsTab: React.FC = () => {
+  const { t } = useTranslation()
   const { draftSettings, setDraftSettings } = useSettingsStore()
+
+  const RESEARCH_PRESETS = {
+    'quick': {
+      name: t('researchSettings.quickAndSimple'),
+      description: t('researchSettings.quickAndSimpleDescription'),
+      params: { ...DEFAULT_RESEARCH_PARAMS, initial_research_max_depth: 1, initial_research_max_questions: 5, structured_research_rounds: 1, writing_passes: 1, initial_exploration_doc_results: 3, initial_exploration_web_results: 2, main_research_doc_results: 3, main_research_web_results: 0, thought_pad_context_limit: 3, max_notes_for_assignment_reranking: 30, max_concurrent_requests: 5, skip_final_replanning: true, max_research_cycles_per_section: 1, max_total_iterations: 20, max_total_depth: 1, min_notes_per_section_assignment: 3, max_notes_per_section_assignment: 20, max_planning_context_chars: 150000, writing_previous_content_preview_chars: 20000, research_note_content_limit: 20000 }
+    },
+    'balanced': {
+      name: t('researchSettings.balancedResearch'),
+      description: t('researchSettings.balancedResearchDescription'),
+      params: DEFAULT_RESEARCH_PARAMS
+    },
+    'deep': {
+      name: t('researchSettings.deepAnalysis'),
+      description: t('researchSettings.deepAnalysisDescription'),
+      params: { ...DEFAULT_RESEARCH_PARAMS, initial_research_max_depth: 5, initial_research_max_questions: 30, structured_research_rounds: 4, writing_passes: 4, initial_exploration_doc_results: 8, initial_exploration_web_results: 5, main_research_doc_results: 10, main_research_web_results: 5, thought_pad_context_limit: 10, max_notes_for_assignment_reranking: 150, max_concurrent_requests: 20, max_research_cycles_per_section: 4, max_total_iterations: 80, max_total_depth: 4, min_notes_per_section_assignment: 10, max_notes_per_section_assignment: 80, max_planning_context_chars: 400000, writing_previous_content_preview_chars: 40000, research_note_content_limit: 40000 }
+    },
+    'academic': {
+      name: t('researchSettings.academicPaper'),
+      description: t('researchSettings.academicPaperDescription'),
+      params: { ...DEFAULT_RESEARCH_PARAMS, initial_research_max_depth: 4, initial_research_max_questions: 25, structured_research_rounds: 3, writing_passes: 3, initial_exploration_doc_results: 10, initial_exploration_web_results: 2, main_research_doc_results: 15, main_research_web_results: 0, thought_pad_context_limit: 8, max_notes_for_assignment_reranking: 120, max_concurrent_requests: 15, max_research_cycles_per_section: 3, max_total_iterations: 60, max_total_depth: 3, min_notes_per_section_assignment: 8, max_notes_per_section_assignment: 60, max_planning_context_chars: 350000, writing_previous_content_preview_chars: 35000, research_note_content_limit: 35000 }
+    },
+    'current_events': {
+      name: t('researchSettings.currentEvents'),
+      description: t('researchSettings.currentEventsDescription'),
+      params: { ...DEFAULT_RESEARCH_PARAMS, initial_research_max_depth: 2, initial_research_max_questions: 12, structured_research_rounds: 2, writing_passes: 2, initial_exploration_doc_results: 2, initial_exploration_web_results: 8, main_research_doc_results: 2, main_research_web_results: 10, thought_pad_context_limit: 5, max_notes_for_assignment_reranking: 60, max_concurrent_requests: 10, skip_final_replanning: true, max_research_cycles_per_section: 2, max_total_iterations: 30, max_total_depth: 2, min_notes_per_section_assignment: 4, max_notes_per_section_assignment: 30, max_planning_context_chars: 200000, writing_previous_content_preview_chars: 25000, research_note_content_limit: 25000 }
+    }
+  }
 
   const resetToDefaults = useCallback(() => {
     setDraftSettings({ research_parameters: { ...DEFAULT_RESEARCH_PARAMS } })
@@ -238,14 +149,13 @@ export const ResearchSettingsTab: React.FC = () => {
 
   const applyPreset = useCallback((presetKey: string) => {
     if (presetKey === 'custom') {
-      // Custom doesn't change anything, just allows manual editing
       return
     }
     const preset = RESEARCH_PRESETS[presetKey as keyof typeof RESEARCH_PRESETS]
     if (preset) {
       setDraftSettings({ research_parameters: { ...preset.params } })
     }
-  }, [setDraftSettings])
+  }, [setDraftSettings, RESEARCH_PRESETS])
 
   const handleNumberChange = useCallback((field: keyof ResearchParameters, value: string) => {
     const numValue = parseInt(value, 10)
@@ -287,7 +197,7 @@ export const ResearchSettingsTab: React.FC = () => {
   }, [draftSettings, setDraftSettings])
 
   if (!draftSettings) {
-    return <div>Loading...</div>
+    return <div>{t('researchSettings.loading')}</div>
   }
 
   const params = draftSettings.research_parameters
@@ -301,10 +211,10 @@ export const ResearchSettingsTab: React.FC = () => {
             <div>
               <CardTitle className="text-base flex items-center gap-2">
                 <BarChart3 className="h-4 w-4" />
-                Research Parameters
+                {t('researchSettings.title')}
               </CardTitle>
               <CardDescription className="text-sm">
-                Configure default values for research parameters. These can be overridden per mission.
+                {t('researchSettings.description')}
               </CardDescription>
             </div>
             <Button
@@ -315,60 +225,59 @@ export const ResearchSettingsTab: React.FC = () => {
               disabled={isAutoOptimizeEnabled}
             >
               <RotateCcw className="h-3 w-3" />
-              Reset to Defaults
+              {t('researchSettings.resetToDefaults')}
             </Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Preset Configurations */}
           <Card className="p-3 bg-gradient-to-r from-blue-50 via-cyan-50 to-teal-50 dark:from-blue-900/20 dark:via-cyan-900/20 dark:to-teal-900/20 border-blue-200 dark:border-blue-700">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold flex items-center gap-2">
                   <Settings2 className="h-4 w-4" />
-                  Quick Presets
+                  {t('researchSettings.quickPresets')}
                 </h3>
-                <p className="text-xs text-muted-foreground-foreground">Apply pre-configured settings for common use cases</p>
+                <p className="text-xs text-muted-foreground-foreground">{t('researchSettings.quickPresetsDescription')}</p>
               </div>
               <Select onValueChange={applyPreset}>
                 <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Select preset..." />
+                  <SelectValue placeholder={t('researchSettings.selectPreset')} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="quick">
                     <div>
-                      <div className="font-medium">Quick & Simple</div>
-                      <div className="text-xs text-muted-foreground">Fast, minimal depth</div>
+                      <div className="font-medium">{t('researchSettings.quickAndSimple')}</div>
+                      <div className="text-xs text-muted-foreground">{t('researchSettings.quickAndSimpleDescription')}</div>
                     </div>
                   </SelectItem>
                   <SelectItem value="balanced">
                     <div>
-                      <div className="font-medium">Balanced</div>
-                      <div className="text-xs text-muted-foreground">Default settings</div>
+                      <div className="font-medium">{t('researchSettings.balancedResearch')}</div>
+                      <div className="text-xs text-muted-foreground">{t('researchSettings.balancedResearchDescription')}</div>
                     </div>
                   </SelectItem>
                   <SelectItem value="deep">
                     <div>
-                      <div className="font-medium">Deep Analysis</div>
-                      <div className="text-xs text-muted-foreground">Maximum depth</div>
+                      <div className="font-medium">{t('researchSettings.deepAnalysis')}</div>
+                      <div className="text-xs text-muted-foreground">{t('researchSettings.deepAnalysisDescription')}</div>
                     </div>
                   </SelectItem>
                   <SelectItem value="academic">
                     <div>
-                      <div className="font-medium">Academic Paper</div>
-                      <div className="text-xs text-muted-foreground">High doc focus</div>
+                      <div className="font-medium">{t('researchSettings.academicPaper')}</div>
+                      <div className="text-xs text-muted-foreground">{t('researchSettings.academicPaperDescription')}</div>
                     </div>
                   </SelectItem>
                   <SelectItem value="current_events">
                     <div>
-                      <div className="font-medium">Current Events</div>
-                      <div className="text-xs text-muted-foreground">Web focused</div>
+                      <div className="font-medium">{t('researchSettings.currentEvents')}</div>
+                      <div className="text-xs text-muted-foreground">{t('researchSettings.currentEventsDescription')}</div>
                     </div>
                   </SelectItem>
                   <SelectItem value="custom">
                     <div>
-                      <div className="font-medium">Custom</div>
-                      <div className="text-xs text-muted-foreground">Manual configuration</div>
+                      <div className="font-medium">{t('researchSettings.custom')}</div>
+                      <div className="text-xs text-muted-foreground">{t('researchSettings.customDescription')}</div>
                     </div>
                   </SelectItem>
                 </SelectContent>
@@ -376,15 +285,14 @@ export const ResearchSettingsTab: React.FC = () => {
             </div>
           </Card>
 
-          {/* AI-Powered Configuration */}
           <Card className="p-3 bg-gradient-to-r from-purple-50 via-fuchsia-50 to-rose-50 dark:from-purple-900/20 dark:via-fuchsia-900/20 dark:to-rose-900/20 border-purple-200 dark:border-purple-700">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold flex items-center gap-2">
                   <Bot className="h-4 w-4" />
-                  AI-Powered Configuration
+                  {t('researchSettings.aiPoweredConfiguration')}
                 </h3>
-                <p className="text-xs text-muted-foreground-foreground">Let an AI agent dynamically optimize parameters based on your request.</p>
+                <p className="text-xs text-muted-foreground-foreground">{t('researchSettings.aiPoweredConfigurationDescription')}</p>
               </div>
               <Switch
                 checked={isAutoOptimizeEnabled}
@@ -394,18 +302,17 @@ export const ResearchSettingsTab: React.FC = () => {
           </Card>
 
           <div className={`grid grid-cols-1 lg:grid-cols-2 gap-4 ${isAutoOptimizeEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
-            {/* Research Configuration */}
             <Card className="p-3">
               <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
                 <Search className="h-4 w-4" />
-                Research Configuration
+                {t('researchSettings.researchConfiguration')}
               </h3>
               <div className="grid grid-cols-2 gap-3">
                 <ResearchParameterInput
                   field="initial_research_max_depth"
                   disabled={isAutoOptimizeEnabled}
-                  label="Max Depth"
-                  description="Initial exploration depth"
+                  label={t('researchSettings.maxDepth')}
+                  description={t('researchSettings.maxDepthDescription')}
                   value={params.initial_research_max_depth}
                   defaultValue={DEFAULT_RESEARCH_PARAMS.initial_research_max_depth as number}
                   min={1}
@@ -417,8 +324,8 @@ export const ResearchSettingsTab: React.FC = () => {
                 <ResearchParameterInput
                   field="initial_research_max_questions"
                   disabled={isAutoOptimizeEnabled}
-                  label="Max Questions"
-                  description="Questions for initial research"
+                  label={t('researchSettings.maxQuestions')}
+                  description={t('researchSettings.maxQuestionsDescription')}
                   value={params.initial_research_max_questions}
                   defaultValue={DEFAULT_RESEARCH_PARAMS.initial_research_max_questions as number}
                   min={1}
@@ -430,8 +337,8 @@ export const ResearchSettingsTab: React.FC = () => {
                 <ResearchParameterInput
                   field="structured_research_rounds"
                   disabled={isAutoOptimizeEnabled}
-                  label="Research Rounds"
-                  description="Structured research cycles"
+                  label={t('researchSettings.researchRounds')}
+                  description={t('researchSettings.researchRoundsDescription')}
                   value={params.structured_research_rounds}
                   defaultValue={DEFAULT_RESEARCH_PARAMS.structured_research_rounds as number}
                   min={1}
@@ -443,8 +350,8 @@ export const ResearchSettingsTab: React.FC = () => {
                 <ResearchParameterInput
                   field="writing_passes"
                   disabled={isAutoOptimizeEnabled}
-                  label="Writing Passes"
-                  description="Report writing passes"
+                  label={t('researchSettings.writingPasses')}
+                  description={t('researchSettings.writingPassesDescription')}
                   value={params.writing_passes}
                   defaultValue={DEFAULT_RESEARCH_PARAMS.writing_passes as number}
                   min={1}
@@ -456,18 +363,17 @@ export const ResearchSettingsTab: React.FC = () => {
               </div>
             </Card>
 
-            {/* Search Results */}
             <Card className="p-3">
               <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
                 <FileText className="h-4 w-4" />
-                Search Results
+                {t('researchSettings.searchResults')}
               </h3>
               <div className="grid grid-cols-2 gap-3">
                 <ResearchParameterInput
                   field="initial_exploration_doc_results"
                   disabled={isAutoOptimizeEnabled}
-                  label="Initial Docs"
-                  description="Documents for exploration"
+                  label={t('researchSettings.initialDocs')}
+                  description={t('researchSettings.initialDocsDescription')}
                   value={params.initial_exploration_doc_results}
                   defaultValue={DEFAULT_RESEARCH_PARAMS.initial_exploration_doc_results as number}
                   min={1}
@@ -479,8 +385,8 @@ export const ResearchSettingsTab: React.FC = () => {
                 <ResearchParameterInput
                   field="initial_exploration_web_results"
                   disabled={isAutoOptimizeEnabled}
-                  label="Initial Web"
-                  description="Web results for exploration"
+                  label={t('researchSettings.initialWeb')}
+                  description={t('researchSettings.initialWebDescription')}
                   value={params.initial_exploration_web_results}
                   defaultValue={DEFAULT_RESEARCH_PARAMS.initial_exploration_web_results as number}
                   min={1}
@@ -492,8 +398,8 @@ export const ResearchSettingsTab: React.FC = () => {
                 <ResearchParameterInput
                   field="main_research_doc_results"
                   disabled={isAutoOptimizeEnabled}
-                  label="Main Docs"
-                  description="Documents for research"
+                  label={t('researchSettings.mainDocs')}
+                  description={t('researchSettings.mainDocsDescription')}
                   value={params.main_research_doc_results}
                   defaultValue={DEFAULT_RESEARCH_PARAMS.main_research_doc_results as number}
                   min={1}
@@ -505,8 +411,8 @@ export const ResearchSettingsTab: React.FC = () => {
                 <ResearchParameterInput
                   field="main_research_web_results"
                   disabled={isAutoOptimizeEnabled}
-                  label="Main Web"
-                  description="Web results for research"
+                  label={t('researchSettings.mainWeb')}
+                  description={t('researchSettings.mainWebDescription')}
                   value={params.main_research_web_results}
                   defaultValue={DEFAULT_RESEARCH_PARAMS.main_research_web_results as number}
                   min={0}
@@ -518,18 +424,17 @@ export const ResearchSettingsTab: React.FC = () => {
               </div>
             </Card>
 
-            {/* Performance & Options */}
             <Card className="lg:col-span-2 p-3">
               <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
                 <Zap className="h-4 w-4" />
-                Performance & Options
+                {t('researchSettings.performanceAndOptions')}
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <ResearchParameterInput
                   field="thought_pad_context_limit"
                   disabled={isAutoOptimizeEnabled}
-                  label="Context Limit"
-                  description="Thoughts in context"
+                  label={t('researchSettings.contextLimit')}
+                  description={t('researchSettings.contextLimitDescription')}
                   value={params.thought_pad_context_limit}
                   defaultValue={DEFAULT_RESEARCH_PARAMS.thought_pad_context_limit as number}
                   min={1}
@@ -541,8 +446,8 @@ export const ResearchSettingsTab: React.FC = () => {
                 <ResearchParameterInput
                   field="max_notes_for_assignment_reranking"
                   disabled={isAutoOptimizeEnabled}
-                  label="Max Notes"
-                  description="Notes for reranking"
+                  label={t('researchSettings.maxNotes')}
+                  description={t('researchSettings.maxNotesDescription')}
                   value={params.max_notes_for_assignment_reranking}
                   defaultValue={DEFAULT_RESEARCH_PARAMS.max_notes_for_assignment_reranking as number}
                   min={0}
@@ -554,8 +459,8 @@ export const ResearchSettingsTab: React.FC = () => {
                 <ResearchParameterInput
                   field="max_concurrent_requests"
                   disabled={isAutoOptimizeEnabled}
-                  label="Concurrent Requests"
-                  description="Parallel operations"
+                  label={t('researchSettings.concurrentRequests')}
+                  description={t('researchSettings.concurrentRequestsDescription')}
                   value={params.max_concurrent_requests}
                   defaultValue={DEFAULT_RESEARCH_PARAMS.max_concurrent_requests as number}
                   min={1}
@@ -569,10 +474,10 @@ export const ResearchSettingsTab: React.FC = () => {
                 <div className="flex items-center justify-between p-2 bg-muted rounded-lg">
                   <div className="flex-1">
                     <Label htmlFor="skip-final-replanning" className="text-sm font-medium flex items-center gap-2">
-                      Skip Final Replanning
+                      {t('researchSettings.skipFinalReplanning')}
                       <Info className="h-3 w-3 text-muted-foreground" />
                     </Label>
-                    <p className="text-xs text-muted-foreground">Skip final replanning for faster completion</p>
+                    <p className="text-xs text-muted-foreground">{t('researchSettings.skipFinalReplanningDescription')}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs badge-default px-1.5 py-0.5 rounded-md font-mono">
@@ -601,18 +506,17 @@ export const ResearchSettingsTab: React.FC = () => {
               </div>
             </Card>
 
-            {/* Advanced Research Loop Configuration */}
             <Card className="lg:col-span-2 p-3">
               <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
                 <Layers className="h-4 w-4" />
-                Advanced Research Loop Configuration
+                {t('researchSettings.advancedResearchLoopConfiguration')}
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <ResearchParameterInput
                   field="max_research_cycles_per_section"
                   disabled={isAutoOptimizeEnabled}
-                  label="Research Cycles/Section"
-                  description="Max iterations per section"
+                  label={t('researchSettings.researchCyclesPerSection')}
+                  description={t('researchSettings.researchCyclesPerSectionDescription')}
                   value={params.max_research_cycles_per_section ?? DEFAULT_RESEARCH_PARAMS.max_research_cycles_per_section!}
                   defaultValue={DEFAULT_RESEARCH_PARAMS.max_research_cycles_per_section as number}
                   min={1}
@@ -624,8 +528,8 @@ export const ResearchSettingsTab: React.FC = () => {
                 <ResearchParameterInput
                   field="max_total_iterations"
                   disabled={isAutoOptimizeEnabled}
-                  label="Total Iterations"
-                  description="Overall iteration limit"
+                  label={t('researchSettings.totalIterations')}
+                  description={t('researchSettings.totalIterationsDescription')}
                   value={params.max_total_iterations ?? DEFAULT_RESEARCH_PARAMS.max_total_iterations!}
                   defaultValue={DEFAULT_RESEARCH_PARAMS.max_total_iterations as number}
                   min={10}
@@ -637,8 +541,8 @@ export const ResearchSettingsTab: React.FC = () => {
                 <ResearchParameterInput
                   field="max_total_depth"
                   disabled={isAutoOptimizeEnabled}
-                  label="Max Outline Depth"
-                  description="Maximum outline depth"
+                  label={t('researchSettings.maxOutlineDepth')}
+                  description={t('researchSettings.maxOutlineDepthDescription')}
                   value={params.max_total_depth ?? DEFAULT_RESEARCH_PARAMS.max_total_depth!}
                   defaultValue={DEFAULT_RESEARCH_PARAMS.max_total_depth as number}
                   min={1}
@@ -650,18 +554,17 @@ export const ResearchSettingsTab: React.FC = () => {
               </div>
             </Card>
 
-            {/* Note Assignment Limits */}
             <Card className="lg:col-span-2 p-3">
               <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
                 <ListChecks className="h-4 w-4" />
-                Note Assignment Limits
+                {t('researchSettings.noteAssignmentLimits')}
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <ResearchParameterInput
                   field="min_notes_per_section_assignment"
                   disabled={isAutoOptimizeEnabled}
-                  label="Minimum Notes/Section"
-                  description="Ensures adequate coverage"
+                  label={t('researchSettings.minNotesPerSection')}
+                  description={t('researchSettings.minNotesPerSectionDescription')}
                   value={params.min_notes_per_section_assignment ?? DEFAULT_RESEARCH_PARAMS.min_notes_per_section_assignment!}
                   defaultValue={DEFAULT_RESEARCH_PARAMS.min_notes_per_section_assignment as number}
                   min={1}
@@ -673,8 +576,8 @@ export const ResearchSettingsTab: React.FC = () => {
                 <ResearchParameterInput
                   field="max_notes_per_section_assignment"
                   disabled={isAutoOptimizeEnabled}
-                  label="Maximum Notes/Section"
-                  description="Prevents information overload"
+                  label={t('researchSettings.maxNotesPerSection')}
+                  description={t('researchSettings.maxNotesPerSectionDescription')}
                   value={params.max_notes_per_section_assignment ?? DEFAULT_RESEARCH_PARAMS.max_notes_per_section_assignment!}
                   defaultValue={DEFAULT_RESEARCH_PARAMS.max_notes_per_section_assignment as number}
                   min={10}
@@ -686,19 +589,18 @@ export const ResearchSettingsTab: React.FC = () => {
               </div>
             </Card>
 
-            {/* Content Processing Limits (Advanced) */}
             <Card className="lg:col-span-2 p-3">
               <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
                 <FileCode className="h-4 w-4" />
-                Content Processing Limits
-                <span className="text-xs badge-default px-1.5 py-0.5 rounded-md">Advanced</span>
+                {t('researchSettings.contentProcessingLimits')}
+                <span className="text-xs badge-default px-1.5 py-0.5 rounded-md">{t('researchSettings.advanced')}</span>
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <ResearchParameterInput
                   field="max_planning_context_chars"
                   disabled={isAutoOptimizeEnabled}
-                  label="Planning Context"
-                  description="Characters for planning"
+                  label={t('researchSettings.planningContext')}
+                  description={t('researchSettings.planningContextDescription')}
                   value={params.max_planning_context_chars ?? DEFAULT_RESEARCH_PARAMS.max_planning_context_chars!}
                   defaultValue={DEFAULT_RESEARCH_PARAMS.max_planning_context_chars as number}
                   min={50000}
@@ -710,8 +612,8 @@ export const ResearchSettingsTab: React.FC = () => {
                 <ResearchParameterInput
                   field="writing_previous_content_preview_chars"
                   disabled={isAutoOptimizeEnabled}
-                  label="Writing Preview"
-                  description="Previous content preview"
+                  label={t('researchSettings.writingPreview')}
+                  description={t('researchSettings.writingPreviewDescription')}
                   value={params.writing_previous_content_preview_chars ?? DEFAULT_RESEARCH_PARAMS.writing_previous_content_preview_chars!}
                   defaultValue={DEFAULT_RESEARCH_PARAMS.writing_previous_content_preview_chars as number}
                   min={10000}
@@ -723,8 +625,8 @@ export const ResearchSettingsTab: React.FC = () => {
                 <ResearchParameterInput
                   field="research_note_content_limit"
                   disabled={isAutoOptimizeEnabled}
-                  label="Note Content Limit"
-                  description="Source content for notes"
+                  label={t('researchSettings.noteContentLimit')}
+                  description={t('researchSettings.noteContentLimitDescription')}
                   value={params.research_note_content_limit ?? DEFAULT_RESEARCH_PARAMS.research_note_content_limit!}
                   defaultValue={DEFAULT_RESEARCH_PARAMS.research_note_content_limit as number}
                   min={10000}
@@ -736,18 +638,17 @@ export const ResearchSettingsTab: React.FC = () => {
               </div>
             </Card>
             
-            {/* Writing Mode Search Settings */}
             <Card className="border-muted/50">
               <CardHeader className="pb-3">
-                <CardTitle className="text-base font-medium">Writing Mode Search Settings</CardTitle>
-                <CardDescription className="text-xs">Configure search behavior for Writing mode</CardDescription>
+                <CardTitle className="text-base font-medium">{t('researchSettings.writingModeSearchSettings')}</CardTitle>
+                <CardDescription className="text-xs">{t('researchSettings.writingModeSearchSettingsDescription')}</CardDescription>
               </CardHeader>
               <div className="px-6 pb-4 grid grid-cols-2 gap-3">
                 <ResearchParameterInput
                   field="writing_search_max_iterations"
                   disabled={isAutoOptimizeEnabled}
-                  label="Regular Search Iterations"
-                  description="Max attempts for regular search"
+                  label={t('researchSettings.regularSearchIterations')}
+                  description={t('researchSettings.regularSearchIterationsDescription')}
                   value={params.writing_search_max_iterations ?? DEFAULT_RESEARCH_PARAMS.writing_search_max_iterations!}
                   defaultValue={DEFAULT_RESEARCH_PARAMS.writing_search_max_iterations as number}
                   min={1}
@@ -759,8 +660,8 @@ export const ResearchSettingsTab: React.FC = () => {
                 <ResearchParameterInput
                   field="writing_search_max_queries"
                   disabled={isAutoOptimizeEnabled}
-                  label="Regular Search Queries"
-                  description="Max decomposed queries"
+                  label={t('researchSettings.regularSearchQueries')}
+                  description={t('researchSettings.regularSearchQueriesDescription')}
                   value={params.writing_search_max_queries ?? DEFAULT_RESEARCH_PARAMS.writing_search_max_queries!}
                   defaultValue={DEFAULT_RESEARCH_PARAMS.writing_search_max_queries as number}
                   min={1}
@@ -772,8 +673,8 @@ export const ResearchSettingsTab: React.FC = () => {
                 <ResearchParameterInput
                   field="writing_deep_search_iterations"
                   disabled={isAutoOptimizeEnabled}
-                  label="Deep Search Iterations"
-                  description="Max attempts for deep search"
+                  label={t('researchSettings.deepSearchIterations')}
+                  description={t('researchSettings.deepSearchIterationsDescription')}
                   value={params.writing_deep_search_iterations ?? DEFAULT_RESEARCH_PARAMS.writing_deep_search_iterations!}
                   defaultValue={DEFAULT_RESEARCH_PARAMS.writing_deep_search_iterations as number}
                   min={1}
@@ -785,8 +686,8 @@ export const ResearchSettingsTab: React.FC = () => {
                 <ResearchParameterInput
                   field="writing_deep_search_queries"
                   disabled={isAutoOptimizeEnabled}
-                  label="Deep Search Queries"
-                  description="Max decomposed queries"
+                  label={t('researchSettings.deepSearchQueries')}
+                  description={t('researchSettings.deepSearchQueriesDescription')}
                   value={params.writing_deep_search_queries ?? DEFAULT_RESEARCH_PARAMS.writing_deep_search_queries!}
                   defaultValue={DEFAULT_RESEARCH_PARAMS.writing_deep_search_queries as number}
                   min={1}

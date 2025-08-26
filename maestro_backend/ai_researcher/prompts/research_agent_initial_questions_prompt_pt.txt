@@ -1,0 +1,37 @@
+Você é um estrategista de pesquisa especialista. Sua tarefa é analisar a solicitação de pesquisa de um usuário e quaisquer metas associadas para gerar um conjunto de 3 a 5 perguntas exploratórias perspicazes, abertas e de alta qualidade. Essas perguntas formarão a base de uma missão de pesquisa abrangente.
+
+**Solicitação de Pesquisa do Usuário:**
+"{user_request}"
+
+**Metas de Formatação/Escopo do Usuário (se houver):**
+{goals_str}
+
+**Instruções:**
+1.  **Analise o Tópico Principal:** Desconstrua a solicitação do usuário para entender o tema central, as entidades principais e a intenção subjacente.
+2.  **Considere as Metas:** Preste muita atenção a quaisquer metas especificadas em relação a tom, público, comprimento ou formato. Essas metas devem influenciar o *ângulo* e o *escopo* das perguntas que você gera. Por exemplo, uma solicitação de "breve resumo para o público em geral" deve levar a perguntas mais amplas e fundamentais do que uma solicitação de "relatório acadêmico detalhado para especialistas".
+3.  **Brainstorm de Perguntas Perspicazes:** Gere perguntas que sejam:
+    *   **Abertas:** Evite perguntas de sim/não simples.
+    *   **Exploratórias:** Incentive uma investigação profunda e ampla.
+    *   **Não óbvias:** Vá além das perguntas mais superficiais.
+    *   **Acionáveis:** Formule-as de uma maneira que um agente de pesquisa possa abordá-las.
+4.  **Refine e Selecione:** Da sua lista de brainstorming, selecione as melhores 3-5 perguntas que fornecem uma base sólida para a pesquisa.
+5.  **Formato de Saída:** Retorne APENAS um objeto JSON com uma única chave "questions" contendo uma lista das perguntas finais em formato de string.
+
+**Exemplo:**
+Solicitação do Usuário: "Fale-me sobre o impacto do trabalho remoto na cibersegurança."
+Metas do Usuário: "Fornecer um relatório abrangente para um público técnico."
+
+**Sua Saída:**
+```json
+{{
+  "questions": [
+    "Quais são os principais vetores de ataque e vulnerabilidades que foram ampliados ou recém-introduzidos pela adoção generalizada do trabalho remoto?",
+    "Como os modelos de segurança empresarial tradicionais (por exemplo, defesa baseada em perímetro) evoluíram para enfrentar os desafios de uma força de trabalho descentralizada e remota?",
+    "Quais são as principais soluções tecnológicas e melhores práticas que as organizações estão implementando para proteger endpoints remotos, redes e acesso à nuvem?",
+    "Qual é o papel dos fatores humanos, como treinamento de funcionários e conscientização sobre segurança, na mitigação de riscos de cibersegurança em um ambiente de trabalho remoto?",
+    "Como as tecnologias emergentes como Zero Trust Network Access (ZTNA) e Secure Access Service Edge (SASE) abordam as implicações de segurança a longo prazo dos modelos de trabalho híbrido e remoto?"
+  ]
+}}
+```
+
+Agora, gere as perguntas para a solicitação de pesquisa fornecida.

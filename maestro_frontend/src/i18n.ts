@@ -1,10 +1,10 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
-import HttpApi from 'i18next-http-backend';
+import enTranslation from './locales/en/translation.json';
+import ptBRTranslation from './locales/pt-BR/translation.json';
 
 i18n
-  .use(HttpApi)
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
@@ -15,8 +15,13 @@ i18n
       order: ['queryString', 'cookie', 'localStorage', 'sessionStorage', 'navigator', 'htmlTag'],
       caches: ['cookie'],
     },
-    backend: {
-      loadPath: '/locales/{{lng}}/translation.json',
+    resources: {
+      en: {
+        translation: enTranslation,
+      },
+      'pt-BR': {
+        translation: ptBRTranslation,
+      },
     },
     react: {
       useSuspense: false,

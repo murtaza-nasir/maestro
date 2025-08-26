@@ -32,12 +32,13 @@ from ai_researcher.agentic_layer.tool_registry import ToolRegistry
 from ai_researcher.core_rag.retriever import Retriever
 from ai_researcher.core_rag.reranker import TextReranker
 from ai_researcher.user_context import set_current_user
+from api.locales import get_message
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-async def transform_note_for_frontend_batch(note, code_to_filename: dict) -> dict:
+async def transform_note_for_frontend_batch(note, code_to_filename: dict, lang: str = "en") -> dict:
     """
     Optimized version of transform_note_for_frontend that uses pre-fetched filename mappings.
     """
@@ -77,7 +78,7 @@ async def transform_note_for_frontend_batch(note, code_to_filename: dict) -> dic
     if source_type == "web":
         url = source_metadata.get("url") or source_id
         transformed["url"] = url
-        title = source_metadata.get("title", "Web Source")
+        title = source_metadata.get("title", get_message("missions.sourceWeb", lang))
         transformed["source"] = title
         
     elif source_type == "document":
@@ -106,7 +107,7 @@ async def transform_note_for_frontend_batch(note, code_to_filename: dict) -> dic
                             elif doc.filename:
                                 transformed["source"] = doc.filename
                             else:
-                                transformed["source"] = "Unknown Document"
+                                transformed["source"] = get_message("missions.sourceUnknownDocument", lang)
                         else:
                             # Document not found, try legacy code extraction
                             from services.document_service import document_service
@@ -114,7 +115,7 @@ async def transform_note_for_frontend_batch(note, code_to_filename: dict) -> dic
                             if document_codes and document_codes[0] in code_to_filename:
                                 transformed["source"] = code_to_filename[document_codes[0]]
                             else:
-                                transformed["source"] = source_id or "Unknown Document"
+                                transformed["source"] = source_id or get_message("missions.sourceUnknownDocument", lang)
                     finally:
                         db.close()
                 else:
@@ -124,9 +125,9 @@ async def transform_note_for_frontend_batch(note, code_to_filename: dict) -> dic
                     if document_codes and document_codes[0] in code_to_filename:
                         transformed["source"] = code_to_filename[document_codes[0]]
                     else:
-                        transformed["source"] = source_id or "Unknown Document"
+                        transformed["source"] = source_id or get_message("missions.sourceUnknownDocument", lang)
             else:
-                transformed["source"] = "Unknown Document"
+                transformed["source"] = get_message("missions.sourceUnknownDocument", lang)
         
         transformed.pop("url", None)
         
@@ -153,26 +154,26 @@ async def transform_note_for_frontend_batch(note, code_to_filename: dict) -> dic
                         elif doc.filename:
                             transformed["source"] = doc.filename
                         else:
-                            transformed["source"] = "Unknown Document"
+                            transformed["source"] = get_message("missions.sourceUnknownDocument", lang)
                     else:
-                        transformed["source"] = source_id or "Unknown Document"
+                        transformed["source"] = source_id or get_message("missions.sourceUnknownDocument", lang)
                 finally:
                     db.close()
             else:
-                transformed["source"] = source_id or "Unknown Document"
+                transformed["source"] = source_id or get_message("missions.sourceUnknownDocument", lang)
         else:
             # Check if we have original_filename in metadata
             filename = source_metadata.get("original_filename")
             if filename:
                 transformed["source"] = filename
             else:
-                transformed["source"] = "Unknown Document"
+                transformed["source"] = get_message("missions.sourceUnknownDocument", lang)
         
         transformed.pop("url", None)
         
     elif source_type == "internal":
         transformed.pop("url", None)
-        transformed["source"] = "Internal Analysis"
+        transformed["source"] = get_message("missions.sourceInternal", lang)
     
     # Remove backend-specific fields
     transformed.pop("created_at", None)
@@ -185,7 +186,7 @@ async def transform_note_for_frontend_batch(note, code_to_filename: dict) -> dic
     
     return transformed
 
-async def transform_note_for_frontend(note) -> dict:
+async def transform_note_for_frontend(note, lang: str = "en") -> dict:
     """
     Transform a backend Note object to the format expected by the frontend.
     
@@ -239,7 +240,7 @@ async def transform_note_for_frontend(note) -> dict:
         transformed["url"] = url
         
         # Also add a source field for consistency
-        title = source_metadata.get("title", "Web Source")
+        title = source_metadata.get("title", get_message("missions.sourceWeb", lang))
         transformed["source"] = title
         
     elif source_type == "document":
@@ -265,10 +266,10 @@ async def transform_note_for_frontend(note) -> dict:
                     else:
                         transformed["source"] = source_id
                 else:
-                    transformed["source"] = "Unknown Document"
+                    transformed["source"] = get_message("missions.sourceUnknownDocument", lang)
             except Exception as e:
                 logger.warning(f"Failed to resolve document filename for source_id {source_id}: {e}")
-                transformed["source"] = source_id or "Unknown Document"
+                transformed["source"] = source_id or get_message("missions.sourceUnknownDocument", lang)
             
         # Ensure no url field for document sources
         transformed.pop("url", None)
@@ -277,7 +278,7 @@ async def transform_note_for_frontend(note) -> dict:
         # Internal notes should not have url or source fields
         # (or they should be clearly marked as internal)
         transformed.pop("url", None)
-        transformed["source"] = "Internal Analysis"
+        transformed["source"] = get_message("missions.sourceInternal", lang)
     
     # Remove backend-specific fields that frontend doesn't need
     transformed.pop("created_at", None)
@@ -338,7 +339,7 @@ def get_context_manager() -> ContextManager:
     if context_manager is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI research components not initialized"
+            detail=get_message("missions.aiComponentsNotInitialized", "en")
         )
     return context_manager
 
@@ -347,7 +348,7 @@ def get_agent_controller() -> AgentController:
     if agent_controller is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI research components not initialized"
+            detail=get_message("missions.aiComponentsNotInitialized", "en")
         )
     return agent_controller
 
@@ -361,7 +362,7 @@ def get_user_specific_agent_controller(
     if agent_controller is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI research components not initialized"
+            detail=get_message("missions.aiComponentsNotInitialized", "en")
         )
     
     # CRITICAL: Set the user context so ModelDispatcher can access user settings
@@ -408,12 +409,14 @@ from ai_researcher.settings_optimizer import determine_research_parameters as _d
 @router.post("/missions", response_model=MissionResponse)
 async def create_mission(
     mission_data: dict,
+    fastapi_request: Request,
     current_user: User = Depends(get_current_user_from_cookie),
     context_mgr: ContextManager = Depends(get_context_manager),
     controller: AgentController = Depends(get_agent_controller),
     db: Session = Depends(get_db)
 ):
     """Create a new research mission."""
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         user_request = mission_data.get("request")
         chat_id = mission_data.get("chat_id")
@@ -422,11 +425,11 @@ async def create_mission(
         mission_settings_data = mission_data.get("mission_settings")
 
         if not user_request or not chat_id:
-            raise HTTPException(status_code=422, detail="Request and chat_id are required.")
+            raise HTTPException(status_code=422, detail=get_message("missions.requestAndChatIdRequired", lang))
 
         use_local_rag = document_group_id is not None
         if not use_web_search and not use_local_rag:
-            raise HTTPException(status_code=422, detail="At least one information source must be enabled.")
+            raise HTTPException(status_code=422, detail=get_message("missions.atLeastOneSourceEnabled", lang))
 
         mission_context = context_mgr.start_mission(user_request, chat_id)
         mission_id = mission_context.mission_id
@@ -491,21 +494,23 @@ async def create_mission(
         )
     except Exception as e:
         logger.error(f"Failed to create mission: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to create mission")
+        raise HTTPException(status_code=500, detail=get_message("missions.failedToCreateMission", lang))
 
 @router.get("/missions/{mission_id}/status", response_model=MissionStatus)
 async def get_mission_status(
     mission_id: str,
+    fastapi_request: Request,
     current_user: User = Depends(get_current_user_from_cookie),
     context_mgr: ContextManager = Depends(get_context_manager)
 ):
     """Get the current status of a mission."""
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         mission_context = context_mgr.get_mission_context(mission_id)
         if not mission_context:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Mission not found"
+                detail=get_message("missions.missionNotFound", lang)
             )
         
         return MissionStatus(
@@ -520,22 +525,24 @@ async def get_mission_status(
         logger.error(f"Failed to get mission status: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get mission status"
+            detail=get_message("missions.failedToGetMissionStatus", lang)
         )
 
 @router.get("/missions/{mission_id}/stats", response_model=MissionStats)
 async def get_mission_stats(
     mission_id: str,
+    fastapi_request: Request,
     current_user: User = Depends(get_current_user_from_cookie),
     context_mgr: ContextManager = Depends(get_context_manager)
 ):
     """Get mission statistics including cost and token usage."""
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         mission_context = context_mgr.get_mission_context(mission_id)
         if not mission_context:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Mission not found"
+                detail=get_message("missions.missionNotFound", lang)
             )
         
         stats = context_mgr.get_mission_stats(mission_id)
@@ -554,22 +561,24 @@ async def get_mission_stats(
         logger.error(f"Failed to get mission stats: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get mission stats"
+            detail=get_message("missions.failedToGetMissionStats", lang)
         )
 
 @router.get("/missions/{mission_id}/plan", response_model=MissionPlan)
 async def get_mission_plan(
     mission_id: str,
+    fastapi_request: Request,
     current_user: User = Depends(get_current_user_from_cookie),
     context_mgr: ContextManager = Depends(get_context_manager)
 ):
     """Get the research plan for a mission."""
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         mission_context = context_mgr.get_mission_context(mission_id)
         if not mission_context:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Mission not found"
+                detail=get_message("missions.missionNotFound", lang)
             )
         
         plan_data = None
@@ -587,24 +596,26 @@ async def get_mission_plan(
         logger.error(f"Failed to get mission plan: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get mission plan"
+            detail=get_message("missions.failedToGetMissionPlan", lang)
         )
 
 @router.get("/missions/{mission_id}/notes")
 async def get_mission_notes(
     mission_id: str,
+    fastapi_request: Request,
     limit: int = 50,
     offset: int = 0,
     current_user: User = Depends(get_current_user_from_cookie),
     context_mgr: ContextManager = Depends(get_context_manager)
 ):
     """Get notes for a given mission with pagination, transformed for frontend consumption."""
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         mission_context = context_mgr.get_mission_context(mission_id)
         if not mission_context:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Mission not found"
+                detail=get_message("missions.missionNotFound", lang)
             )
         
         # Get total count
@@ -634,7 +645,7 @@ async def get_mission_notes(
         
         # Transform each note with pre-fetched mappings
         for note in paginated_notes:
-            transformed_note = await transform_note_for_frontend_batch(note, code_to_filename)
+            transformed_note = await transform_note_for_frontend_batch(note, code_to_filename, lang=lang)
             transformed_notes.append(transformed_note)
         
         logger.info(f"Returning {len(transformed_notes)} of {total_notes} transformed notes for mission {mission_id} (offset: {offset}, limit: {limit})")
@@ -652,13 +663,14 @@ async def get_mission_notes(
         logger.error(f"Failed to get mission notes: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get mission notes"
+            detail=get_message("missions.failedToGetMissionNotes", lang)
         )
 
 @router.get("/missions/{mission_id}/logs", response_model=MissionLogs)
 @router.get("/missions/{mission_id}/activity-logs", response_model=MissionLogs)  # Alias for frontend compatibility
 async def get_mission_logs(
     mission_id: str,
+    fastapi_request: Request,
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(1000, ge=1, le=10000, description="Number of records to return"),
     current_user: User = Depends(get_current_user_from_cookie),
@@ -666,13 +678,14 @@ async def get_mission_logs(
     db: Session = Depends(get_db)
 ):
     """Get all execution logs for a given mission from the database."""
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         # Check if the mission exists and belongs to the current user
         mission = crud.get_mission(db, mission_id, current_user.id)
         if not mission:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Mission not found"
+                detail=get_message("missions.missionNotFound", lang)
             )
         
         # Import document service for filename mapping
@@ -740,16 +753,18 @@ async def get_mission_logs(
         logger.error(f"Failed to get mission logs: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get mission logs"
+            detail=get_message("missions.failedToGetMissionLogs", lang)
         )
 
 @router.get("/missions/{mission_id}/draft", response_model=MissionDraft)
 async def get_mission_draft(
     mission_id: str,
+    fastapi_request: Request,
     current_user: User = Depends(get_current_user_from_cookie),
     context_mgr: ContextManager = Depends(get_context_manager)
 ):
     """Get the current draft of the report for a mission."""
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         draft = context_mgr.get_mission_draft(mission_id)
         return MissionDraft(mission_id=mission_id, draft=draft)
@@ -757,22 +772,24 @@ async def get_mission_draft(
         logger.error(f"Failed to get mission draft: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get mission draft"
+            detail=get_message("missions.failedToGetMissionDraft", lang)
         )
 
 @router.get("/missions/{mission_id}/report", response_model=MissionReport)
 async def get_mission_report(
     mission_id: str,
+    fastapi_request: Request,
     current_user: User = Depends(get_current_user_from_cookie),
     context_mgr: ContextManager = Depends(get_context_manager)
 ):
     """Get the final research report for a completed mission."""
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         mission_context = context_mgr.get_mission_context(mission_id)
         if not mission_context:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Mission not found"
+                detail=get_message("missions.missionNotFound", lang)
             )
         
         return MissionReport(
@@ -785,7 +802,7 @@ async def get_mission_report(
         logger.error(f"Failed to get mission report: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get mission report"
+            detail=get_message("missions.failedToGetMissionReport", lang)
         )
 
 @router.post("/missions/{mission_id}/resume")
@@ -796,18 +813,19 @@ async def resume_mission_execution(
     controller: AgentController = Depends(get_user_specific_agent_controller)
 ):
     """Resume a stopped mission."""
+    lang = request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         mission_context = controller.context_manager.get_mission_context(mission_id)
         if not mission_context:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Mission not found"
+                detail=get_message("missions.missionNotFound", lang)
             )
 
         if mission_context.status != "stopped":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Mission cannot be resumed. Current status: {mission_context.status}"
+                detail=get_message("missions.cannotResume", lang, status=mission_context.status)
             )
 
         # Create a queue and callback function for WebSocket updates
@@ -863,11 +881,11 @@ async def resume_mission_execution(
                             if log_entry_dict.get('tool_calls'):
                                 log_entry_dict['tool_calls'] = clean_tool_call_arguments(log_entry_dict['tool_calls'])
                             if log_entry_dict.get('input_summary'):
-                                log_entry_dict['input_summary'] = clean_input_summary_for_display(log_entry_dict['input_summary'])
+                                log_entry_dict['input_summary'] = clean_input_summary_for_display(log_entry_dict['input_summary'], lang=lang)
                         else:
                             # If loop is not running, we can process fully
                             processed_entry = loop.run_until_complete(
-                                process_execution_log_entry_for_frontend(log_entry_dict)
+                                process_execution_log_entry_for_frontend(log_entry_dict, lang=lang)
                             )
                             log_entry_dict = processed_entry
                     except Exception as process_error:
@@ -915,42 +933,44 @@ async def resume_mission_execution(
 
         loop.run_in_executor(thread_pool, run_mission_in_thread)
         
-        return {"message": "Mission execution resumed", "mission_id": mission_id}
+        return {"message": get_message("missions.resumeSuccess", lang), "mission_id": mission_id}
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to resume mission execution: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to resume mission execution"
+            detail=get_message("missions.resumeFailed", lang)
         )
 
 
 @router.post("/missions/{mission_id}/stop")
 async def stop_mission_execution(
     mission_id: str,
+    fastapi_request: Request,
     current_user: User = Depends(get_current_user_from_cookie),
     controller: AgentController = Depends(get_agent_controller)
 ):
     """Stop a running mission."""
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         mission_context = controller.context_manager.get_mission_context(mission_id)
         if not mission_context:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Mission not found"
+                detail=get_message("missions.missionNotFound", lang)
             )
 
         controller.stop_mission(mission_id)
         
-        return {"message": "Mission execution stopped", "mission_id": mission_id}
+        return {"message": get_message("missions.stopSuccess", lang), "mission_id": mission_id}
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to stop mission execution: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to stop mission execution"
+            detail=get_message("missions.stopFailed", lang)
         )
 
 @router.post("/missions/{mission_id}/start")
@@ -966,16 +986,17 @@ async def start_mission_execution(
     Start or resume the execution of a mission.
     This endpoint is the single point of entry for initiating research.
     """
+    lang = request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         mission_context = context_mgr.get_mission_context(mission_id)
         if not mission_context:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mission not found")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=get_message("missions.missionNotFound", lang))
 
         # Allow starting from 'pending' or 'stopped' states
         if mission_context.status not in ["pending", "stopped", "planning"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Mission cannot be started. Current status: {mission_context.status}"
+                detail=get_message("missions.cannotStart", lang, status=mission_context.status)
             )
 
         # --- Self-Sufficiency Check ---
@@ -1011,13 +1032,16 @@ async def start_mission_execution(
         if not mission_context.metadata.get("tool_selection"):
             context_mgr.update_mission_metadata(mission_id, {"tool_selection": {"local_rag": True, "web_search": True}})
 
+        # Store language in mission context
+        context_mgr.update_mission_metadata(mission_id, {"lang": lang})
+
         # Apply auto-optimization logic with comprehensive logging
         try:
             # Get chat_id from mission metadata
             chat_id = mission_context.metadata.get("chat_id") if mission_context.metadata else None
             if not chat_id:
                 logger.warning(f"No chat_id found in mission metadata for mission {mission_id}. Skipping auto-optimization.")
-                return {"message": "Mission execution started", "mission_id": mission_id}
+                return {"message": get_message("missions.startSuccess", lang), "mission_id": mission_id}
             
             chat_history = crud.get_chat_messages(db, chat_id=chat_id, user_id=current_user.id)
             
@@ -1087,11 +1111,11 @@ async def start_mission_execution(
                             if log_entry_dict.get('tool_calls'):
                                 log_entry_dict['tool_calls'] = clean_tool_call_arguments(log_entry_dict['tool_calls'])
                             if log_entry_dict.get('input_summary'):
-                                log_entry_dict['input_summary'] = clean_input_summary_for_display(log_entry_dict['input_summary'])
+                                log_entry_dict['input_summary'] = clean_input_summary_for_display(log_entry_dict['input_summary'], lang=lang)
                         else:
                             # If loop is not running, we can process fully
                             processed_entry = loop.run_until_complete(
-                                process_execution_log_entry_for_frontend(log_entry_dict)
+                                process_execution_log_entry_for_frontend(log_entry_dict, lang=lang)
                             )
                             log_entry_dict = processed_entry
                     except Exception as process_error:
@@ -1139,7 +1163,7 @@ async def start_mission_execution(
         loop.run_in_executor(thread_pool, run_mission_in_thread)
         
         logger.info(f"Started mission execution for {mission_id} in a background thread")
-        return {"message": "Mission execution started", "mission_id": mission_id}
+        return {"message": get_message("missions.startSuccess", lang), "mission_id": mission_id}
         
     except HTTPException:
         raise
@@ -1147,22 +1171,24 @@ async def start_mission_execution(
         logger.error(f"Failed to start mission execution for {mission_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to start mission execution"
+            detail=get_message("missions.startFailed", lang)
         )
 
 @router.get("/missions/{mission_id}/context", response_model=MissionContextResponse)
 async def get_mission_context_data(
     mission_id: str,
+    fastapi_request: Request,
     current_user: User = Depends(get_current_user_from_cookie),
     context_mgr: ContextManager = Depends(get_context_manager)
 ):
     """Get the context data for a mission, including goals and scratchpads."""
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         mission_context = context_mgr.get_mission_context(mission_id)
         if not mission_context:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Mission not found"
+                detail=get_message("missions.missionNotFound", lang)
             )
         
         return MissionContextResponse(
@@ -1177,22 +1203,24 @@ async def get_mission_context_data(
         logger.error(f"Failed to get mission context data: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get mission context data"
+            detail=get_message("missions.failedToGetMissionContext", lang)
         )
 
 @router.get("/missions/{mission_id}/settings", response_model=MissionSettingsResponse)
 async def get_mission_settings(
     mission_id: str,
+    fastapi_request: Request,
     current_user: User = Depends(get_current_user_from_cookie),
     context_mgr: ContextManager = Depends(get_context_manager)
 ):
     """Get the settings for a mission, including effective settings after fallback."""
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         mission_context = context_mgr.get_mission_context(mission_id)
         if not mission_context:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Mission not found"
+                detail=get_message("missions.missionNotFound", lang)
             )
         
         # Get mission-specific settings
@@ -1236,23 +1264,25 @@ async def get_mission_settings(
         logger.error(f"Failed to get mission settings: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get mission settings"
+            detail=get_message("missions.failedToGetMissionSettings", lang)
         )
 
 @router.post("/missions/{mission_id}/settings", response_model=MissionSettingsResponse)
 async def update_mission_settings(
     mission_id: str,
     settings_update: MissionSettingsUpdate,
+    fastapi_request: Request,
     current_user: User = Depends(get_current_user_from_cookie),
     context_mgr: ContextManager = Depends(get_context_manager)
 ):
     """Update the settings for a mission."""
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         mission_context = context_mgr.get_mission_context(mission_id)
         if not mission_context:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Mission not found"
+                detail=get_message("missions.missionNotFound", lang)
             )
         
         # Convert settings to dict, excluding None values
@@ -1264,7 +1294,7 @@ async def update_mission_settings(
         logger.info(f"Updated mission settings for {mission_id}: {settings_dict}")
         
         # Return the updated settings response
-        return await get_mission_settings(mission_id, current_user, context_mgr)
+        return await get_mission_settings(mission_id, fastapi_request, current_user, context_mgr)
         
     except HTTPException:
         raise
@@ -1272,7 +1302,7 @@ async def update_mission_settings(
         logger.error(f"Failed to update mission settings: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update mission settings"
+            detail=get_message("missions.failedToUpdateMissionSettings", lang)
         )
 
 class MarkdownContent(BaseModel):
@@ -1283,9 +1313,11 @@ class MarkdownContent(BaseModel):
 async def download_report_as_docx(
     mission_id: str,
     content: MarkdownContent,
+    fastapi_request: Request,
     current_user: User = Depends(get_current_user_from_cookie)
 ):
     """Converts Markdown content to a DOCX file and returns it for download."""
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         # Create a temporary file for the DOCX output
         import tempfile
@@ -1330,4 +1362,4 @@ async def download_report_as_docx(
                 
     except Exception as e:
         logger.error(f"Failed to convert report to DOCX for mission {mission_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to convert report to DOCX: {str(e)}")
+        raise HTTPException(status_code=500, detail=get_message("missions.failedToConvertToDocx", lang, error=str(e)))

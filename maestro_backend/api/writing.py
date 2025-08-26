@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
@@ -20,17 +20,19 @@ from services.chat_title_service import ChatTitleService
 from ai_researcher.agentic_layer.controller.writing_controller import WritingController
 from ai_researcher.agentic_layer.agents.simplified_writing_agent import SimplifiedWritingAgent
 from ai_researcher.user_context import set_current_user
+from api.locales import get_message
 
 router = APIRouter(prefix="/api/writing", tags=["writing"])
 
 
 @router.get("/sessions", response_model=List[schemas.WritingSessionWithChat])
 async def get_writing_sessions(
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """Get all writing sessions for the current user."""
-    
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     # Get all writing sessions for the user through chat ownership
     writing_sessions = db.query(models.WritingSession).join(
         models.Chat, models.WritingSession.chat_id == models.Chat.id
@@ -54,7 +56,7 @@ async def get_writing_sessions(
         
         session_data = schemas.WritingSessionWithChat(
             id=session.id,
-            name=chat.title if chat else "Untitled Session",
+            name=chat.title if chat else get_message("writing.untitledSession", lang),
             chat_id=session.chat_id,
             document_group_id=session.document_group_id,
             document_group_name=doc_group_name,
@@ -71,10 +73,12 @@ async def get_writing_sessions(
 @router.post("/chats", response_model=schemas.Chat)
 async def create_writing_chat(
     chat_data: schemas.ChatCreate,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """Create a new chat specifically for writing sessions."""
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         chat_id = str(uuid.uuid4())
         
@@ -99,17 +103,18 @@ async def create_writing_chat(
         logger.error(f"Error creating writing chat: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create writing chat: {str(e)}"
+            detail=get_message("writing.createChatFailed", lang, error=str(e))
         )
 
 @router.post("/sessions", response_model=schemas.WritingSession)
 async def create_writing_session(
     session_data: schemas.WritingSessionCreate,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """Create a new writing session."""
-    
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     # Verify the chat belongs to the current user and is a writing chat
     chat = db.query(models.Chat).filter(
         models.Chat.id == session_data.chat_id,
@@ -120,7 +125,7 @@ async def create_writing_session(
     if not chat:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Writing chat not found or access denied"
+            detail=get_message("writing.chatNotFound", lang)
         )
     
     # Verify document group belongs to user if specified
@@ -133,7 +138,7 @@ async def create_writing_session(
         if not doc_group:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Document group not found or access denied"
+                detail=get_message("writing.docGroupNotFound", lang)
             )
     
     # Check if writing session already exists for this chat
@@ -144,7 +149,7 @@ async def create_writing_session(
     if existing_session:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Writing session already exists for this chat"
+            detail=get_message("writing.sessionExists", lang)
         )
     
     # Create new writing session
@@ -169,11 +174,12 @@ async def create_writing_session(
 @router.get("/sessions/{session_id}/stats", response_model=schemas.WritingSessionStats)
 async def get_writing_session_stats(
     session_id: str,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """Get usage statistics for a writing session."""
-    
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     # Verify writing session access
     writing_session = db.query(models.WritingSession).join(
         models.Chat, models.WritingSession.chat_id == models.Chat.id
@@ -185,7 +191,7 @@ async def get_writing_session_stats(
     if not writing_session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Writing session not found or access denied"
+            detail=get_message("writing.writingSessionNotFound", lang)
         )
     
     # Get or create stats
@@ -207,11 +213,12 @@ async def get_writing_session_stats(
 async def update_writing_session_stats(
     session_id: str,
     stats_update: schemas.WritingSessionStatsUpdate,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """Update writing session statistics with delta values."""
-    
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     # Verify writing session access
     writing_session = db.query(models.WritingSession).join(
         models.Chat, models.WritingSession.chat_id == models.Chat.id
@@ -223,7 +230,7 @@ async def update_writing_session_stats(
     if not writing_session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Writing session not found or access denied"
+            detail=get_message("writing.writingSessionNotFound", lang)
         )
     
     # Update stats with delta values
@@ -232,7 +239,7 @@ async def update_writing_session_stats(
     if not updated_stats:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update writing session stats"
+            detail=get_message("writing.updateStatsFailed", lang)
         )
     
     # Send real-time update via WebSocket
@@ -265,11 +272,12 @@ async def update_writing_session_stats(
 @router.post("/sessions/{session_id}/stats/clear", response_model=schemas.WritingSessionStats)
 async def clear_writing_session_stats(
     session_id: str,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """Clear/reset all statistics for a writing session."""
-    
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     # Verify writing session access
     writing_session = db.query(models.WritingSession).join(
         models.Chat, models.WritingSession.chat_id == models.Chat.id
@@ -281,7 +289,7 @@ async def clear_writing_session_stats(
     if not writing_session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Writing session not found or access denied"
+            detail=get_message("writing.writingSessionNotFound", lang)
         )
     
     # Clear stats
@@ -290,7 +298,7 @@ async def clear_writing_session_stats(
     if not cleared_stats:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to clear writing session stats"
+            detail=get_message("writing.clearStatsFailed", lang)
         )
     
     # Send real-time update via WebSocket
@@ -323,11 +331,12 @@ async def clear_writing_session_stats(
 @router.get("/sessions/{session_id}", response_model=schemas.WritingSessionWithDrafts)
 async def get_writing_session(
     session_id: str,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """Get a writing session with its drafts."""
-    
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     # Get writing session and verify access through chat ownership
     writing_session = db.query(models.WritingSession).join(
         models.Chat, models.WritingSession.chat_id == models.Chat.id
@@ -339,7 +348,7 @@ async def get_writing_session(
     if not writing_session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Writing session not found or access denied"
+            detail=get_message("writing.writingSessionNotFound", lang)
         )
     
     # Get all drafts for this session
@@ -375,11 +384,12 @@ async def get_writing_session(
 @router.get("/sessions/{session_id}/messages", response_model=List[schemas.Message])
 async def get_writing_session_messages(
     session_id: str,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """Get all messages for a writing session."""
-    
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     # Get writing session and verify access
     writing_session = db.query(models.WritingSession).join(
         models.Chat, models.WritingSession.chat_id == models.Chat.id
@@ -391,7 +401,7 @@ async def get_writing_session_messages(
     if not writing_session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Writing session not found or access denied"
+            detail=get_message("writing.writingSessionNotFound", lang)
         )
     
     # Get chat and messages
@@ -399,7 +409,7 @@ async def get_writing_session_messages(
     if not chat:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Chat not found"
+            detail=get_message("writing.chatNotFound", lang)
         )
     
     # Get all messages for this chat, ordered by creation time
@@ -412,11 +422,12 @@ async def get_writing_session_messages(
 @router.get("/sessions/{session_id}/draft", response_model=schemas.DraftWithReferences)
 async def get_current_draft(
     session_id: str,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """Get the current draft for a writing session."""
-    
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     # Get writing session and verify access
     writing_session = db.query(models.WritingSession).join(
         models.Chat, models.WritingSession.chat_id == models.Chat.id
@@ -428,7 +439,7 @@ async def get_current_draft(
     if not writing_session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Writing session not found or access denied"
+            detail=get_message("writing.writingSessionNotFound", lang)
         )
     
     # Get current draft
@@ -443,7 +454,7 @@ async def get_current_draft(
         current_draft = models.Draft(
             id=str(uuid.uuid4()),
             writing_session_id=session_id,
-            title="Untitled Document",
+            title=get_message("writing.untitledDocument", lang),
             content="",  # Start with completely blank content - no placeholder text
             version=1,
             is_current=True,
@@ -486,11 +497,12 @@ async def get_current_draft(
 async def update_current_draft(
     session_id: str,
     draft_update: schemas.DraftUpdate,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """Update the current draft for a writing session."""
-    
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     # Get writing session and verify access
     writing_session = db.query(models.WritingSession).join(
         models.Chat, models.WritingSession.chat_id == models.Chat.id
@@ -502,14 +514,14 @@ async def update_current_draft(
     if not writing_session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Writing session not found or access denied"
+            detail=get_message("writing.writingSessionNotFound", lang)
         )
     
     # Get current draft
     if not writing_session.current_draft_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No current draft found"
+            detail=get_message("writing.noCurrentDraft", lang)
         )
     
     current_draft = db.query(models.Draft).filter(
@@ -519,7 +531,7 @@ async def update_current_draft(
     if not current_draft:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Current draft not found"
+            detail=get_message("writing.currentDraftNotFound", lang)
         )
     
     # Update fields
@@ -539,11 +551,12 @@ async def update_current_draft(
 @router.post("/sessions/{session_id}/versions", response_model=schemas.Draft)
 async def create_draft_version(
     session_id: str,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """Create a new version of the current draft."""
-    
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     # Get writing session and verify access
     writing_session = db.query(models.WritingSession).join(
         models.Chat, models.WritingSession.chat_id == models.Chat.id
@@ -555,14 +568,14 @@ async def create_draft_version(
     if not writing_session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Writing session not found or access denied"
+            detail=get_message("writing.writingSessionNotFound", lang)
         )
     
     # Get current draft
     if not writing_session.current_draft_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No current draft found"
+            detail=get_message("writing.noCurrentDraft", lang)
         )
     
     current_draft = db.query(models.Draft).filter(
@@ -572,7 +585,7 @@ async def create_draft_version(
     if not current_draft:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Current draft not found"
+            detail=get_message("writing.currentDraftNotFound", lang)
         )
     
     # Mark current draft as not current
@@ -652,11 +665,12 @@ async def create_reference(
 async def update_writing_session(
     session_id: str,
     session_update: schemas.WritingSessionUpdate,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """Update a writing session."""
-    
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     # Get writing session and verify access
     writing_session = db.query(models.WritingSession).join(
         models.Chat, models.WritingSession.chat_id == models.Chat.id
@@ -668,7 +682,7 @@ async def update_writing_session(
     if not writing_session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Writing session not found or access denied"
+            detail=get_message("writing.writingSessionNotFound", lang)
         )
     
     # Verify document group belongs to user if being updated
@@ -682,7 +696,7 @@ async def update_writing_session(
             if not doc_group:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Document group not found or access denied"
+                    detail=get_message("writing.docGroupNotFound", lang)
                 )
     
     # Update fields
@@ -700,11 +714,12 @@ async def update_writing_session(
 @router.delete("/sessions/{session_id}")
 async def delete_writing_session(
     session_id: str,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """Delete a writing session and all its drafts."""
-    
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     # Get writing session and verify access
     writing_session = db.query(models.WritingSession).join(
         models.Chat, models.WritingSession.chat_id == models.Chat.id
@@ -716,23 +731,24 @@ async def delete_writing_session(
     if not writing_session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Writing session not found or access denied"
+            detail=get_message("writing.writingSessionNotFound", lang)
         )
     
     # Delete the session (cascading will handle drafts and references)
     db.delete(writing_session)
     db.commit()
     
-    return {"message": "Writing session deleted successfully"}
+    return {"message": get_message("writing.deleteSuccess", lang)}
 
 @router.get("/sessions/by-chat/{chat_id}", response_model=schemas.WritingSessionWithDrafts)
 async def get_writing_session_by_chat(
     chat_id: str,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """Get writing session for a specific chat."""
-    
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     # Verify chat belongs to user
     chat = db.query(models.Chat).filter(
         models.Chat.id == chat_id,
@@ -742,7 +758,7 @@ async def get_writing_session_by_chat(
     if not chat:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Chat not found or access denied"
+            detail=get_message("writing.chatNotFound", lang)
         )
     
     # Get writing session for this chat
@@ -753,7 +769,7 @@ async def get_writing_session_by_chat(
     if not writing_session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No writing session found for this chat"
+            detail=get_message("writing.noSessionForChat", lang)
         )
     
     # Get all drafts for this session
@@ -829,8 +845,9 @@ async def enhanced_writing_chat_stream(
         models.Chat.user_id == current_user.id
     ).first()
 
+    lang = request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     if not draft:
-        raise HTTPException(status_code=404, detail="Draft not found or access denied")
+        raise HTTPException(status_code=404, detail=get_message("writing.draftNotFound", lang))
 
     # Generate a task ID for tracking
     task_id = str(uuid.uuid4())
@@ -861,7 +878,8 @@ async def enhanced_writing_chat_stream(
         session_id=session_id,
         chat_id=draft.writing_session.chat_id,
         user_id=current_user.id,
-        user_message_id=user_message.id
+        user_message_id=user_message.id,
+        lang=lang
     )
     
     # Return immediately with task ID
@@ -870,7 +888,7 @@ async def enhanced_writing_chat_stream(
         content={
             "task_id": task_id,
             "status": "processing",
-            "message": "Your request is being processed. Updates will be streamed via WebSocket."
+            "message": get_message("writing.requestProcessing", lang)
         }
     )
 
@@ -881,7 +899,8 @@ async def process_writing_chat_in_background(
     session_id: str,
     chat_id: str,
     user_id: int,
-    user_message_id: str
+    user_message_id: str,
+    lang: str = "en"
 ):
     """
     Process writing chat in background and send updates via WebSocket.
@@ -897,7 +916,7 @@ async def process_writing_chat_in_background(
         writing_session = db.query(models.WritingSession).filter(models.WritingSession.id == session_id).first()
         
         if not current_user or not draft or not writing_session:
-            await send_streaming_chunk_update(session_id, "\n❌ Error: Session data not found.\n")
+            await send_streaming_chunk_update(session_id, f"\n❌ {get_message('writing.sessionDataNotFound', lang)}\n")
             return
         
         # Set user context
@@ -1044,12 +1063,14 @@ async def process_writing_chat_in_background(
 @router.post("/enhanced-chat", response_model=schemas.WritingAgentResponse, deprecated=True)
 async def enhanced_writing_chat(
     request: schemas.EnhancedWritingChatRequest,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """
     Enhanced chat endpoint for the writing view with document group and web search support.
     """
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     # Verify that the draft exists and the user has access to it.
     draft = db.query(models.Draft).join(
         models.WritingSession, models.Draft.writing_session_id == models.WritingSession.id
@@ -1061,7 +1082,7 @@ async def enhanced_writing_chat(
     ).first()
 
     if not draft:
-        raise HTTPException(status_code=404, detail="Draft not found or access denied")
+        raise HTTPException(status_code=404, detail=get_message("writing.draftNotFound", lang))
 
     # Get the writing session to access settings
     writing_session = draft.writing_session
@@ -1100,7 +1121,7 @@ async def enhanced_writing_chat(
         if not doc_group:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Document group not found or access denied"
+                detail=get_message("writing.docGroupNotFound", lang)
             )
 
     # CRITICAL: Set the user context so ModelDispatcher can access user settings
@@ -1300,11 +1321,12 @@ async def enhanced_writing_chat(
 async def update_session_settings(
     session_id: str,
     settings_update: schemas.WritingSessionSettingsUpdate,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """Update writing session settings including revision parameters."""
-    
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     # Get writing session and verify access
     writing_session = db.query(models.WritingSession).join(
         models.Chat, models.WritingSession.chat_id == models.Chat.id
@@ -1316,7 +1338,7 @@ async def update_session_settings(
     if not writing_session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Writing session not found or access denied"
+            detail=get_message("writing.writingSessionNotFound", lang)
         )
     
     # Update settings
@@ -1348,11 +1370,12 @@ class MarkdownContent(BaseModel):
 async def export_draft_as_docx(
     session_id: str,
     content: MarkdownContent,
+    fastapi_request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user_from_cookie)
 ):
     """Export a writing draft as a Word document."""
-    
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     # Verify the user has access to this writing session
     writing_session = db.query(models.WritingSession).join(
         models.Chat, models.WritingSession.chat_id == models.Chat.id
@@ -1362,7 +1385,7 @@ async def export_draft_as_docx(
     ).first()
     
     if not writing_session:
-        raise HTTPException(status_code=404, detail="Writing session not found or access denied")
+        raise HTTPException(status_code=404, detail=get_message("writing.writingSessionNotFound", lang))
     
     try:
         # Create a temporary file for the DOCX output
@@ -1406,5 +1429,5 @@ async def export_draft_as_docx(
         logger.error(f"Failed to convert markdown to DOCX: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate Word document: {str(e)}"
+            detail=get_message("writing.failedToGenerateDocx", lang, error=str(e))
         )

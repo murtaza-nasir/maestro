@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useSettingsStore } from './SettingsStore'
 import { Button } from '../../../components/ui/button'
 import { Input } from '../../../components/ui/input'
@@ -12,6 +13,7 @@ type ProviderKey = 'openrouter' | 'openai' | 'custom'
 type ModelType = 'fast' | 'mid' | 'intelligent' | 'verifier'
 
 export const AISettingsTab: React.FC = () => {
+  const { t } = useTranslation()
   const { 
     draftSettings, 
     setDraftSettings, 
@@ -367,7 +369,7 @@ export const AISettingsTab: React.FC = () => {
   }
 
   if (!draftSettings) {
-    return <div>Loading...</div>
+    return <div>{t('aiSettings.loading')}</div>
   }
 
   const enabledProvider = getEnabledProvider()
@@ -380,18 +382,18 @@ export const AISettingsTab: React.FC = () => {
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Settings className="h-4 w-4" />
-            Advanced Configuration
+            {t('aiSettings.advancedConfiguration')}
           </CardTitle>
           <CardDescription className="text-sm">
-            Enable advanced mode to configure separate providers and credentials for each model type.
+            {t('aiSettings.advancedConfigurationDescription')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-between">
             <div className="space-y-1">
-              <Label className="text-sm font-medium">Advanced Mode</Label>
+              <Label className="text-sm font-medium">{t('aiSettings.advancedMode')}</Label>
               <p className="text-xs text-muted-foreground">
-                Configure individual providers and API keys for each model type
+                {t('aiSettings.advancedModeDescription')}
               </p>
             </div>
             <Button
@@ -417,27 +419,27 @@ export const AISettingsTab: React.FC = () => {
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <Settings className="h-4 w-4" />
-                Provider Configuration
+                {t('aiSettings.providerConfiguration')}
               </CardTitle>
               <CardDescription className="text-sm">
-                Configure your AI provider and API credentials for model access.
+                {t('aiSettings.providerConfigurationDescription')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-3">
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">AI Provider</Label>
+                  <Label className="text-sm font-medium">{t('aiSettings.aiProvider')}</Label>
                   <Select
                     value={enabledProvider || ''}
                     onValueChange={handleProviderChange}
                   >
                     <SelectTrigger className="h-9">
-                      <SelectValue placeholder="Select AI provider" />
+                      <SelectValue placeholder={t('aiSettings.selectAiProvider')} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="openrouter">OpenRouter</SelectItem>
-                      <SelectItem value="openai">OpenAI API</SelectItem>
-                      <SelectItem value="custom">Custom Provider</SelectItem>
+                      <SelectItem value="openrouter">{t('aiSettings.openRouter')}</SelectItem>
+                      <SelectItem value="openai">{t('aiSettings.openAiApi')}</SelectItem>
+                      <SelectItem value="custom">{t('aiSettings.customProvider')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -445,18 +447,18 @@ export const AISettingsTab: React.FC = () => {
                 {enabledProvider === 'openrouter' && (
                   <div className="space-y-3 pl-3 border-l-2 border-blue-200 bg-blue-50/30 rounded-r-lg p-3">
                     <p className="text-xs text-muted-foreground mb-2">
-                      Access to 100+ models including GPT-4, Claude, and more.
+                      {t('aiSettings.openRouterDescription')}
                     </p>
                     <div className="grid grid-cols-1 gap-3">
                       <div className="space-y-1.5">
-                        <Label htmlFor="api-key" className="text-sm">API Key</Label>
+                        <Label htmlFor="api-key" className="text-sm">{t('aiSettings.apiKey')}</Label>
                         <div className="flex gap-2">
                           <Input
                             id="api-key"
                             type="password"
                             value={currentProviderConfig?.api_key || ''}
                             onChange={(e) => handleApiKeyChange('api_key', e.target.value)}
-                            placeholder="sk-or-..."
+                            placeholder={t('aiSettings.openRouterApiKeyPlaceholder')}
                             className="h-8 text-sm"
                           />
                           <Button
@@ -469,31 +471,31 @@ export const AISettingsTab: React.FC = () => {
                             {isTestingConnection && testProvider === enabledProvider ? (
                               <Loader2 className="h-3 w-3 animate-spin" />
                             ) : (
-                              'Test'
+                              t('aiSettings.test')
                             )}
                           </Button>
                         </div>
                       </div>
                       <div className="space-y-1.5">
-                        <Label htmlFor="base-url" className="text-sm">Base URL</Label>
+                        <Label htmlFor="base-url" className="text-sm">{t('aiSettings.baseUrl')}</Label>
                         <Input
                           id="base-url"
                           value={currentProviderConfig?.base_url || ''}
                           onChange={(e) => handleApiKeyChange('base_url', e.target.value)}
-                          placeholder="https://openrouter.ai/api/v1/"
+                          placeholder={t('aiSettings.openRouterBaseUrlPlaceholder')}
                           className="h-8 text-sm"
                         />
                       </div>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Get your API key from{' '}
+                      {t('aiSettings.getApiKeyFrom')}{' '}
                       <a 
                         href="https://openrouter.ai/keys" 
                         target="_blank" 
                         rel="noopener noreferrer"
                         className="text-blue-600 hover:underline"
                       >
-                        OpenRouter Dashboard
+                        {t('aiSettings.openRouterDashboard')}
                       </a>
                     </p>
                   </div>
@@ -502,18 +504,18 @@ export const AISettingsTab: React.FC = () => {
                 {enabledProvider === 'openai' && (
                   <div className="space-y-3 pl-3 border-l-2 border-green-200 bg-green-50/30 rounded-r-lg p-3">
                     <p className="text-xs text-muted-foreground mb-2">
-                      Direct access to OpenAI models like GPT-4 and GPT-3.5.
+                      {t('aiSettings.openAiDescription')}
                     </p>
                     <div className="grid grid-cols-1 gap-3">
                       <div className="space-y-1.5">
-                        <Label htmlFor="api-key" className="text-sm">API Key</Label>
+                        <Label htmlFor="api-key" className="text-sm">{t('aiSettings.apiKey')}</Label>
                         <div className="flex gap-2">
                           <Input
                             id="api-key"
                             type="password"
                             value={currentProviderConfig?.api_key || ''}
                             onChange={(e) => handleApiKeyChange('api_key', e.target.value)}
-                            placeholder="sk-..."
+                            placeholder={t('aiSettings.openAiApiKeyPlaceholder')}
                             className="h-8 text-sm"
                           />
                           <Button
@@ -526,31 +528,31 @@ export const AISettingsTab: React.FC = () => {
                             {isTestingConnection && testProvider === enabledProvider ? (
                               <Loader2 className="h-3 w-3 animate-spin" />
                             ) : (
-                              'Test'
+                              t('aiSettings.test')
                             )}
                           </Button>
                         </div>
                       </div>
                       <div className="space-y-1.5">
-                        <Label htmlFor="base-url" className="text-sm">Base URL</Label>
+                        <Label htmlFor="base-url" className="text-sm">{t('aiSettings.baseUrl')}</Label>
                         <Input
                           id="base-url"
                           value={currentProviderConfig?.base_url || ''}
                           onChange={(e) => handleApiKeyChange('base_url', e.target.value)}
-                          placeholder="https://api.openai.com/v1/"
+                          placeholder={t('aiSettings.openAiBaseUrlPlaceholder')}
                           className="h-8 text-sm"
                         />
                       </div>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Get your API key from{' '}
+                      {t('aiSettings.getApiKeyFrom')}{' '}
                       <a 
                         href="https://platform.openai.com/api-keys" 
                         target="_blank" 
                         rel="noopener noreferrer"
                         className="text-blue-600 hover:underline"
                       >
-                        OpenAI Platform
+                        {t('aiSettings.openAiPlatform')}
                       </a>
                     </p>
                   </div>
@@ -559,18 +561,18 @@ export const AISettingsTab: React.FC = () => {
                 {enabledProvider === 'custom' && (
                   <div className="space-y-3 pl-3 border-l-2 border-purple-200 bg-purple-50/30 rounded-r-lg p-3">
                     <p className="text-xs text-muted-foreground mb-2">
-                      Configure a custom OpenAI-compatible endpoint.
+                      {t('aiSettings.customProviderDescription')}
                     </p>
                     <div className="grid grid-cols-1 gap-3">
                       <div className="space-y-1.5">
-                        <Label htmlFor="api-key" className="text-sm">API Key</Label>
+                        <Label htmlFor="api-key" className="text-sm">{t('aiSettings.apiKey')}</Label>
                         <div className="flex gap-2">
                           <Input
                             id="api-key"
                             type="password"
                             value={currentProviderConfig?.api_key || ''}
                             onChange={(e) => handleApiKeyChange('api_key', e.target.value)}
-                            placeholder="API key (optional)"
+                            placeholder={t('aiSettings.apiKeyOptional')}
                             className="h-8 text-sm"
                           />
                           <Button
@@ -583,18 +585,18 @@ export const AISettingsTab: React.FC = () => {
                             {isTestingConnection && testProvider === enabledProvider ? (
                               <Loader2 className="h-3 w-3 animate-spin" />
                             ) : (
-                              'Test'
+                              t('aiSettings.test')
                             )}
                           </Button>
                         </div>
                       </div>
                       <div className="space-y-1.5">
-                        <Label htmlFor="base-url" className="text-sm">Base URL</Label>
+                        <Label htmlFor="base-url" className="text-sm">{t('aiSettings.baseUrl')}</Label>
                         <Input
                           id="base-url"
                           value={currentProviderConfig?.base_url || ''}
                           onChange={(e) => handleApiKeyChange('base_url', e.target.value)}
-                          placeholder="https://your-custom-endpoint.com/v1/"
+                          placeholder={t('aiSettings.customBaseUrlPlaceholder')}
                           className="h-8 text-sm"
                         />
                       </div>
@@ -628,10 +630,10 @@ export const AISettingsTab: React.FC = () => {
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <Target className="h-4 w-4" />
-                Model Selection
+                {t('aiSettings.modelSelection')}
               </CardTitle>
               <CardDescription className="text-sm">
-                Select models for different agent types. Available models are fetched from your enabled provider.
+                {t('aiSettings.modelSelectionDescription')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -639,7 +641,7 @@ export const AISettingsTab: React.FC = () => {
                 <div className="flex items-center p-3 bg-yellow-50 rounded-lg">
                   <AlertTriangle className="h-4 w-4 text-yellow-500 mr-2" />
                   <span className="text-yellow-700 text-sm">
-                    Please select an AI provider to configure models.
+                    {t('aiSettings.selectProviderToConfigure')}
                   </span>
                 </div>
               ) : (
@@ -670,54 +672,54 @@ export const AISettingsTab: React.FC = () => {
                     <div className="space-y-1.5">
                       <Label className="text-sm font-medium flex items-center gap-2">
                         <Zap className="h-4 w-4" />
-                        Fast Model
+                        {t('aiSettings.fastModel')}
                       </Label>
                       <Combobox
                         value={draftSettings.ai_endpoints.advanced_models.fast.model_name}
                         onValueChange={(value) => handleModelChange('fast', value)}
                         options={getModelsForSimpleMode()}
-                        placeholder="Quick responses"
+                        placeholder={t('aiSettings.quickResponses')}
                       />
-                      <p className="text-xs text-muted-foreground-foreground">For rapid, simple tasks</p>
+                      <p className="text-xs text-muted-foreground-foreground">{t('aiSettings.fastModelDescription')}</p>
                     </div>
 
                     <div className="space-y-1.5">
                       <Label className="text-sm font-medium flex items-center gap-2">
                         <Scale className="h-4 w-4" />
-                        Mid Model
+                        {t('aiSettings.midModel')}
                       </Label>
                       <Combobox
                         value={draftSettings.ai_endpoints.advanced_models.mid.model_name}
                         onValueChange={(value) => handleModelChange('mid', value)}
                         options={getModelsForSimpleMode()}
                       />
-                      <p className="text-xs text-muted-foreground">For balanced performance</p>
+                      <p className="text-xs text-muted-foreground">{t('aiSettings.midModelDescription')}</p>
                     </div>
 
                     <div className="space-y-1.5">
                       <Label className="text-sm font-medium flex items-center gap-2">
                         <Brain className="h-4 w-4" />
-                        Intelligent Model
+                        {t('aiSettings.intelligentModel')}
                       </Label>
                       <Combobox
                         value={draftSettings.ai_endpoints.advanced_models.intelligent.model_name}
                         onValueChange={(value) => handleModelChange('intelligent', value)}
                         options={getModelsForSimpleMode()}
                       />
-                      <p className="text-xs text-muted-foreground">For complex analysis</p>
+                      <p className="text-xs text-muted-foreground">{t('aiSettings.intelligentModelDescription')}</p>
                     </div>
 
                     <div className="space-y-1.5">
                       <Label className="text-sm font-medium flex items-center gap-2">
                         <CheckSquare className="h-4 w-4" />
-                        Verifier Model
+                        {t('aiSettings.verifierModel')}
                       </Label>
                       <Combobox
                         value={draftSettings.ai_endpoints.advanced_models.verifier.model_name}
                         onValueChange={(value) => handleModelChange('verifier', value)}
                         options={getModelsForSimpleMode()}
                       />
-                      <p className="text-xs text-muted-foreground">For verification tasks</p>
+                      <p className="text-xs text-muted-foreground">{t('aiSettings.verifierModelDescription')}</p>
                     </div>
                   </div>
                 </>
@@ -733,10 +735,10 @@ export const AISettingsTab: React.FC = () => {
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
               <Target className="h-4 w-4" />
-              Advanced Model Configuration
+              {t('aiSettings.advancedModelConfiguration')}
             </CardTitle>
             <CardDescription className="text-sm">
-              Configure separate providers, API keys, and models for each agent type.
+              {t('aiSettings.advancedModelConfigurationDescription')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -765,11 +767,11 @@ export const AISettingsTab: React.FC = () => {
             <div className="space-y-3 p-4 border rounded-lg">
               <div className="flex items-center gap-2 mb-3">
                 <Zap className="h-4 w-4" />
-                <Label className="text-sm font-medium">Fast Model Configuration</Label>
+                <Label className="text-sm font-medium">{t('aiSettings.fastModelConfiguration')}</Label>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Provider</Label>
+                  <Label className="text-xs">{t('aiSettings.provider')}</Label>
                   <Select
                     value={draftSettings.ai_endpoints.advanced_models.fast.provider}
                     onValueChange={(value) => handleAdvancedModelChange('fast', 'provider', value)}
@@ -778,15 +780,15 @@ export const AISettingsTab: React.FC = () => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="openrouter">OpenRouter</SelectItem>
-                      <SelectItem value="openai">OpenAI</SelectItem>
-                      <SelectItem value="custom">Custom</SelectItem>
+                      <SelectItem value="openrouter">{t('aiSettings.openRouter')}</SelectItem>
+                      <SelectItem value="openai">{t('aiSettings.openAiApi')}</SelectItem>
+                      <SelectItem value="custom">{t('aiSettings.customProvider')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs flex items-center justify-between">
-                    Model Name
+                    {t('aiSettings.modelName')}
                     <Button
                       variant="ghost"
                       size="sm"
@@ -805,11 +807,11 @@ export const AISettingsTab: React.FC = () => {
                     value={draftSettings.ai_endpoints.advanced_models.fast.model_name}
                     onValueChange={(value) => handleAdvancedModelChange('fast', 'model_name', value)}
                     options={getModelsForModelType('fast')}
-                    placeholder="Select model"
+                    placeholder={t('aiSettings.selectModel')}
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">API Key</Label>
+                  <Label className="text-xs">{t('aiSettings.apiKey')}</Label>
                   <Input
                     type={editingApiKey['fast-api-key'] ? 'text' : 'password'}
                     value={editingApiKey['fast-api-key'] ? 
@@ -819,16 +821,16 @@ export const AISettingsTab: React.FC = () => {
                     onChange={(e) => handleAdvancedModelChange('fast', 'api_key', e.target.value)}
                     onFocus={() => handleApiKeyFocus('fast-api-key')}
                     onBlur={() => handleApiKeyBlur('fast-api-key')}
-                    placeholder="API key (optional)"
+                    placeholder={t('aiSettings.apiKeyOptional')}
                     className="h-8 text-sm"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Base URL</Label>
+                  <Label className="text-xs">{t('aiSettings.baseUrl')}</Label>
                   <Input
                     value={draftSettings.ai_endpoints.advanced_models.fast.base_url}
                     onChange={(e) => handleAdvancedModelChange('fast', 'base_url', e.target.value)}
-                    placeholder="Base URL"
+                    placeholder={t('aiSettings.baseUrl')}
                     className="h-8 text-sm"
                   />
                 </div>
@@ -839,11 +841,11 @@ export const AISettingsTab: React.FC = () => {
             <div className="space-y-3 p-4 border rounded-lg">
               <div className="flex items-center gap-2 mb-3">
                 <Scale className="h-4 w-4" />
-                <Label className="text-sm font-medium">Mid Model Configuration</Label>
+                <Label className="text-sm font-medium">{t('aiSettings.midModelConfiguration')}</Label>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Provider</Label>
+                  <Label className="text-xs">{t('aiSettings.provider')}</Label>
                   <Select
                     value={draftSettings.ai_endpoints.advanced_models.mid.provider}
                     onValueChange={(value) => handleAdvancedModelChange('mid', 'provider', value)}
@@ -852,15 +854,15 @@ export const AISettingsTab: React.FC = () => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="openrouter">OpenRouter</SelectItem>
-                      <SelectItem value="openai">OpenAI</SelectItem>
-                      <SelectItem value="custom">Custom</SelectItem>
+                      <SelectItem value="openrouter">{t('aiSettings.openRouter')}</SelectItem>
+                      <SelectItem value="openai">{t('aiSettings.openAiApi')}</SelectItem>
+                      <SelectItem value="custom">{t('aiSettings.customProvider')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs flex items-center justify-between">
-                    Model Name
+                    {t('aiSettings.modelName')}
                     <Button
                       variant="ghost"
                       size="sm"
@@ -879,11 +881,11 @@ export const AISettingsTab: React.FC = () => {
                     value={draftSettings.ai_endpoints.advanced_models.mid.model_name}
                     onValueChange={(value) => handleAdvancedModelChange('mid', 'model_name', value)}
                     options={getModelsForModelType('mid')}
-                    placeholder="Select model"
+                    placeholder={t('aiSettings.selectModel')}
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">API Key</Label>
+                  <Label className="text-xs">{t('aiSettings.apiKey')}</Label>
                   <Input
                     type={editingApiKey['mid-api-key'] ? 'text' : 'password'}
                     value={editingApiKey['mid-api-key'] ? 
@@ -893,16 +895,16 @@ export const AISettingsTab: React.FC = () => {
                     onChange={(e) => handleAdvancedModelChange('mid', 'api_key', e.target.value)}
                     onFocus={() => handleApiKeyFocus('mid-api-key')}
                     onBlur={() => handleApiKeyBlur('mid-api-key')}
-                    placeholder="API key (optional)"
+                    placeholder={t('aiSettings.apiKeyOptional')}
                     className="h-8 text-sm"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Base URL</Label>
+                  <Label className="text-xs">{t('aiSettings.baseUrl')}</Label>
                   <Input
                     value={draftSettings.ai_endpoints.advanced_models.mid.base_url}
                     onChange={(e) => handleAdvancedModelChange('mid', 'base_url', e.target.value)}
-                    placeholder="Base URL"
+                    placeholder={t('aiSettings.baseUrl')}
                     className="h-8 text-sm"
                   />
                 </div>
@@ -913,11 +915,11 @@ export const AISettingsTab: React.FC = () => {
             <div className="space-y-3 p-4 border rounded-lg">
               <div className="flex items-center gap-2 mb-3">
                 <Brain className="h-4 w-4" />
-                <Label className="text-sm font-medium">Intelligent Model Configuration</Label>
+                <Label className="text-sm font-medium">{t('aiSettings.intelligentModelConfiguration')}</Label>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Provider</Label>
+                  <Label className="text-xs">{t('aiSettings.provider')}</Label>
                   <Select
                     value={draftSettings.ai_endpoints.advanced_models.intelligent.provider}
                     onValueChange={(value) => handleAdvancedModelChange('intelligent', 'provider', value)}
@@ -926,15 +928,15 @@ export const AISettingsTab: React.FC = () => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="openrouter">OpenRouter</SelectItem>
-                      <SelectItem value="openai">OpenAI</SelectItem>
-                      <SelectItem value="custom">Custom</SelectItem>
+                      <SelectItem value="openrouter">{t('aiSettings.openRouter')}</SelectItem>
+                      <SelectItem value="openai">{t('aiSettings.openAiApi')}</SelectItem>
+                      <SelectItem value="custom">{t('aiSettings.customProvider')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs flex items-center justify-between">
-                    Model Name
+                    {t('aiSettings.modelName')}
                     <Button
                       variant="ghost"
                       size="sm"
@@ -953,11 +955,11 @@ export const AISettingsTab: React.FC = () => {
                     value={draftSettings.ai_endpoints.advanced_models.intelligent.model_name}
                     onValueChange={(value) => handleAdvancedModelChange('intelligent', 'model_name', value)}
                     options={getModelsForModelType('intelligent')}
-                    placeholder="Select model"
+                    placeholder={t('aiSettings.selectModel')}
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">API Key</Label>
+                  <Label className="text-xs">{t('aiSettings.apiKey')}</Label>
                   <Input
                     type={editingApiKey['intelligent-api-key'] ? 'text' : 'password'}
                     value={editingApiKey['intelligent-api-key'] ? 
@@ -967,16 +969,16 @@ export const AISettingsTab: React.FC = () => {
                     onChange={(e) => handleAdvancedModelChange('intelligent', 'api_key', e.target.value)}
                     onFocus={() => handleApiKeyFocus('intelligent-api-key')}
                     onBlur={() => handleApiKeyBlur('intelligent-api-key')}
-                    placeholder="API key (optional)"
+                    placeholder={t('aiSettings.apiKeyOptional')}
                     className="h-8 text-sm"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Base URL</Label>
+                  <Label className="text-xs">{t('aiSettings.baseUrl')}</Label>
                   <Input
                     value={draftSettings.ai_endpoints.advanced_models.intelligent.base_url}
                     onChange={(e) => handleAdvancedModelChange('intelligent', 'base_url', e.target.value)}
-                    placeholder="Base URL"
+                    placeholder={t('aiSettings.baseUrl')}
                     className="h-8 text-sm"
                   />
                 </div>
@@ -987,11 +989,11 @@ export const AISettingsTab: React.FC = () => {
             <div className="space-y-3 p-4 border rounded-lg">
               <div className="flex items-center gap-2 mb-3">
                 <CheckSquare className="h-4 w-4" />
-                <Label className="text-sm font-medium">Verifier Model Configuration</Label>
+                <Label className="text-sm font-medium">{t('aiSettings.verifierModelConfiguration')}</Label>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Provider</Label>
+                  <Label className="text-xs">{t('aiSettings.provider')}</Label>
                   <Select
                     value={draftSettings.ai_endpoints.advanced_models.verifier.provider}
                     onValueChange={(value) => handleAdvancedModelChange('verifier', 'provider', value)}
@@ -1000,15 +1002,15 @@ export const AISettingsTab: React.FC = () => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="openrouter">OpenRouter</SelectItem>
-                      <SelectItem value="openai">OpenAI</SelectItem>
-                      <SelectItem value="custom">Custom</SelectItem>
+                      <SelectItem value="openrouter">{t('aiSettings.openRouter')}</SelectItem>
+                      <SelectItem value="openai">{t('aiSettings.openAiApi')}</SelectItem>
+                      <SelectItem value="custom">{t('aiSettings.customProvider')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs flex items-center justify-between">
-                    Model Name
+                    {t('aiSettings.modelName')}
                     <Button
                       variant="ghost"
                       size="sm"
@@ -1027,11 +1029,11 @@ export const AISettingsTab: React.FC = () => {
                     value={draftSettings.ai_endpoints.advanced_models.verifier.model_name}
                     onValueChange={(value) => handleAdvancedModelChange('verifier', 'model_name', value)}
                     options={getModelsForModelType('verifier')}
-                    placeholder="Select model"
+                    placeholder={t('aiSettings.selectModel')}
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">API Key</Label>
+                  <Label className="text-xs">{t('aiSettings.apiKey')}</Label>
                   <Input
                     type={editingApiKey['verifier-api-key'] ? 'text' : 'password'}
                     value={editingApiKey['verifier-api-key'] ? 
@@ -1041,16 +1043,16 @@ export const AISettingsTab: React.FC = () => {
                     onChange={(e) => handleAdvancedModelChange('verifier', 'api_key', e.target.value)}
                     onFocus={() => handleApiKeyFocus('verifier-api-key')}
                     onBlur={() => handleApiKeyBlur('verifier-api-key')}
-                    placeholder="API key (optional)"
+                    placeholder={t('aiSettings.apiKeyOptional')}
                     className="h-8 text-sm"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Base URL</Label>
+                  <Label className="text-xs">{t('aiSettings.baseUrl')}</Label>
                   <Input
                     value={draftSettings.ai_endpoints.advanced_models.verifier.base_url}
                     onChange={(e) => handleAdvancedModelChange('verifier', 'base_url', e.target.value)}
-                    placeholder="Base URL"
+                    placeholder={t('aiSettings.baseUrl')}
                     className="h-8 text-sm"
                   />
                 </div>
