@@ -1,11 +1,13 @@
 import React, { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../store'
 import { Button } from '../../../components/ui/button'
 import { Input } from '../../../components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card'
 
 export const RegisterPage: React.FC = () => {
+  const { t } = useTranslation()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -21,13 +23,13 @@ export const RegisterPage: React.FC = () => {
     setError('')
 
     if (password !== confirmPassword) {
-      setError('Passwords do not match')
+      setError(t('register.passwordsDoNotMatch'))
       setIsLoading(false)
       return
     }
 
     if (password.length < 6) {
-      setError('Password must be at least 6 characters long')
+      setError(t('register.passwordTooShort'))
       setIsLoading(false)
       return
     }
@@ -36,7 +38,7 @@ export const RegisterPage: React.FC = () => {
       await register(username, password)
       navigate('/dashboard')
     } catch (error: any) {
-      let errorMessage = 'Registration failed. Please try again.'
+      let errorMessage = t('register.registrationFailed')
       
       if (error.response?.data?.detail) {
         if (typeof error.response.data.detail === 'string') {
@@ -44,7 +46,7 @@ export const RegisterPage: React.FC = () => {
         } else if (Array.isArray(error.response.data.detail)) {
           errorMessage = error.response.data.detail.map((err: any) => err.msg || err).join(', ')
         } else {
-          errorMessage = 'Invalid input or validation error.'
+          errorMessage = t('register.invalidInput')
         }
       }
       
@@ -58,15 +60,15 @@ export const RegisterPage: React.FC = () => {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-900">MAESTRO</h1>
-          <p className="mt-2 text-sm text-gray-600">AI Research Assistant</p>
+          <h1 className="text-3xl font-bold text-gray-900">{t('register.title')}</h1>
+          <p className="mt-2 text-sm text-gray-600">{t('register.subtitle')}</p>
         </div>
         
         <Card>
           <CardHeader>
-            <CardTitle>Create your account</CardTitle>
+            <CardTitle>{t('register.createAccount')}</CardTitle>
             <CardDescription>
-              Sign up to start using MAESTRO for AI-powered research
+              {t('register.createAccountSubtext')}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -79,7 +81,7 @@ export const RegisterPage: React.FC = () => {
               
               <div>
                 <label htmlFor="username" className="block text-sm font-medium text-gray-700">
-                  Username
+                  {t('register.username')}
                 </label>
                 <Input
                   id="username"
@@ -88,13 +90,13 @@ export const RegisterPage: React.FC = () => {
                   onChange={(e) => setUsername(e.target.value)}
                   required
                   className="mt-1"
-                  placeholder="Choose a username"
+                  placeholder={t('register.usernamePlaceholder')}
                 />
               </div>
               
               <div>
                 <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                  Password
+                  {t('register.password')}
                 </label>
                 <Input
                   id="password"
@@ -103,13 +105,13 @@ export const RegisterPage: React.FC = () => {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   className="mt-1"
-                  placeholder="Create a password (min. 6 characters)"
+                  placeholder={t('register.passwordPlaceholder')}
                 />
               </div>
               
               <div>
                 <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
-                  Confirm Password
+                  {t('register.confirmPassword')}
                 </label>
                 <Input
                   id="confirmPassword"
@@ -118,7 +120,7 @@ export const RegisterPage: React.FC = () => {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
                   className="mt-1"
-                  placeholder="Confirm your password"
+                  placeholder={t('register.confirmPasswordPlaceholder')}
                 />
               </div>
               
@@ -127,15 +129,15 @@ export const RegisterPage: React.FC = () => {
                 disabled={isLoading}
                 className="w-full"
               >
-                {isLoading ? 'Creating account...' : 'Create account'}
+                {isLoading ? t('register.creatingAccount') : t('register.createAccount')}
               </Button>
             </form>
             
             <div className="mt-4 text-center">
               <p className="text-sm text-gray-600">
-                Already have an account?{' '}
+                {t('register.alreadyHaveAccount')}{' '}
                 <Link to="/login" className="font-medium text-blue-600 hover:text-blue-500">
-                  Sign in
+                  {t('register.signIn')}
                 </Link>
               </p>
             </div>

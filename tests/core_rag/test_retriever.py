@@ -7,9 +7,8 @@ import logging
 from typing import List, Dict, Any, Optional
 
 # Add project root to sys.path for imports
-project_root = Path(__file__).resolve().parents[2] # Go up two levels from tests/core_rag
-sys.path.insert(0, str(project_root))
-print(f"Added to sys.path for testing: {project_root}")
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # Import the components to be tested/mocked
 from ai_researcher.core_rag.embedder import TextEmbedder

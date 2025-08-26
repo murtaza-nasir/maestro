@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../store'
 import { useTheme } from '../../../contexts/ThemeContext'
 import { Button } from '../../../components/ui/button'
@@ -10,6 +11,7 @@ import { Eye, EyeOff, Lock, User } from 'lucide-react'
 import AnimatedBackground from '../../../components/ui/AnimatedBackground'
 
 export const LoginPage: React.FC = () => {
+  const { t } = useTranslation()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [rememberMe, setRememberMe] = useState(false)
@@ -30,7 +32,7 @@ export const LoginPage: React.FC = () => {
       await login(username, password, rememberMe)
       navigate('/dashboard')
     } catch (error: any) {
-      let errorMessage = 'Login failed. Please try again.'
+      let errorMessage = t('login.loginFailed')
       
       if (error.response?.data?.detail) {
         if (typeof error.response.data.detail === 'string') {
@@ -38,7 +40,7 @@ export const LoginPage: React.FC = () => {
         } else if (Array.isArray(error.response.data.detail)) {
           errorMessage = error.response.data.detail.map((err: any) => err.msg || err).join(', ')
         } else {
-          errorMessage = 'Invalid credentials or validation error.'
+          errorMessage = t('login.invalidCredentials')
         }
       }
       
@@ -68,10 +70,10 @@ export const LoginPage: React.FC = () => {
           
           <div className="space-y-2">
             <h1 className="text-3xl font-bold text-foreground tracking-tight">
-              MAESTRO
+              {t('login.title')}
             </h1>
             <p className="text-muted-foreground">
-              AI Research Assistant
+              {t('login.subtitle')}
             </p>
           </div>
         </div>
@@ -80,10 +82,10 @@ export const LoginPage: React.FC = () => {
         <Card className="border-border/50 bg-card/80 backdrop-blur-sm shadow-xl">
           <CardHeader className="space-y-1 pb-6">
             <CardTitle className="text-xl font-semibold text-center">
-              Sign In
+              {t('login.signIn')}
             </CardTitle>
             <CardDescription className="text-center">
-              Enter your credentials to access your account
+              {t('login.signInSubtext')}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -97,7 +99,7 @@ export const LoginPage: React.FC = () => {
               {/* Username Field */}
               <div className="space-y-2">
                 <label htmlFor="username" className="block text-sm font-medium text-foreground">
-                  Username
+                  {t('login.username')}
                 </label>
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -108,7 +110,7 @@ export const LoginPage: React.FC = () => {
                     onChange={(e) => setUsername(e.target.value)}
                     required
                     className="pl-10 h-11 bg-background/50 border-border/50 focus:border-primary/50 focus:ring-primary/20"
-                    placeholder="Enter username"
+                    placeholder={t('login.usernamePlaceholder')}
                   />
                 </div>
               </div>
@@ -116,7 +118,7 @@ export const LoginPage: React.FC = () => {
               {/* Password Field */}
               <div className="space-y-2">
                 <label htmlFor="password" className="block text-sm font-medium text-foreground">
-                  Password
+                  {t('login.password')}
                 </label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -127,7 +129,7 @@ export const LoginPage: React.FC = () => {
                     onChange={(e) => setPassword(e.target.value)}
                     required
                     className="pl-10 pr-10 h-11 bg-background/50 border-border/50 focus:border-primary/50 focus:ring-primary/20"
-                    placeholder="Enter password"
+                    placeholder={t('login.passwordPlaceholder')}
                   />
                   <button
                     type="button"
@@ -150,7 +152,7 @@ export const LoginPage: React.FC = () => {
                   htmlFor="remember-me"
                   className="text-sm text-muted-foreground cursor-pointer select-none"
                 >
-                  Remember me for 30 days
+                  {t('login.rememberMe')}
                 </label>
               </div>
               
@@ -163,10 +165,10 @@ export const LoginPage: React.FC = () => {
                 {isLoading ? (
                   <div className="flex items-center gap-2">
                     <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin"></div>
-                    Signing in...
+                    {t('login.signingIn')}
                   </div>
                 ) : (
-                  'Sign In'
+                  t('login.signIn')
                 )}
               </Button>
             </form>
@@ -174,12 +176,12 @@ export const LoginPage: React.FC = () => {
             {/* Register Link */}
             <div className="mt-6 text-center">
               <p className="text-sm text-muted-foreground">
-                Don't have an account?{' '}
+                {t('login.noAccount')}{' '}
                 <Link 
                   to="/register" 
                   className="font-medium text-primary hover:text-primary/80 transition-colors"
                 >
-                  Sign up
+                  {t('login.signUp')}
                 </Link>
               </p>
             </div>

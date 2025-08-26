@@ -5,7 +5,7 @@ import json
 from typing import List, Dict, Any, Optional
 
 # Add the parent directory to the path so we can import the module
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from ai_researcher.agentic_layer.utils.json_utils import (
     convert_string_to_subsection_topic,
