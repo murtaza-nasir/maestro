@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useMissionStore } from '../store';
 import { 
   AgentActivityLog, 
@@ -24,29 +25,22 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
   isLoadingMoreLogs,
   totalLogsCount
 }) => {
+  const { t } = useTranslation();
   const { activeMission, missionLogs } = useMissionStore();
   const [isLoading, setIsLoading] = useState(false);
 
-  // Get logs from the store (shared with ResearchPanel)
   const logs = missionLogs[missionId] || [];
   
-  // Debug logging to understand what's happening
   useEffect(() => {
-    // console.log(`AgentsTab: missionId=${missionId}, logs.length=${logs.length}`);
-    // console.log('AgentsTab: First few logs:', logs.slice(0, 3));
   }, [missionId, logs]);
 
-  // Memoize logs to prevent unnecessary re-renders
   const memoizedLogs = useMemo(() => {
-    // Keep only the most recent logs to prevent memory issues
     return logs;
   }, [logs]);
 
-  // Set loading state when mission changes
   useEffect(() => {
     if (missionId && logs.length === 0) {
       setIsLoading(true);
-      // Loading will be handled by ResearchPanel, just wait a bit
       const timer = setTimeout(() => setIsLoading(false), 1000);
       return () => clearTimeout(timer);
     } else {
@@ -59,10 +53,10 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
       <Tabs defaultValue="activity" className="h-full flex flex-col">
         <TabsList className="grid w-full grid-cols-3 bg-secondary">
           <TabsTrigger value="activity" className="flex items-center gap-2">
-            Activity Log
+            {t('agentsTab.activityLog')}
           </TabsTrigger>
-          <TabsTrigger value="status">Agent Status</TabsTrigger>
-          <TabsTrigger value="stats">Statistics</TabsTrigger>
+          <TabsTrigger value="status">{t('agentsTab.agentStatus')}</TabsTrigger>
+          <TabsTrigger value="stats">{t('agentsTab.statistics')}</TabsTrigger>
         </TabsList>
         
         <TabsContent value="activity" className="flex-1 mt-2 overflow-hidden">

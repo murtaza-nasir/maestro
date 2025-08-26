@@ -1,4 +1,5 @@
 import React, { useEffect, useCallback, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useChatStore } from '../../chat/store'
 import { useMissionStore } from '../store'
 import { ResearchTabs } from './ResearchTabs'
@@ -14,6 +15,7 @@ import { ensureDate } from '../../../utils/timezone'
 import { FileSearch, MessageSquare, Play, Square, RotateCcw } from 'lucide-react'
 
 export const ResearchPanel: React.FC = () => {
+  const { t } = useTranslation();
   const { activeChat } = useChatStore()
   const { missions, startMission, stopMission, resumeMission, fetchMissionStatus, ensureMissionInStore, missionLogs, setMissionLogs, appendMissionLogs } = useMissionStore()
   const { addToast } = useToast()
@@ -22,27 +24,23 @@ export const ResearchPanel: React.FC = () => {
   const [isLoadingMoreLogs, setIsLoadingMoreLogs] = React.useState(false)
   const [totalLogsCount, setTotalLogsCount] = React.useState(0)
   
-  // Get panel controls - use try/catch to handle when not in SplitPaneLayout context
   let panelControls = null
   try {
     panelControls = usePanelControls()
   } catch {
-    // Not in SplitPaneLayout context, controls will be disabled
+    // Not in SplitPaneLayout context
   }
 
-  // Get the current mission from the missions array using the chat's missionId
   const currentMission = activeChat?.missionId 
     ? missions.find(m => m.id === activeChat.missionId)
     : null
 
-  // Fetch initial logs for the mission - always fetch from database to get persistent logs
   const fetchInitialLogs = useCallback(async () => {
     if (!activeChat?.missionId) {
       return
     }
     
     try {
-      // Fetch initial batch of logs with pagination support (1000 at a time)
       const response = await apiClient.get(`/api/missions/${activeChat.missionId}/logs?skip=0&limit=1000`)
       if (response.data && response.data.logs) {
         const persistentLogs = response.data.logs.map((log: any) => ({
@@ -50,25 +48,18 @@ export const ResearchPanel: React.FC = () => {
           timestamp: ensureDate(log.timestamp),
         }))
         
-        // Sort logs by timestamp (newest first, then reverse for chronological order)
         const sortedLogs = persistentLogs.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
         
         setMissionLogs(activeChat.missionId, sortedLogs)
         
-        // Update pagination state
         setHasMoreLogs(response.data.has_more || false)
         setTotalLogsCount(response.data.total || sortedLogs.length)
-        
-        // console.log(`Loaded ${persistentLogs.length} logs from database (total: ${response.data.total})`)
       }
     } catch (error) {
-      console.error('Failed to fetch initial mission logs:', error)
-      // If database fetch fails, just log the error
-      console.log(`Failed to fetch logs for mission ${activeChat.missionId}`)
+      console.error(t('researchPanel.failedToFetchLogs'), error)
     }
-  }, [activeChat?.missionId, setMissionLogs])
+  }, [activeChat?.missionId, setMissionLogs, t])
 
-  // Load more logs function
   const loadMoreLogs = useCallback(async () => {
     if (!activeChat?.missionId || !hasMoreLogs || isLoadingMoreLogs) {
       return
@@ -86,31 +77,25 @@ export const ResearchPanel: React.FC = () => {
           timestamp: ensureDate(log.timestamp),
         }))
         
-        // Sort new logs by timestamp
         const sortedNewLogs = newLogs.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
         
-        // Append new logs to existing ones
         appendMissionLogs(activeChat.missionId, sortedNewLogs)
         
-        // Update pagination state
         setHasMoreLogs(response.data.has_more || false)
         setTotalLogsCount(response.data.total || (currentLogs.length + sortedNewLogs.length))
-        
-        // console.log(`Loaded ${sortedNewLogs.length} more logs (total now: ${currentLogs.length + sortedNewLogs.length})`)
       }
     } catch (error) {
       console.error('Failed to load more logs:', error)
       addToast({
         type: 'error',
-        title: 'Failed to load more logs',
-        message: 'Please try again'
+        title: t('researchPanel.failedToLoadMore'),
+        message: t('researchPanel.pleaseTryAgain')
       })
     } finally {
       setIsLoadingMoreLogs(false)
     }
-  }, [activeChat?.missionId, hasMoreLogs, isLoadingMoreLogs, missionLogs, appendMissionLogs, addToast])
+  }, [activeChat?.missionId, hasMoreLogs, isLoadingMoreLogs, missionLogs, appendMissionLogs, addToast, t])
 
-  // Load all logs function
   const loadAllLogs = useCallback(async () => {
     if (!activeChat?.missionId || !hasMoreLogs || isLoadingMoreLogs) {
       return
@@ -118,7 +103,6 @@ export const ResearchPanel: React.FC = () => {
     
     setIsLoadingMoreLogs(true)
     try {
-      // Fetch all remaining logs in one request
       const response = await apiClient.get(`/api/missions/${activeChat.missionId}/logs?skip=0&limit=10000`)
       if (response.data && response.data.logs) {
         const allLogs = response.data.logs.map((log: any) => ({
@@ -126,13 +110,10 @@ export const ResearchPanel: React.FC = () => {
           timestamp: ensureDate(log.timestamp),
         }))
         
-        // Sort all logs by timestamp
         const sortedAllLogs = allLogs.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
         
-        // Replace existing logs with all logs
         setMissionLogs(activeChat.missionId, sortedAllLogs)
         
-        // Update pagination state
         setHasMoreLogs(false)
         setTotalLogsCount(response.data.total || sortedAllLogs.length)
       }
@@ -140,42 +121,31 @@ export const ResearchPanel: React.FC = () => {
       console.error('Failed to load all logs:', error)
       addToast({
         type: 'error',
-        title: 'Failed to load all logs',
-        message: 'Please try again'
+        title: t('researchPanel.failedToLoadAll'),
+        message: t('researchPanel.pleaseTryAgain')
       })
     } finally {
       setIsLoadingMoreLogs(false)
     }
-  }, [activeChat?.missionId, hasMoreLogs, isLoadingMoreLogs, setMissionLogs, addToast])
+  }, [activeChat?.missionId, hasMoreLogs, isLoadingMoreLogs, setMissionLogs, addToast, t])
 
-  // Set up single WebSocket connection for ALL research updates
   const { isConnected, subscribeMission, unsubscribeMission } = useResearchWebSocket()
   
-  // Subscribe/unsubscribe to mission when it changes
   useEffect(() => {
     if (activeChat?.missionId) {
       subscribeMission(activeChat.missionId)
       
-      // Properly unsubscribe when mission changes or component unmounts
       return () => {
         unsubscribeMission(activeChat.missionId)
       }
     }
   }, [activeChat?.missionId, subscribeMission, unsubscribeMission])
 
-  // No need for WebSocket event subscriptions here anymore!
-  // The ResearchWebSocketService handles all mission-specific updates at the service level
-  // when subscribeMission/unsubscribeMission is called
-
-  // Ensure mission is loaded and fetch status when chat changes
   useEffect(() => {
-    // Check if mission actually changed
     const missionChanged = previousMissionId.current !== activeChat?.missionId
     
     if (missionChanged) {
-      // console.log(`Mission changed from ${previousMissionId.current} to ${activeChat?.missionId}`)
       previousMissionId.current = activeChat?.missionId
-      // Reset pagination state when mission changes
       setHasMoreLogs(false)
       setTotalLogsCount(0)
     }
@@ -183,9 +153,7 @@ export const ResearchPanel: React.FC = () => {
     if (activeChat?.missionId) {
       const loadMission = async () => {
         try {
-          // ensureMissionInStore already fetches status, so we don't need to call fetchMissionStatus
           await ensureMissionInStore(activeChat.missionId!)
-          // Only fetch initial logs if mission changed
           if (missionChanged) {
             await fetchInitialLogs()
           }
@@ -195,18 +163,15 @@ export const ResearchPanel: React.FC = () => {
       }
       loadMission()
     }
-  }, [activeChat?.missionId, fetchInitialLogs]) // Added fetchInitialLogs dependency
+  }, [activeChat?.missionId, fetchInitialLogs, ensureMissionInStore])
 
-  // Minimal polling - only for actively running missions, rely on WebSocket for most updates
   useEffect(() => {
     if (!activeChat?.missionId || !currentMission) return
 
-    // Only poll for actively running missions, not pending/planning
     const shouldPoll = currentMission.status === 'running'
     if (!shouldPoll) return
 
-    // Use much longer interval - WebSocket should handle most updates
-    const pollInterval = 15000 // 15 seconds for running missions only
+    const pollInterval = 15000
 
     const interval = setInterval(async () => {
       try {
@@ -226,19 +191,18 @@ export const ResearchPanel: React.FC = () => {
     
     try {
       await startMission(activeChat.missionId)
-      // Refresh mission status to ensure UI updates
       await fetchMissionStatus(activeChat.missionId)
       addToast({
         type: 'success',
-        title: 'Mission Started',
-        message: 'The research mission has been started successfully.',
+        title: t('researchPanel.missionStarted'),
+        message: t('researchPanel.missionStartedSuccess'),
       })
     } catch (error) {
       console.error('Failed to start mission:', error)
       addToast({
         type: 'error',
-        title: 'Start Failed',
-        message: 'Failed to start the mission. Please try again.',
+        title: t('researchPanel.startFailed'),
+        message: t('researchPanel.startFailedDescription'),
       })
     }
   }
@@ -248,19 +212,18 @@ export const ResearchPanel: React.FC = () => {
     
     try {
       await stopMission(activeChat.missionId)
-      // Refresh mission status to ensure UI updates
       await fetchMissionStatus(activeChat.missionId)
       addToast({
         type: 'success',
-        title: 'Mission Stopped',
-        message: 'The research mission has been stopped successfully.',
+        title: t('researchPanel.missionStopped'),
+        message: t('researchPanel.missionStoppedSuccess'),
       })
     } catch (error) {
       console.error('Failed to stop mission:', error)
       addToast({
         type: 'error',
-        title: 'Stop Failed',
-        message: 'Failed to stop the mission. Please try again.',
+        title: t('researchPanel.stopFailed'),
+        message: t('researchPanel.stopFailedDescription'),
       })
     }
   }
@@ -270,19 +233,18 @@ export const ResearchPanel: React.FC = () => {
     
     try {
       await resumeMission(activeChat.missionId)
-      // Refresh mission status to ensure UI updates
       await fetchMissionStatus(activeChat.missionId)
       addToast({
         type: 'success',
-        title: 'Mission Resumed',
-        message: 'The research mission has been resumed successfully.',
+        title: t('researchPanel.missionResumed'),
+        message: t('researchPanel.missionResumedSuccess'),
       })
     } catch (error) {
       console.error('Failed to resume mission:', error)
       addToast({
         type: 'error',
-        title: 'Resume Failed',
-        message: 'Failed to resume the mission. Please try again.',
+        title: t('researchPanel.resumeFailed'),
+        message: t('researchPanel.resumeFailedDescription'),
       })
     }
   }
@@ -309,25 +271,24 @@ export const ResearchPanel: React.FC = () => {
   const getStatusText = (status?: string) => {
     switch (status) {
       case 'running':
-        return 'Running'
+        return t('researchPanel.running');
       case 'paused':
-        return 'Paused'
+        return t('researchPanel.paused');
       case 'stopped':
-        return 'Stopped'
+        return t('researchPanel.stopped');
       case 'completed':
-        return 'Completed'
+        return t('researchPanel.completed');
       case 'pending':
-        return 'Pending'
+        return t('researchPanel.pending');
       case 'planning':
-        return 'Planning'
+        return t('researchPanel.planning');
       case 'failed':
-        return 'Failed'
+        return t('researchPanel.failed');
       default:
-        return 'Unknown'
+        return t('researchPanel.unknown');
     }
   }
 
-  // Show placeholder if no active mission
   if (!activeChat?.missionId) {
     return (
       <div className="h-full flex items-center justify-center bg-background p-8">
@@ -336,14 +297,14 @@ export const ResearchPanel: React.FC = () => {
             <FileSearch className="h-8 w-8 text-muted-foreground" />
           </div>
           <h3 className="text-lg font-medium text-foreground mb-2">
-            No Active Research Mission
+            {t('researchPanel.noActiveMission')}
           </h3>
           <p className="text-muted-foreground text-sm mb-6">
-            Start a research conversation in the chat to see mission progress, plans, notes, and drafts here.
+            {t('researchPanel.noActiveMissionDescription')}
           </p>
           <div className="flex items-center justify-center text-sm text-muted-foreground">
             <MessageSquare className="h-4 w-4 mr-2" />
-            Ask me to research a topic to get started
+            {t('researchPanel.askToResearch')}
           </div>
         </div>
       </div>
@@ -352,9 +313,8 @@ export const ResearchPanel: React.FC = () => {
 
   return (
     <div className="h-full flex flex-col bg-background">
-      {/* Research Panel Header */}
       <PanelHeader
-        title="Research Mission"
+        title={t('researchPanel.researchMission')}
         subtitle={
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2">
@@ -373,7 +333,6 @@ export const ResearchPanel: React.FC = () => {
             <div className="flex items-center space-x-2">
               {currentMission?.status && (
                 <>
-                  {/* Running state: Show Stop */}
                   {currentMission.status === 'running' && (
                     <Button
                       onClick={handleStopMission}
@@ -382,11 +341,10 @@ export const ResearchPanel: React.FC = () => {
                       className="text-xs"
                     >
                       <Square className="h-3 w-3 mr-1" />
-                      Stop
+                      {t('researchPanel.stop')}
                     </Button>
                   )}
                   
-                  {/* Pending or Planning state: Show Start */}
                   {(currentMission.status === 'pending' || currentMission.status === 'planning') && (
                     <Button
                       onClick={handleStartMission}
@@ -395,11 +353,10 @@ export const ResearchPanel: React.FC = () => {
                       className="text-xs"
                     >
                       <Play className="h-3 w-3 mr-1" />
-                      Start
+                      {t('researchPanel.start')}
                     </Button>
                   )}
                   
-                  {/* Stopped, Completed, or Failed state: Show Resume/Retry */}
                   {(currentMission.status === 'stopped' || currentMission.status === 'completed' || currentMission.status === 'failed') && (
                     <Button
                       onClick={handleResumeMission}
@@ -409,16 +366,15 @@ export const ResearchPanel: React.FC = () => {
                       disabled={currentMission.status === 'completed'}
                     >
                       <RotateCcw className="h-3 w-3 mr-1" />
-                      {currentMission.status === 'failed' ? 'Retry' : 'Resume'}
+                      {currentMission.status === 'failed' ? t('researchPanel.retry') : t('researchPanel.resume')}
                     </Button>
                   )}
                 </>
               )}
               
-              {/* Show placeholder when mission status is unknown */}
               {!currentMission?.status && (
                 <div className="text-xs text-gray-400 italic">
-                  Loading mission...
+                  {t('researchPanel.loadingMission')}
                 </div>
               )}
             </div>
@@ -427,13 +383,12 @@ export const ResearchPanel: React.FC = () => {
               onTogglePanel={panelControls?.toggleLeftPanel}
               isCollapsed={panelControls?.isLeftPanelCollapsed}
               showToggle={true}
-              toggleTooltip="Hide Chat Panel"
+              toggleTooltip={t('researchPanel.hideChatPanel')}
             />
           </div>
         }
       />
 
-      {/* Research Tabs Content */}
       <div className="flex-1 overflow-hidden p-6">
         <div className="h-full">
           <ResearchTabs 

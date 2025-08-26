@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 import logging
 import time
 import psutil
@@ -9,6 +9,7 @@ from api.schemas import SystemStatus
 from auth.dependencies import get_current_user_from_cookie
 from database.models import User
 from database.database import get_db
+from api.locales import get_message
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +19,9 @@ router = APIRouter()
 _start_time = time.time()
 
 @router.get("/status", response_model=SystemStatus)
-async def get_system_status(current_user: User = Depends(get_current_user_from_cookie)):
+async def get_system_status(fastapi_request: Request, current_user: User = Depends(get_current_user_from_cookie)):
     """Get the current system status and health information."""
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         # Calculate uptime
         uptime_seconds = time.time() - _start_time
@@ -28,37 +30,37 @@ async def get_system_status(current_user: User = Depends(get_current_user_from_c
         
         # Check component status
         components = {
-            "database": "healthy",
-            "authentication": "healthy",
-            "ai_researcher": "healthy",
-            "context_manager": "healthy"
+            "database": get_message("system.healthy", lang),
+            "authentication": get_message("system.healthy", lang),
+            "ai_researcher": get_message("system.healthy", lang),
+            "context_manager": get_message("system.healthy", lang)
         }
         
         # Try to import and check AI components
         try:
             from ai_researcher.agentic_layer.context_manager import ContextManager
             from ai_researcher.agentic_layer.agent_controller import AgentController
-            components["ai_researcher"] = "healthy"
+            components["ai_researcher"] = get_message("system.healthy", lang)
         except Exception as e:
             logger.warning(f"AI researcher components not available: {e}")
-            components["ai_researcher"] = "unavailable"
+            components["ai_researcher"] = get_message("system.unavailable", lang)
         
         # Check database connection
         try:
             from database.database import engine
             with engine.connect() as conn:
                 conn.execute("SELECT 1")
-            components["database"] = "healthy"
+            components["database"] = get_message("system.healthy", lang)
         except Exception as e:
             logger.error(f"Database connection failed: {e}")
-            components["database"] = "unhealthy"
+            components["database"] = get_message("system.unhealthy", lang)
         
         # Determine overall status
-        overall_status = "healthy"
-        if any(status == "unhealthy" for status in components.values()):
-            overall_status = "unhealthy"
-        elif any(status == "unavailable" for status in components.values()):
-            overall_status = "degraded"
+        overall_status = get_message("system.healthy", lang)
+        if any(status == get_message("system.unhealthy", lang) for status in components.values()):
+            overall_status = get_message("system.unhealthy", lang)
+        elif any(status == get_message("system.unavailable", lang) for status in components.values()):
+            overall_status = get_message("system.degraded", lang)
         
         return SystemStatus(
             status=overall_status,
@@ -70,14 +72,15 @@ async def get_system_status(current_user: User = Depends(get_current_user_from_c
     except Exception as e:
         logger.error(f"Failed to get system status: {e}", exc_info=True)
         return SystemStatus(
-            status="error",
+            status=get_message("system.error", lang),
             version="2.0.0-alpha",
-            components={"error": "Failed to check components"},
-            uptime="unknown"
+            components={"error": get_message("system.failedToCheckComponents", lang)},
+            uptime=get_message("system.unknown", lang)
         )
 
 @router.post("/consistency-check")
 async def trigger_consistency_check(
+    fastapi_request: Request,
     current_user: User = Depends(get_current_user_from_cookie),
     db: Session = Depends(get_db)
 ):
@@ -85,9 +88,10 @@ async def trigger_consistency_check(
     Manually trigger a system-wide consistency check.
     Only available to admin users.
     """
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     # Check if user is admin
     if not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Only admins can run consistency checks")
+        raise HTTPException(status_code=403, detail=get_message("system.adminOnly", lang))
     
     try:
         from services.simple_consistency_checker import run_consistency_check
@@ -97,7 +101,7 @@ async def trigger_consistency_check(
         
         return {
             "status": "success",
-            "message": "Consistency check completed",
+            "message": get_message("system.consistencyCheckCompleted", lang),
             "result": result
         }
     except Exception as e:
@@ -107,6 +111,7 @@ async def trigger_consistency_check(
 @router.get("/consistency-check/document/{doc_id}")
 async def check_document_consistency(
     doc_id: str,
+    fastapi_request: Request,
     current_user: User = Depends(get_current_user_from_cookie),
     db: Session = Depends(get_db)
 ):
@@ -114,6 +119,7 @@ async def check_document_consistency(
     Check consistency for a single document.
     Users can only check their own documents.
     """
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         from services.simple_consistency_checker import check_single_document
         
@@ -122,7 +128,7 @@ async def check_document_consistency(
             from database import crud
             doc = crud.get_document(db, doc_id, current_user.id)
             if not doc:
-                raise HTTPException(status_code=404, detail="Document not found or access denied")
+                raise HTTPException(status_code=404, detail=get_message("system.docNotFoundOrAccessDenied", lang))
         
         result = await check_single_document(db, doc_id, 
                                             user_id=None if current_user.is_admin else current_user.id)
@@ -140,6 +146,7 @@ async def check_document_consistency(
 @router.get("/consistency-check/user/{user_id}")
 async def check_user_consistency(
     user_id: int,
+    fastapi_request: Request,
     current_user: User = Depends(get_current_user_from_cookie),
     db: Session = Depends(get_db)
 ):
@@ -147,9 +154,10 @@ async def check_user_consistency(
     Check consistency for all documents of a user.
     Users can only check their own documents unless they're admin.
     """
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     # Check authorization
     if not current_user.is_admin and current_user.id != user_id:
-        raise HTTPException(status_code=403, detail="Access denied")
+        raise HTTPException(status_code=403, detail=get_message("system.accessDenied", lang))
     
     try:
         from services.simple_consistency_checker import check_user_consistency

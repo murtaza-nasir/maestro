@@ -432,7 +432,8 @@ class AgentController:
                 initial_scratchpad=final_scratchpad,
                 tool_selection=tool_selection,
                 log_queue=log_queue,
-                update_callback=update_callback
+                update_callback=update_callback,
+                lang=mission_context.lang if hasattr(mission_context, 'lang') else "en"
             )
 
             # Check if mission was stopped or paused during outline generation
@@ -826,10 +827,11 @@ class AgentController:
                                  log_queue: Optional[queue.Queue] = None,
                                  update_callback: Optional[Callable[[queue.Queue, Any], None]] = None,
                                  use_web_search: Optional[bool] = True,
-                                 document_group_id: Optional[str] = None) -> Dict[str, Any]:
+                                 document_group_id: Optional[str] = None,
+                                 lang: str = "en") -> Dict[str, Any]:
         return await self.user_interaction_manager.handle_user_message(
             user_message, chat_history, chat_id, mission_id, log_queue, update_callback,
-            use_web_search, document_group_id
+            use_web_search, document_group_id, lang=lang
         )
 
     def get_final_report(self, mission_id: str) -> Optional[str]:

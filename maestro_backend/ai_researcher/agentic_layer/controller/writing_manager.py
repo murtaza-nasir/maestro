@@ -39,6 +39,7 @@ class WritingManager:
         mission_id: str,
         assigned_notes: FullNoteAssignments,
         active_goals: List[Any],
+        lang: str,
         log_queue: Optional[queue.Queue] = None,
         update_callback: Optional[Callable[[queue.Queue, ExecutionLogEntry], None]] = None
     ) -> bool:
@@ -146,7 +147,7 @@ class WritingManager:
                     # Synthesis for intros should happen *before* writing the intro section itself
                     if section_to_write.research_strategy == "synthesize_from_subsections":
                         # Call the WritingAgent's synthesize_intro method
-                        await self.controller.writing_agent.synthesize_intro(mission_id, section_to_write, log_queue, update_callback)
+                        await self.controller.writing_agent.synthesize_intro(mission_id, section_to_write, lang, log_queue, update_callback)
                         # Refresh context after synthesis
                         written_content_context = self.controller.context_manager.get_mission_context(mission_id).report_content.copy()
                         # ADDED CHECK: Skip WritingAgent for synthesized intros in Pass 1
@@ -160,6 +161,7 @@ class WritingManager:
                         relevant_notes=notes_for_writing.get(section_to_write.section_id, []),
                         pass_num=pass_num,
                         active_goals=active_goals,
+                        lang=lang,
                         log_queue=log_queue,
                         update_callback=update_callback,
                         written_content_context=written_content_context.copy()  # Pass copy of current context
@@ -201,6 +203,7 @@ class WritingManager:
                                 relevant_notes=notes_for_writing.get(section.section_id, []),
                                 pass_num=pass_num,
                                 active_goals=active_goals,
+                                lang=lang,
                                 log_queue=log_queue,
                                 update_callback=update_callback,
                                 revision_suggestions=suggestions_for_section,
@@ -228,7 +231,7 @@ class WritingManager:
                     return False  # Abort if draft is empty
 
                 reflection_output = await self._run_writing_reflection_step(
-                    mission_id, current_draft_text, pass_num + 1, log_queue, update_callback
+                    mission_id, current_draft_text, pass_num + 1, lang, log_queue, update_callback
                 )
                 if reflection_output:
                     change_suggestions = reflection_output.change_suggestions  # Store for next pass
@@ -241,7 +244,7 @@ class WritingManager:
         
         # Post-processing: Synthesize content for top-level sections from their subsections
         logger.info("--- Starting Post-Processing: Synthesizing Top-Level Sections ---")
-        await self._synthesize_top_level_sections(mission_id, log_queue, update_callback)
+        await self._synthesize_top_level_sections(mission_id, lang, log_queue, update_callback)
         
         logger.info(f"--- Writing Phase Completed ({num_writing_passes} Passes) ---")
         return True
@@ -253,6 +256,7 @@ class WritingManager:
         relevant_notes: List[Note],  # Notes assigned specifically to this section
         pass_num: int,
         active_goals: List[Any],  # Pass goals
+        lang: str,
         log_queue: Optional[queue.Queue],
         update_callback: Optional[Callable],
         revision_suggestions: Optional[List[WritingChangeSuggestion]] = None,
@@ -361,6 +365,7 @@ class WritingManager:
                     full_outline=full_outline,
                     parent_section_title=parent_section_title,
                     active_goals=active_goals,
+                    lang=lang,
                     active_thoughts=active_thoughts,
                     current_draft_content=previous_content_for_agent.get(section.section_id) if revision_suggestions else None,
                     revision_suggestions=revision_suggestions,
@@ -408,6 +413,7 @@ class WritingManager:
     async def _synthesize_top_level_sections(
         self,
         mission_id: str,
+        lang: str,
         log_queue: Optional[queue.Queue] = None,
         update_callback: Optional[Callable[[queue.Queue, ExecutionLogEntry], None]] = None
     ) -> None:
@@ -452,6 +458,7 @@ class WritingManager:
                         await self.controller.writing_agent.synthesize_intro(
                             mission_id=mission_id,
                             section=section,
+                            lang=lang,
                             log_queue=log_queue,
                             update_callback=update_callback
                         )
@@ -470,6 +477,7 @@ class WritingManager:
         mission_id: str,
         current_draft_text: str,
         pass_num: int,  # Pass number (e.g., 1, 2) for logging
+        lang: str,
         log_queue: Optional[queue.Queue] = None,
         update_callback: Optional[Callable[[queue.Queue, ExecutionLogEntry], None]] = None
     ) -> Optional[WritingReflectionOutput]:
@@ -501,6 +509,7 @@ class WritingManager:
                     outline=full_outline,
                     draft_content=current_draft_text,
                     active_goals=active_goals,
+                    lang=lang,
                     active_thoughts=active_thoughts,
                     agent_scratchpad=current_scratchpad,
                     mission_id=mission_id,

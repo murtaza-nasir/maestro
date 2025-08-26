@@ -41,9 +41,10 @@ class BaseAgent(ABC):
 
         print(f"Initialized {self.agent_name} (Model: {self.model_name or 'Default'})")
 
-    def _create_messages(self, user_prompt: str, history: Optional[List[Dict[str, str]]] = None) -> List[Dict[str, str]]:
+    def _create_messages(self, user_prompt: str, system_prompt_override: Optional[str] = None, history: Optional[List[Dict[str, str]]] = None) -> List[Dict[str, str]]:
         """Helper method to construct the message list for the LLM."""
-        messages = [{"role": "system", "content": self.system_prompt}]
+        system_prompt = system_prompt_override or self.system_prompt
+        messages = [{"role": "system", "content": system_prompt}]
         if history:
             # Ensure history items are valid dictionaries
             valid_history = [msg for msg in history if isinstance(msg, dict) and "role" in msg and "content" in msg]
@@ -54,6 +55,7 @@ class BaseAgent(ABC):
     async def _call_llm( # <-- Make async
         self,
         user_prompt: str,
+        system_prompt_override: Optional[str] = None,
         history: Optional[List[Dict[str, str]]] = None,
         tools: Optional[List[Dict[str, Any]]] = None, # For function/tool calling
         tool_choice: Optional[Any] = None, # e.g., "auto", "required", {"type": "function", "function": {"name": "my_function"}}
@@ -76,7 +78,7 @@ class BaseAgent(ABC):
              print(f"{self.agent_name} Error: ModelDispatcher is not initialized.")
              return None, None
 
-        messages = self._create_messages(user_prompt, history)
+        messages = self._create_messages(user_prompt, system_prompt_override, history)
         try:
             # Determine the model to use: prioritize kwargs, then agent's default
             model_to_use = kwargs.pop('model', self.model_name) # Get 'model' from kwargs, default to self.model_name, and remove it from kwargs

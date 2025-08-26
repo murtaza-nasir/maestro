@@ -1,4 +1,5 @@
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 import { useTheme } from '../../../contexts/ThemeContext'
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card'
 import { Label } from '../../../components/ui/label'
@@ -7,6 +8,7 @@ import { ColorSchemeSelector } from '../../../components/ColorSchemeSelector'
 import type { ColorScheme } from '../../../contexts/ThemeContext'
 
 export const AppearanceSettingsTab: React.FC = () => {
+  const { t } = useTranslation()
   const { theme, setTheme, colorScheme, setColorScheme } = useTheme()
 
   const handleThemeChange = (isDarkMode: boolean) => {
@@ -30,11 +32,11 @@ export const AppearanceSettingsTab: React.FC = () => {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Appearance</CardTitle>
+          <CardTitle>{t('appearanceSettings.title')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="flex items-center justify-between">
-            <Label htmlFor="dark-mode-toggle">Dark Mode</Label>
+            <Label htmlFor="dark-mode-toggle">{t('appearanceSettings.darkMode')}</Label>
             <Switch
               id="dark-mode-toggle"
               checked={theme === 'dark'}
@@ -42,7 +44,7 @@ export const AppearanceSettingsTab: React.FC = () => {
             />
           </div>
           <div className="space-y-2">
-            <Label>Color Scheme</Label>
+            <Label>{t('appearanceSettings.colorScheme')}</Label>
             <ColorSchemeSelector
               selectedScheme={colorScheme}
               onSchemeChange={handleColorSchemeChange}

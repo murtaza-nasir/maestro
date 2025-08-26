@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
@@ -16,7 +17,8 @@ interface NotesTabProps {
 }
 
 export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
-  const { activeMission, setMissionNotes, appendMissionNotes } = useMissionStore()
+  const { t } = useTranslation();
+  const { activeMission, setMissionNotes } = useMissionStore()
   const { addToast } = useToast()
   const [notes, setNotes] = useState<Note[]>([])
   const [searchTerm, setSearchTerm] = useState('')
@@ -25,41 +27,34 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [hasMoreNotes, setHasMoreNotes] = useState(true)
   const [totalNotesCount, setTotalNotesCount] = useState(0)
-  const [newNotesCount, setNewNotesCount] = useState(0)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const lastScrollPosition = useRef<number>(0)
   const initialLoadDone = useRef(false)
   const previousMissionId = useRef<string | null>(null)
 
-  // Store scroll position before updates
   const preserveScrollPosition = useCallback(() => {
     if (scrollContainerRef.current) {
       lastScrollPosition.current = scrollContainerRef.current.scrollTop
     }
   }, [])
 
-  // Restore scroll position after updates
   const restoreScrollPosition = useCallback(() => {
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = lastScrollPosition.current
     }
   }, [])
 
-  // Fetch notes function - stable reference
   const fetchNotesAPI = useCallback(async (limit: number, offset: number) => {
     const response = await apiClient.get(`/api/missions/${missionId}/notes?limit=${limit}&offset=${offset}`)
     return response.data
   }, [missionId])
 
-  // Initial load
   const loadInitialNotes = useCallback(async () => {
-    // Reset if mission changed
     if (previousMissionId.current !== missionId) {
       initialLoadDone.current = false
       previousMissionId.current = missionId
       setNotes([])
       setTotalNotesCount(0)
-      setNewNotesCount(0)
     }
     
     if (initialLoadDone.current) return
@@ -77,13 +72,12 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
       setHasMoreNotes(hasMore)
       initialLoadDone.current = true
     } catch (error) {
-      console.error('Failed to fetch initial notes:', error)
+      console.error(t('notesTab.failedToFetch'), error)
     } finally {
       setIsLoading(false)
     }
-  }, [missionId, setMissionNotes, fetchNotesAPI])
+  }, [missionId, setMissionNotes, fetchNotesAPI, t])
 
-  // Load more notes
   const loadMoreNotes = useCallback(async () => {
     if (!hasMoreNotes || isLoadingMore) return
     
@@ -103,13 +97,12 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
       setTotalNotesCount(total)
       setHasMoreNotes(hasMore)
     } catch (error) {
-      console.error('Failed to load more notes:', error)
+      console.error(t('notesTab.failedToLoadMore'), error)
     } finally {
       setIsLoadingMore(false)
     }
-  }, [hasMoreNotes, isLoadingMore, notes.length, missionId, setMissionNotes, fetchNotesAPI])
+  }, [hasMoreNotes, isLoadingMore, notes.length, missionId, setMissionNotes, fetchNotesAPI, t])
 
-  // Load all notes
   const loadAllNotes = useCallback(async () => {
     if (!hasMoreNotes) return
     
@@ -124,73 +117,54 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
       setTotalNotesCount(total)
       setHasMoreNotes(false)
     } catch (error) {
-      console.error('Failed to load all notes:', error)
+      console.error(t('notesTab.failedToLoadAll'), error)
     } finally {
       setIsLoading(false)
     }
-  }, [hasMoreNotes, missionId, setMissionNotes, fetchNotesAPI])
+  }, [hasMoreNotes, missionId, setMissionNotes, fetchNotesAPI, t])
 
-  // Initial load effect
   useEffect(() => {
     loadInitialNotes()
   }, [loadInitialNotes])
 
-  // WebSocket updates are now handled by ResearchPanel
-  // Listen for changes in the store and sync properly
   useEffect(() => {
-    // Only process if we're looking at the same mission and initial load is done
     if (activeMission?.notes && activeMission.id === missionId && initialLoadDone.current) {
       const storeNotes = activeMission.notes
       
-      // Check if this is the same mission we were already viewing
       if (previousMissionId.current === missionId) {
-        // Check if there are new notes by comparing the last note IDs
         const currentLastNoteId = notes.length > 0 ? notes[notes.length - 1].note_id : null
         const storeLastNoteId = storeNotes.length > 0 ? storeNotes[storeNotes.length - 1].note_id : null
         
-        // Update if we have new notes or if the notes have changed
         if (storeNotes.length !== notes.length || currentLastNoteId !== storeLastNoteId) {
           preserveScrollPosition()
           
-          // Calculate new notes count for notification
           const newNotesCount = Math.max(0, storeNotes.length - notes.length)
-          // Only show toast if we actually have NEW notes arriving via WebSocket
-          // The newNotesCount >= 5 check ensures we only notify for significant updates
-          // The initialLoadDone check ensures we don't notify during initial data load
           if (newNotesCount >= 5) {
-            // Additional check: only show toast if the new notes weren't part of initial load
-            // This happens when WebSocket sends new notes while user is viewing the tab
             setTimeout(() => {
               addToast({
                 type: 'info',
-                title: 'New Research Notes',
-                message: `${newNotesCount} new note${newNotesCount > 1 ? 's' : ''} added`,
+                title: t('notesTab.newNotes'),
+                message: newNotesCount > 1 ? t('notesTab.newNotesAdded', { count: newNotesCount }) : t('notesTab.newNoteAdded', { count: newNotesCount }),
               })
             }, 500)
           }
           
-          // Update the local state with all notes from the store
           setNotes(storeNotes)
           setTotalNotesCount(storeNotes.length)
           
           setTimeout(restoreScrollPosition, 50)
         }
       } else {
-        // Mission changed - update our ref but don't show notification
-        // This happens when switching between missions
         if (storeNotes.length > 0) {
           setNotes(storeNotes)
           setTotalNotesCount(storeNotes.length)
         }
       }
     }
-  }, [activeMission?.notes, activeMission?.id, missionId, notes.length, preserveScrollPosition, restoreScrollPosition, addToast])
+  }, [activeMission?.notes, activeMission?.id, missionId, notes.length, preserveScrollPosition, restoreScrollPosition, addToast, t])
 
-  // Initial sync with store when component mounts or mission changes
   useEffect(() => {
     if (activeMission?.notes && activeMission.id === missionId && !initialLoadDone.current) {
-      // If we have notes in the store but haven't loaded from API yet,
-      // use the store notes as initial state
       if (activeMission.notes.length > 0) {
         setNotes(activeMission.notes)
         setTotalNotesCount(activeMission.notes.length)
@@ -198,22 +172,6 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
     }
   }, [activeMission?.notes, activeMission?.id, missionId])
 
-  // Clear new notes count when user scrolls
-  useEffect(() => {
-    const handleScroll = () => {
-      if (newNotesCount > 0) {
-        setNewNotesCount(0)
-      }
-    }
-
-    const container = scrollContainerRef.current
-    if (container) {
-      container.addEventListener('scroll', handleScroll)
-      return () => container.removeEventListener('scroll', handleScroll)
-    }
-  }, [newNotesCount])
-
-  // Filter notes
   const filteredNotes = notes.filter(note => {
     const matchesSearch = searchTerm === '' || 
       note.content.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -227,10 +185,9 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
     return matchesSearch && matchesFilter
   })
 
-  // Export notes
   const handleExportNotes = () => {
     const notesText = filteredNotes.map(note => {
-      const sourceInfo = note.source || 'Unknown source'
+      const sourceInfo = note.source || t('notesTab.unknownSource')
       const urlInfo = note.url || ''
       return `[${formatFullDateTime(note.timestamp)}] (${sourceInfo})\n${note.content}\n${urlInfo ? `URL: ${urlInfo}` : ''}\n---\n`
     }).join('\n')
@@ -247,12 +204,11 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
 
     addToast({
       type: 'success',
-      title: 'Notes Exported',
-      message: 'Research notes have been exported successfully.'
+      title: t('notesTab.notesExported'),
+      message: t('notesTab.notesExportedSuccess')
     })
   }
 
-  // Get filter counts
   const getFilterCount = (filter: 'all' | 'web' | 'documents') => {
     if (filter === 'all') return totalNotesCount || notes.length
     if (filter === 'web') return notes.filter(note => note.url).length
@@ -262,12 +218,11 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
 
   return (
     <div className="flex flex-col h-full max-h-full overflow-hidden space-y-2">
-      {/* Header */}
       <div className="flex items-center justify-between flex-shrink-0">
         <div className="flex items-center space-x-2">
           <BookOpen className="h-4 w-4 text-primary" />
-          <h3 className="text-base font-semibold text-foreground">Research Notes</h3>
-          <span className="text-xs text-muted-foreground">({filteredNotes.length} notes)</span>
+          <h3 className="text-base font-semibold text-foreground">{t('notesTab.title')}</h3>
+          <span className="text-xs text-muted-foreground">{t('notesTab.notesCount', { count: filteredNotes.length })}</span>
         </div>
         
         <Button
@@ -281,24 +236,21 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
         </Button>
       </div>
 
-      {/* Search and Filters */}
       <Card className="flex-shrink-0">
         <CardContent className="p-2">
           <div className="flex flex-col gap-2">
             <div className="flex flex-col sm:flex-row gap-2">
-              {/* Search */}
               <div className="flex-1 relative">
                 <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-muted-foreground" />
                 <Input
                   type="text"
-                  placeholder="Search notes..."
+                  placeholder={t('notesTab.searchPlaceholder')}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-7 h-7 text-xs bg-background"
                 />
               </div>
 
-              {/* Filters */}
               <div className="flex items-center space-x-1">
                 <Filter className="h-3 w-3 text-muted-foreground" />
                 <div className="flex space-x-1">
@@ -310,18 +262,17 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
                       size="sm"
                       className="capitalize h-7 px-2 text-xs"
                     >
-                      {filter} ({getFilterCount(filter)})
+                      {t(`notesTab.${filter}`)} ({getFilterCount(filter)})
                     </Button>
                   ))}
                 </div>
               </div>
             </div>
 
-            {/* Load More Controls */}
             {(hasMoreNotes || notes.length < totalNotesCount) && (
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>
-                  Showing {notes.length} of {totalNotesCount} notes
+                  {t('notesTab.showingNotes', { count: notes.length, total: totalNotesCount })}
                 </span>
                 <div className="flex space-x-2">
                   <Button
@@ -331,7 +282,7 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
                     className="h-6 px-2 text-xs"
                     disabled={isLoadingMore || !hasMoreNotes}
                   >
-                    {isLoadingMore ? 'Loading...' : 'Load More'}
+                    {isLoadingMore ? t('notesTab.loading') : t('notesTab.loadMore')}
                   </Button>
                   <Button
                     onClick={loadAllNotes}
@@ -340,7 +291,7 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
                     className="h-6 px-2 text-xs"
                     disabled={isLoading || !hasMoreNotes}
                   >
-                    Load All
+                    {t('notesTab.loadAll')}
                   </Button>
                 </div>
               </div>
@@ -349,13 +300,12 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
         </CardContent>
       </Card>
 
-      {/* Notes List */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto space-y-2 min-h-0">
         {isLoading ? (
           <Card>
             <CardContent className="p-4 text-center">
               <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mx-auto mb-2"></div>
-              <p className="text-xs text-muted-foreground">Loading research notes...</p>
+              <p className="text-xs text-muted-foreground">{t('notesTab.loadingNotes')}</p>
             </CardContent>
           </Card>
         ) : filteredNotes.length > 0 ? (
@@ -363,7 +313,6 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
             <Card key={note.note_id} className="hover:shadow-md transition-shadow">
               <CardContent className="p-3">
                 <div className="space-y-2">
-                  {/* Note Header */}
                   <div className="border-b border-border pb-2 mb-2">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
@@ -375,9 +324,9 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
                             note.source ? 'bg-green-500/10 text-green-500' :
                             'bg-secondary text-muted-foreground'
                           }`}>
-                            {note.url ? '🌐 Web' : 
-                             note.source ? '📄 Doc' : 
-                             '🔧 Int'}
+                            {note.url ? `🌐 ${t('notesTab.webSource')}` :
+                             note.source ? `📄 ${t('notesTab.docSource')}` :
+                             `🔧 ${t('notesTab.intSource')}`}
                           </span>
                         </div>
                         {note.source && (
@@ -397,7 +346,6 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
                     </div>
                   </div>
 
-                  {/* Note Content */}
                   <div className="text-foreground leading-relaxed overflow-hidden">
                     <div className="prose prose-sm max-w-none text-xs break-words overflow-wrap-anywhere">
                       <ReactMarkdown
@@ -458,7 +406,6 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
                     </div>
                   </div>
 
-                  {/* Tags */}
                   {note.tags && note.tags.length > 0 && (
                     <div className="flex flex-wrap gap-1">
                       {note.tags.map((tag: string) => (
@@ -480,14 +427,14 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
             <CardContent className="p-4 text-center text-muted-foreground">
               <BookOpen className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
               <p className="text-sm font-medium mb-1">
-                {searchTerm || selectedFilter !== 'all' ? 'No Matching Notes' : 'No Notes Available'}
+                {searchTerm || selectedFilter !== 'all' ? t('notesTab.noMatchingNotes') : t('notesTab.noNotesAvailable')}
               </p>
               <p className="text-xs">
                 {searchTerm || selectedFilter !== 'all' 
-                  ? 'Try adjusting your search or filter criteria.'
+                  ? t('notesTab.adjustFilters')
                   : activeMission?.status === 'running' 
-                    ? 'Research notes will appear here as the mission progresses.'
-                    : 'Start a research mission to see notes here.'
+                    ? t('notesTab.notesAppearHere')
+                    : t('notesTab.startMission')
                 }
               </p>
             </CardContent>

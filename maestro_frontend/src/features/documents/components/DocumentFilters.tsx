@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Search, Filter, X, ChevronDown, Calendar, User, BookOpen } from 'lucide-react';
 import { getFilterOptions } from '../api';
 import { useDebounce } from '../../../hooks/useDebounce';
@@ -23,6 +24,7 @@ export const DocumentFilters: React.FC<DocumentFiltersProps> = ({
   groupId,
   documentCount = 0
 }) => {
+  const { t } = useTranslation();
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [filterOptions, setFilterOptions] = useState<{
     authors: string[];
@@ -38,23 +40,20 @@ export const DocumentFilters: React.FC<DocumentFiltersProps> = ({
     journal: '' 
   });
   
-  // Debounce search input
   const debouncedSearch = useDebounce(localSearch, 500);
   
-  // Load filter options
   useEffect(() => {
     const loadFilterOptions = async () => {
       try {
         const options = await getFilterOptions(groupId);
         setFilterOptions(options);
       } catch (error) {
-        console.error('Failed to load filter options:', error);
+        console.error(t('documentFilters.failedToLoad'), error);
       }
     };
     loadFilterOptions();
-  }, [groupId]);
+  }, [groupId, t]);
   
-  // Update filters when debounced search changes
   useEffect(() => {
     if (debouncedSearch !== filters.search) {
       onFiltersChange({ ...filters, search: debouncedSearch });
@@ -98,7 +97,6 @@ export const DocumentFilters: React.FC<DocumentFiltersProps> = ({
   
   const toggleDropdown = (dropdown: string) => {
     setDropdownOpen(dropdownOpen === dropdown ? null : dropdown);
-    // Reset search term when opening dropdown
     setSearchTerms(prev => ({ ...prev, [dropdown]: '' }));
   };
   
@@ -118,13 +116,12 @@ export const DocumentFilters: React.FC<DocumentFiltersProps> = ({
   
   return (
     <div className="bg-background border-b border-border">
-      {/* Search Bar and Filter Toggle on Same Row */}
       <div className="p-4 pb-2 flex items-center gap-3">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Search by title, author, or filename..."
+            placeholder={t('documentFilters.searchPlaceholder')}
             value={localSearch}
             onChange={handleSearchChange}
             className="w-full pl-10 pr-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm bg-background text-foreground placeholder:text-muted-foreground"
@@ -139,7 +136,6 @@ export const DocumentFilters: React.FC<DocumentFiltersProps> = ({
           )}
         </div>
         
-        {/* Filter Toggle Button */}
         <button
           onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
           className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-colors border ${
@@ -149,7 +145,7 @@ export const DocumentFilters: React.FC<DocumentFiltersProps> = ({
           }`}
         >
           <Filter className="h-4 w-4" />
-          <span>Filters</span>
+          <span>{t('documentFilters.filters')}</span>
           {activeFilterCount > 0 && (
             <span className="ml-1 px-1.5 py-0.5 text-xs bg-background text-foreground rounded-full">
               {activeFilterCount}
@@ -161,10 +157,9 @@ export const DocumentFilters: React.FC<DocumentFiltersProps> = ({
         </button>
       </div>
       
-      {/* Document Count and Active Filter Chips on Second Row */}
       <div className="px-4 pb-3 flex items-center justify-between">
         <div className="text-sm text-muted-foreground">
-          {documentCount} documents
+          {t('documentFilters.documentCount', { count: documentCount })}
         </div>
         
         {hasActiveFilters && (
@@ -210,21 +205,19 @@ export const DocumentFilters: React.FC<DocumentFiltersProps> = ({
               onClick={clearAllFilters}
               className="text-xs text-muted-foreground hover:text-foreground ml-2"
             >
-              Clear all
+              {t('documentFilters.clearAll')}
             </button>
           </div>
         )}
       </div>
       
-      {/* Advanced Filters Dropdown */}
       {showAdvancedFilters && (
         <div className="px-4 pb-4">
           <div className="p-4 bg-muted/30 rounded-lg border border-border">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Author Filter */}
               <div className="relative">
                 <label className="block text-xs font-medium text-foreground mb-1.5">
-                  Author
+                  {t('documentFilters.author')}
                 </label>
                 <div className="relative">
                   <button
@@ -232,7 +225,7 @@ export const DocumentFilters: React.FC<DocumentFiltersProps> = ({
                     className="w-full px-3 py-2 text-left border border-border rounded-md bg-background hover:bg-muted/50 focus:ring-2 focus:ring-primary focus:border-transparent flex items-center justify-between text-sm"
                   >
                     <span className={filters.author ? 'text-foreground' : 'text-muted-foreground'}>
-                      {filters.author || 'Select author...'}
+                      {filters.author || t('documentFilters.selectAuthor')}
                     </span>
                     <ChevronDown className="h-4 w-4 text-muted-foreground" />
                   </button>
@@ -242,7 +235,7 @@ export const DocumentFilters: React.FC<DocumentFiltersProps> = ({
                       <div className="sticky top-0 bg-background border-b border-border p-2">
                         <input
                           type="text"
-                          placeholder="Type to search..."
+                          placeholder={t('documentFilters.typeToSearch')}
                           value={searchTerms.author}
                           onChange={(e) => handleSearchTermChange('author', e.target.value)}
                           onClick={(e) => e.stopPropagation()}
@@ -255,11 +248,11 @@ export const DocumentFilters: React.FC<DocumentFiltersProps> = ({
                         onClick={() => handleFilterChange('author', '')}
                         className="w-full px-3 py-2 text-left text-sm hover:bg-muted/50 text-muted-foreground"
                       >
-                        All authors
+                        {t('documentFilters.allAuthors')}
                       </button>
                       {getFilteredOptions('author', filterOptions.authors).length === 0 ? (
                         <div className="px-3 py-2 text-sm text-muted-foreground italic">
-                          No matching authors found
+                          {t('documentFilters.noMatchingAuthors')}
                         </div>
                       ) : (
                         getFilteredOptions('author', filterOptions.authors).map(author => (
@@ -280,10 +273,9 @@ export const DocumentFilters: React.FC<DocumentFiltersProps> = ({
                 </div>
               </div>
               
-              {/* Year Filter */}
               <div className="relative">
                 <label className="block text-xs font-medium text-foreground mb-1.5">
-                  Year
+                  {t('documentFilters.year')}
                 </label>
                 <div className="relative">
                   <button
@@ -291,7 +283,7 @@ export const DocumentFilters: React.FC<DocumentFiltersProps> = ({
                     className="w-full px-3 py-2 text-left border border-border rounded-md bg-background hover:bg-muted/50 focus:ring-2 focus:ring-primary focus:border-transparent flex items-center justify-between text-sm"
                   >
                     <span className={filters.year ? 'text-foreground' : 'text-muted-foreground'}>
-                      {filters.year || 'Select year...'}
+                      {filters.year || t('documentFilters.selectYear')}
                     </span>
                     <ChevronDown className="h-4 w-4 text-muted-foreground" />
                   </button>
@@ -301,7 +293,7 @@ export const DocumentFilters: React.FC<DocumentFiltersProps> = ({
                       <div className="sticky top-0 bg-background border-b border-border p-2">
                         <input
                           type="text"
-                          placeholder="Type year..."
+                          placeholder={t('documentFilters.typeYear')}
                           value={searchTerms.year}
                           onChange={(e) => handleSearchTermChange('year', e.target.value)}
                           onClick={(e) => e.stopPropagation()}
@@ -314,11 +306,11 @@ export const DocumentFilters: React.FC<DocumentFiltersProps> = ({
                         onClick={() => handleFilterChange('year', '')}
                         className="w-full px-3 py-2 text-left text-sm hover:bg-muted/50 text-muted-foreground"
                       >
-                        All years
+                        {t('documentFilters.allYears')}
                       </button>
                       {getFilteredOptions('year', filterOptions.years).length === 0 ? (
                         <div className="px-3 py-2 text-sm text-muted-foreground italic">
-                          No matching years found
+                          {t('documentFilters.noMatchingYears')}
                         </div>
                       ) : (
                         getFilteredOptions('year', filterOptions.years).map(year => (
@@ -339,10 +331,9 @@ export const DocumentFilters: React.FC<DocumentFiltersProps> = ({
                 </div>
               </div>
               
-              {/* Journal Filter */}
               <div className="relative">
                 <label className="block text-xs font-medium text-foreground mb-1.5">
-                  Journal
+                  {t('documentFilters.journal')}
                 </label>
                 <div className="relative">
                   <button
@@ -350,7 +341,7 @@ export const DocumentFilters: React.FC<DocumentFiltersProps> = ({
                     className="w-full px-3 py-2 text-left border border-border rounded-md bg-background hover:bg-muted/50 focus:ring-2 focus:ring-primary focus:border-transparent flex items-center justify-between text-sm"
                   >
                     <span className={filters.journal ? 'text-foreground' : 'text-muted-foreground'}>
-                      {filters.journal || 'Select journal...'}
+                      {filters.journal || t('documentFilters.selectJournal')}
                     </span>
                     <ChevronDown className="h-4 w-4 text-muted-foreground" />
                   </button>
@@ -360,7 +351,7 @@ export const DocumentFilters: React.FC<DocumentFiltersProps> = ({
                       <div className="sticky top-0 bg-background border-b border-border p-2">
                         <input
                           type="text"
-                          placeholder="Type to search..."
+                          placeholder={t('documentFilters.typeToSearch')}
                           value={searchTerms.journal}
                           onChange={(e) => handleSearchTermChange('journal', e.target.value)}
                           onClick={(e) => e.stopPropagation()}
@@ -373,11 +364,11 @@ export const DocumentFilters: React.FC<DocumentFiltersProps> = ({
                         onClick={() => handleFilterChange('journal', '')}
                         className="w-full px-3 py-2 text-left text-sm hover:bg-muted/50 text-muted-foreground"
                       >
-                        All journals
+                        {t('documentFilters.allJournals')}
                       </button>
                       {getFilteredOptions('journal', filterOptions.journals).length === 0 ? (
                         <div className="px-3 py-2 text-sm text-muted-foreground italic">
-                          No matching journals found
+                          {t('documentFilters.noMatchingJournals')}
                         </div>
                       ) : (
                         getFilteredOptions('journal', filterOptions.journals).map(journal => (

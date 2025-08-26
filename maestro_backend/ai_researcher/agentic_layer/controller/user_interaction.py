@@ -226,7 +226,8 @@ Output ONLY a single JSON object conforming EXACTLY to the RequestAnalysisOutput
         log_queue: Optional[queue.Queue] = None,
         update_callback: Optional[Callable[[queue.Queue, Any], None]] = None,
         use_web_search: Optional[bool] = True,
-        document_group_id: Optional[str] = None
+        document_group_id: Optional[str] = None,
+        lang: str = "en"
     ) -> Dict[str, Any]:
         """
         Handles a user message using the MessengerAgent.
@@ -263,7 +264,8 @@ Output ONLY a single JSON object conforming EXACTLY to the RequestAnalysisOutput
                 agent_scratchpad=current_scratchpad,
                 mission_id=mission_id,
                 log_queue=log_queue,
-                update_callback=update_callback
+                update_callback=update_callback,
+                lang=lang
             )
 
             # Update scratchpad if the agent provided an update and mission_id exists
@@ -354,7 +356,8 @@ Output ONLY a single JSON object conforming EXACTLY to the RequestAnalysisOutput
                         user_request=request_content,
                         active_goals=active_goals,
                         log_queue=log_queue,
-                        update_callback=update_callback
+                        update_callback=update_callback,
+                        lang=lang
                     )
                     
                     if questions:

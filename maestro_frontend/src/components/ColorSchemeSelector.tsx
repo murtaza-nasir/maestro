@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Check } from 'lucide-react';
 import { cn } from '../lib/utils';
 import type { ColorScheme } from '../contexts/ThemeContext';
@@ -10,14 +11,14 @@ interface ColorSchemeOption {
   darkColor: string;
 }
 
-const colorSchemes: ColorSchemeOption[] = [
-  { value: 'default', name: 'Black & White', lightColor: '#000000', darkColor: '#ffffff' },
-  { value: 'blue', name: 'Blue', lightColor: '#3b82f6', darkColor: '#8b5cf6' },
-  { value: 'emerald', name: 'Emerald', lightColor: '#10b981', darkColor: '#6ee7b7' },
-  { value: 'purple', name: 'Purple', lightColor: '#8b5cf6', darkColor: '#c4b5fd' },
-  { value: 'rose', name: 'Rose', lightColor: '#f43f5e', darkColor: '#fda4af' },
-  { value: 'amber', name: 'Amber', lightColor: '#f59e0b', darkColor: '#fbbf24' },
-  { value: 'teal', name: 'Teal', lightColor: '#14b8a6', darkColor: '#5eead4' },
+const colorSchemes: Omit<ColorSchemeOption, 'name'>[] = [
+  { value: 'default', lightColor: '#000000', darkColor: '#ffffff' },
+  { value: 'blue', lightColor: '#3b82f6', darkColor: '#8b5cf6' },
+  { value: 'emerald', lightColor: '#10b981', darkColor: '#6ee7b7' },
+  { value: 'purple', lightColor: '#8b5cf6', darkColor: '#c4b5fd' },
+  { value: 'rose', lightColor: '#f43f5e', darkColor: '#fda4af' },
+  { value: 'amber', lightColor: '#f59e0b', darkColor: '#fbbf24' },
+  { value: 'teal', lightColor: '#14b8a6', darkColor: '#5eead4' },
 ];
 
 interface ColorSchemeSelectorProps {
@@ -29,9 +30,16 @@ export const ColorSchemeSelector: React.FC<ColorSchemeSelectorProps> = ({
   selectedScheme,
   onSchemeChange,
 }) => {
+  const { t } = useTranslation();
+
+  const translatedColorSchemes: ColorSchemeOption[] = colorSchemes.map((scheme) => ({
+    ...scheme,
+    name: t(`colorSchemes.${scheme.value === 'default' ? 'blackAndWhite' : scheme.value}`),
+  }));
+
   return (
     <div className="flex flex-wrap gap-3">
-      {colorSchemes.map((scheme) => (
+      {translatedColorSchemes.map((scheme) => (
         <button
           key={scheme.value}
           type="button"

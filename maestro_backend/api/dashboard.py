@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 import logging
 
@@ -7,6 +7,7 @@ from database import crud
 from api.schemas import DashboardStats
 from auth.dependencies import get_current_user_from_cookie
 from database.models import User
+from api.locales import get_message
 
 logger = logging.getLogger(__name__)
 
@@ -14,10 +15,12 @@ router = APIRouter()
 
 @router.get("/stats", response_model=DashboardStats)
 async def get_dashboard_stats(
+    fastapi_request: Request,
     current_user: User = Depends(get_current_user_from_cookie),
     db: Session = Depends(get_db)
 ):
     """Get dashboard statistics for the current user."""
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         # Get stats from database
         stats_data = crud.get_dashboard_stats(db, current_user.id)
@@ -42,5 +45,5 @@ async def get_dashboard_stats(
         logger.error(f"Failed to get dashboard stats for user {current_user.id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve dashboard statistics"
+            detail=get_message("dashboard.getStatsFailed", lang)
         )

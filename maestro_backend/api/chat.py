@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer
 from typing import List, Dict, Any, Optional, Tuple
 from pydantic import BaseModel
@@ -9,6 +9,7 @@ import queue
 from auth.dependencies import get_current_user_from_cookie, get_db
 from database.models import User
 from sqlalchemy.orm import Session
+from api.locales import get_message
 # Import the shared instances from missions API
 from api.missions import get_user_specific_agent_controller
 from services.chat_title_service import ChatTitleService
@@ -44,7 +45,8 @@ class ChatResponse(BaseModel):
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat_with_ai(
-    request: ChatRequest,
+    chat_request: ChatRequest,
+    fastapi_request: Request,
     current_user: User = Depends(get_current_user_from_cookie),
     agent_controller = Depends(get_user_specific_agent_controller),
     db: Session = Depends(get_db)
@@ -53,24 +55,26 @@ async def chat_with_ai(
     Chat with the AI using the MessengerAgent and collaborative research flow.
     This integrates with the full agentic system for intent detection and research mission management.
     """
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
+
     if not agent_controller:
         logger.error("Agent controller not initialized")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI chat service is not available. Please try again later."
+            detail=get_message("chat.serviceUnavailable", lang)
         )
     
     try:
         # Convert ChatMessage objects to tuples for the AgentController
         chat_history: List[Tuple[str, str]] = []
-        for msg in request.conversation_history:
+        for msg in chat_request.conversation_history:
             if msg.role == "user":
                 # Find the next assistant message to pair with this user message
                 next_assistant_msg = None
-                current_index = request.conversation_history.index(msg)
-                for i in range(current_index + 1, len(request.conversation_history)):
-                    if request.conversation_history[i].role == "assistant":
-                        next_assistant_msg = request.conversation_history[i].content
+                current_index = chat_request.conversation_history.index(msg)
+                for i in range(current_index + 1, len(chat_request.conversation_history)):
+                    if chat_request.conversation_history[i].role == "assistant":
+                        next_assistant_msg = chat_request.conversation_history[i].content
                         break
                 
                 if next_assistant_msg:
@@ -79,7 +83,7 @@ async def chat_with_ai(
         logger.info(f"Processing chat request from user {current_user.username} with {len(chat_history)} history pairs")
         
         # Create a queue and callback for WebSocket updates if a mission is involved
-        log_queue = queue.Queue() if request.mission_id else None
+        log_queue = queue.Queue() if chat_request.mission_id else None
         
         def websocket_update_callback(q: queue.Queue, update_data: Any):
             """Callback to send updates via WebSocket for mission-related activities."""
@@ -103,7 +107,7 @@ async def chat_with_ai(
                         "file_interactions": getattr(update_data, 'file_interactions', None)
                     }
                     
-                    mission_id_to_log = request.mission_id or agent_result.get("mission_id")
+                    mission_id_to_log = chat_request.mission_id or agent_result.get("mission_id")
                     if mission_id_to_log:
                         asyncio.create_task(send_logs_update(mission_id_to_log, [log_entry_dict]))
 
@@ -113,22 +117,23 @@ async def chat_with_ai(
         # Use the AgentController's handle_user_message method
         try:
             agent_result = await agent_controller.handle_user_message(
-                user_message=request.message,
+                user_message=chat_request.message,
                 chat_history=chat_history,
-                chat_id=request.chat_id,
-                mission_id=request.mission_id,
+                chat_id=chat_request.chat_id,
+                mission_id=chat_request.mission_id,
                 log_queue=log_queue,
-                update_callback=websocket_update_callback if request.mission_id else None,
-                use_web_search=request.use_web_search,
-                document_group_id=request.document_group_id
+                update_callback=websocket_update_callback if chat_request.mission_id else None,
+                use_web_search=chat_request.use_web_search,
+                document_group_id=chat_request.document_group_id,
+                lang=lang
             )
         except Exception as agent_error:
             logger.error(f"AgentController error: {agent_error}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail={
-                    "error": "AI Agent Error",
-                    "message": f"AI agent error: {str(agent_error)}",
+                    "error": get_message("chat.agentError", lang),
+                    "message": get_message("chat.agentErrorMessage", lang, error=str(agent_error)),
                     "type": "agent_error",
                     "technical_details": str(agent_error)
                 }
@@ -139,8 +144,8 @@ async def chat_with_ai(
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail={
-                    "error": "Empty Agent Response",
-                    "message": "Failed to get a valid response from the AI agent. Please try again.",
+                    "error": get_message("chat.agentResponseError", lang),
+                    "message": get_message("chat.agentResponseErrorMessage", lang),
                     "type": "agent_response_error"
                 }
             )
@@ -156,8 +161,8 @@ async def chat_with_ai(
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail={
-                    "error": "Empty Agent Response",
-                    "message": "Received an empty response from the AI agent. Please try again.",
+                    "error": get_message("chat.agentResponseError", lang),
+                    "message": get_message("chat.agentResponseEmptyMessage", lang),
                     "type": "agent_response_error"
                 }
             )
@@ -167,35 +172,35 @@ async def chat_with_ai(
         # Generate intelligent chat title after successful AI response
         updated_title = None
         try:
-            logger.info(f"Attempting to generate intelligent title for chat {request.chat_id}")
+            logger.info(f"Attempting to generate intelligent title for chat {chat_request.chat_id}")
             title_service = ChatTitleService(agent_controller.model_dispatcher)
             
             title_updated = await title_service.update_title_if_needed(
                 db=db,
-                chat_id=request.chat_id,
+                chat_id=chat_request.chat_id,
                 user_id=current_user.id,
-                user_message=request.message,
+                user_message=chat_request.message,
                 ai_response=response_text
             )
             if title_updated:
-                logger.info(f"Chat title updated successfully for chat {request.chat_id}")
+                logger.info(f"Chat title updated successfully for chat {chat_request.chat_id}")
                 # Get the updated title to return to frontend
                 from database import crud
-                updated_chat = crud.get_chat(db, request.chat_id, current_user.id)
+                updated_chat = crud.get_chat(db, chat_request.chat_id, current_user.id)
                 if updated_chat:
                     updated_title = updated_chat.title
             else:
-                logger.info(f"Chat title did not need updating for chat {request.chat_id}")
+                logger.info(f"Chat title did not need updating for chat {chat_request.chat_id}")
                 
         except Exception as title_error:
             # Don't let title generation errors affect the main chat response
-            logger.warning(f"Failed to update chat title for {request.chat_id}: {title_error}", exc_info=True)
+            logger.warning(f"Failed to update chat title for {chat_request.chat_id}: {title_error}", exc_info=True)
         
         return ChatResponse(
             response=response_text.strip(),
             action=action,
             request=request_content,
-            mission_id=mission_id or request.mission_id,  # Return new mission_id or existing one
+            mission_id=mission_id or chat_request.mission_id,  # Return new mission_id or existing one
             model_used=None,  # Model details are handled internally by AgentController
             provider=None,
             cost=None,
@@ -210,8 +215,8 @@ async def chat_with_ai(
         
         # Provide more specific error messages based on the exception type
         error_detail = {
-            "error": "Chat Processing Error",
-            "message": "An error occurred while processing your message. Please try again.",
+            "error": get_message("chat.processingError", lang),
+            "message": get_message("chat.processingErrorMessage", lang),
             "type": "general_error"
         }
         
@@ -219,37 +224,37 @@ async def chat_with_ai(
         error_str = str(e).lower()
         if "404" in error_str or "not found" in error_str:
             error_detail = {
-                "error": "Service Not Found",
-                "message": f"The AI service is not available. Error: {str(e)}",
+                "error": get_message("chat.serviceNotFound", lang),
+                "message": get_message("chat.serviceNotFoundMessage", lang, error=str(e)),
                 "type": "service_error",
                 "technical_details": str(e)
             }
         elif "rate limit" in error_str or "429" in error_str:
             error_detail = {
-                "error": "Rate Limit Exceeded",
-                "message": f"Too many requests. Error: {str(e)}",
+                "error": get_message("chat.rateLimitExceeded", lang),
+                "message": get_message("chat.rateLimitExceededMessage", lang, error=str(e)),
                 "type": "rate_limit_error",
                 "technical_details": str(e)
             }
         elif "connection" in error_str or "timeout" in error_str:
             error_detail = {
-                "error": "Connection Error",
-                "message": f"Unable to connect to AI service. Error: {str(e)}",
+                "error": get_message("chat.connectionError", lang),
+                "message": get_message("chat.connectionErrorMessage", lang, error=str(e)),
                 "type": "connection_error",
                 "technical_details": str(e)
             }
         elif "api key" in error_str or "unauthorized" in error_str:
             error_detail = {
-                "error": "Authentication Error",
-                "message": f"AI service authentication failed. Error: {str(e)}",
+                "error": get_message("chat.authError", lang),
+                "message": get_message("chat.authErrorMessage", lang, error=str(e)),
                 "type": "auth_error",
                 "technical_details": str(e)
             }
         else:
             # For any other errors, include the full error message
             error_detail = {
-                "error": "Chat Processing Error",
-                "message": f"An error occurred: {str(e)}",
+                "error": get_message("chat.processingError", lang),
+                "message": get_message("chat.generalErrorMessage", lang, error=str(e)),
                 "type": "general_error",
                 "technical_details": str(e)
             }
@@ -308,14 +313,17 @@ async def generate_research_questions(
 @router.post("/chat/refine-questions", response_model=QuestionRefinementResponse)
 async def refine_research_questions(
     request: QuestionRefinementRequest,
+    fastapi_request: Request,
     current_user: User = Depends(get_current_user_from_cookie),
     agent_controller = Depends(get_user_specific_agent_controller)
 ):
     """Refine research questions based on user feedback using UserInteractionManager."""
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
+
     if not agent_controller:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI chat service is not available."
+            detail=get_message("chat.serviceUnavailable", lang)
         )
     
     try:
@@ -334,20 +342,23 @@ async def refine_research_questions(
         logger.error(f"Error refining questions: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to refine questions: {str(e)}"
+            detail=get_message("chat.refineFailed", lang, error=str(e))
         )
 
 @router.post("/chat/approve-questions", response_model=ResearchApprovalResponse)
 async def approve_research_questions(
     request: ResearchApprovalRequest,
+    fastapi_request: Request,
     current_user: User = Depends(get_current_user_from_cookie),
     agent_controller = Depends(get_user_specific_agent_controller)
 ):
     """Approve final questions and start the research process using UserInteractionManager."""
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
+
     if not agent_controller:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI chat service is not available."
+            detail=get_message("chat.serviceUnavailable", lang)
         )
     
     try:
@@ -403,18 +414,18 @@ async def approve_research_questions(
             
             return ResearchApprovalResponse(
                 success=True,
-                message="Research questions approved. Research execution has started in the background..."
+                message=get_message("chat.approveSuccess", lang)
             )
         else:
             return ResearchApprovalResponse(
                 success=False,
-                message="Failed to start research process."
+                message=get_message("chat.approveStartFailed", lang)
             )
     except Exception as e:
         logger.error(f"Error approving questions: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to approve questions: {str(e)}"
+            detail=get_message("chat.approveFailed", lang, error=str(e))
         )
 
 @router.get("/chat/status")

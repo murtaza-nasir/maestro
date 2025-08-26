@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { X, FileText, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import type { UploadFile } from './DocumentUploadZone';
@@ -20,6 +21,7 @@ export const UploadProgressModal: React.FC<UploadProgressModalProps> = ({
   onCancelFile,
   onCancelAll
 }) => {
+  const { t } = useTranslation();
   if (!isOpen) return null;
 
   const completedFiles = uploadingFiles.filter(f => f.status === 'completed');
@@ -49,17 +51,17 @@ export const UploadProgressModal: React.FC<UploadProgressModalProps> = ({
   const getStatusText = (file: UploadFile) => {
     switch (file.status) {
       case 'pending':
-        return 'Waiting to upload...';
+        return t('uploadProgressModal.waiting');
       case 'uploading':
-        return `Uploading... ${file.progress}%`;
+        return t('uploadProgressModal.uploading', { progress: file.progress });
       case 'processing':
-        return `Processing document... ${file.progress}%`;
+        return t('uploadProgressModal.processing', { progress: file.progress });
       case 'completed':
-        return 'Upload complete';
+        return t('uploadProgressModal.completed');
       case 'error':
-        return file.error || 'Upload failed';
+        return file.error || t('uploadProgressModal.failed');
       default:
-        return 'Unknown status';
+        return t('uploadProgressModal.unknown');
     }
   };
 
@@ -75,22 +77,19 @@ export const UploadProgressModal: React.FC<UploadProgressModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
       <div 
         className="absolute inset-0 bg-black bg-opacity-50"
         onClick={canClose ? onClose : undefined}
       />
       
-      {/* Modal */}
       <div className="relative bg-background rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col border border-border">
-        {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-border">
           <div className="flex items-center space-x-3">
             <h2 className="text-xl font-semibold text-text-primary">
-              Upload Progress
+              {t('uploadProgressModal.title')}
             </h2>
             <span className="text-sm text-text-secondary">
-              ({completedFiles.length}/{uploadingFiles.length} completed)
+              {t('uploadProgressModal.completedOfTotal', { completed: completedFiles.length, total: uploadingFiles.length })}
             </span>
           </div>
           
@@ -100,7 +99,7 @@ export const UploadProgressModal: React.FC<UploadProgressModalProps> = ({
                 onClick={onCancelAll}
                 className="text-sm text-destructive hover:text-destructive/80 px-3 py-1 rounded"
               >
-                Cancel All
+                {t('uploadProgressModal.cancelAll')}
               </button>
             )}
             <button
@@ -116,11 +115,10 @@ export const UploadProgressModal: React.FC<UploadProgressModalProps> = ({
           </div>
         </div>
 
-        {/* Overall Progress */}
         <div className="p-6 border-b border-border bg-background-alt">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-text-secondary">
-              Overall Progress
+              {t('uploadProgressModal.overallProgress')}
             </span>
             <span className="text-sm text-text-secondary">
               {totalProgress}%
@@ -133,29 +131,27 @@ export const UploadProgressModal: React.FC<UploadProgressModalProps> = ({
             />
           </div>
           
-          {/* Summary Stats */}
           <div className="flex items-center justify-between mt-3 text-sm">
             <div className="flex items-center space-x-4">
               {completedFiles.length > 0 && (
                 <span className="text-green-500">
-                  ✓ {completedFiles.length} completed
+                  ✓ {t('uploadProgressModal.completedCount', { count: completedFiles.length })}
                 </span>
               )}
               {failedFiles.length > 0 && (
                 <span className="text-destructive">
-                  ✗ {failedFiles.length} failed
+                  ✗ {t('uploadProgressModal.failedCount', { count: failedFiles.length })}
                 </span>
               )}
               {activeFiles.length > 0 && (
                 <span className="text-primary">
-                  ⟳ {activeFiles.length} in progress
+                  ⟳ {t('uploadProgressModal.inProgressCount', { count: activeFiles.length })}
                 </span>
               )}
             </div>
           </div>
         </div>
 
-        {/* File List */}
         <div className="flex-1 overflow-y-auto p-6">
           <div className="space-y-4">
             {uploadingFiles.map((uploadFile) => (
@@ -204,7 +200,7 @@ export const UploadProgressModal: React.FC<UploadProgressModalProps> = ({
                       onClick={() => onRetryFile(uploadFile.id)}
                       className="text-xs text-primary hover:text-primary/80 px-2 py-1 rounded border border-primary/20 hover:bg-primary/10"
                     >
-                      Retry
+                      {t('uploadProgressModal.retry')}
                     </button>
                   )}
                   
@@ -213,7 +209,7 @@ export const UploadProgressModal: React.FC<UploadProgressModalProps> = ({
                       onClick={() => onCancelFile(uploadFile.id)}
                       className="text-xs text-destructive hover:text-destructive/80 px-2 py-1 rounded border border-destructive/20 hover:bg-destructive/10"
                     >
-                      Cancel
+                      {t('uploadProgressModal.cancel')}
                     </button>
                   )}
                 </div>
@@ -222,19 +218,18 @@ export const UploadProgressModal: React.FC<UploadProgressModalProps> = ({
           </div>
         </div>
 
-        {/* Footer */}
         {canClose && (
           <div className="p-6 border-t border-border bg-background-alt">
             <div className="flex items-center justify-between">
               <div className="text-sm text-text-secondary">
                 {completedFiles.length > 0 && failedFiles.length === 0 && (
                   <span className="text-green-500 font-medium">
-                    All uploads completed successfully!
+                    {t('uploadProgressModal.allCompleted')}
                   </span>
                 )}
                 {failedFiles.length > 0 && (
                   <span className="text-destructive font-medium">
-                    {failedFiles.length} upload(s) failed. You can retry them above.
+                    {t('uploadProgressModal.someFailed', { count: failedFiles.length })}
                   </span>
                 )}
               </div>
@@ -243,7 +238,7 @@ export const UploadProgressModal: React.FC<UploadProgressModalProps> = ({
                 onClick={onClose}
                 className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/80 transition-colors"
               >
-                Close
+                {t('uploadProgressModal.close')}
               </button>
             </div>
           </div>

@@ -6,6 +6,7 @@ import datetime
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from api.locales import get_message
 
 logger = logging.getLogger(__name__)
 
@@ -162,13 +163,14 @@ def clean_execution_log_entry_for_frontend(log_entry: Dict[str, Any]) -> Dict[st
         
     return cleaned_entry
 
-def clean_input_summary_for_display(input_summary: str) -> str:
+def clean_input_summary_for_display(input_summary: str, lang: str = "en") -> str:
     """
     Clean input summary to make it more user-friendly by extracting key information
     from tool call arguments instead of showing raw JSON.
     
     Args:
         input_summary: Raw input summary string
+        lang: The language for the display string
         
     Returns:
         Cleaned, user-friendly summary
@@ -184,7 +186,7 @@ def clean_input_summary_for_display(input_summary: str) -> str:
             query_match = re.search(r"'query':\s*'([^']+)'", input_summary)
             if query_match:
                 query = query_match.group(1)
-                return f"Search documents for: \"{query}\""
+                return get_message("utils.searchDocumentsFor", lang, query=query)
         except Exception:
             pass
     
@@ -196,7 +198,7 @@ def clean_input_summary_for_display(input_summary: str) -> str:
             query_match = re.search(r"'query':\s*'([^']+)'", input_summary)
             if query_match:
                 query = query_match.group(1)
-                return f"Search web for: \"{query}\""
+                return get_message("utils.searchWebFor", lang, query=query)
         except Exception:
             pass
     
@@ -208,7 +210,7 @@ def clean_input_summary_for_display(input_summary: str) -> str:
             doc_id_match = re.search(r"'document_id':\s*'([^']+)'", input_summary)
             if doc_id_match:
                 doc_id = doc_id_match.group(1)
-                return f"Read document: {doc_id}"
+                return get_message("utils.readDocument", lang, doc_id=doc_id)
         except Exception:
             pass
     
@@ -221,19 +223,20 @@ def clean_input_summary_for_display(input_summary: str) -> str:
                 tool_name = tool_match.group(1)
                 # Make tool name more readable
                 readable_name = tool_name.replace('_', ' ').title()
-                return f"Execute {readable_name}"
+                return get_message("utils.execute", lang, tool_name=readable_name)
         except Exception:
             pass
     
     return input_summary
 
-async def process_execution_log_entry_for_frontend(log_entry: Dict[str, Any]) -> Dict[str, Any]:
+async def process_execution_log_entry_for_frontend(log_entry: Dict[str, Any], lang: str = "en") -> Dict[str, Any]:
     """
     Process an execution log entry for frontend consumption by cleaning technical arguments
     and replacing document codes with actual filenames.
     
     Args:
         log_entry: Dictionary representing an execution log entry
+        lang: The language for display strings
         
     Returns:
         Processed log entry suitable for frontend
@@ -243,7 +246,7 @@ async def process_execution_log_entry_for_frontend(log_entry: Dict[str, Any]) ->
     
     # Clean input_summary to make it more user-friendly
     if 'input_summary' in cleaned_entry and isinstance(cleaned_entry['input_summary'], str):
-        cleaned_entry['input_summary'] = clean_input_summary_for_display(cleaned_entry['input_summary'])
+        cleaned_entry['input_summary'] = clean_input_summary_for_display(cleaned_entry['input_summary'], lang=lang)
     
     # Then replace document codes with filenames
     try:

@@ -1,4 +1,5 @@
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 import { useSettingsStore } from './SettingsStore'
 import { Input } from '../../../components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card'
@@ -8,9 +9,10 @@ import { FileText, Settings, Zap } from 'lucide-react'
 import { Switch } from '../../../components/ui/switch'
 
 export const WebFetchSettingsTab: React.FC = () => {
+  const { t } = useTranslation()
   const { draftSettings, setDraftSettings } = useSettingsStore()
 
-  const handleProviderChange = (provider: 'original' | 'jina') => {
+  const handleProviderChange = (provider: 'original' | 'jina' | 'original_with_jina_fallback') => {
     if (!draftSettings) return
     
     const newWebFetch = {
@@ -33,7 +35,7 @@ export const WebFetchSettingsTab: React.FC = () => {
   }
 
   if (!draftSettings) {
-    return <div>Loading...</div>
+    return <div>{t('webFetchSettings.loading')}</div>
   }
 
   return (
@@ -42,27 +44,27 @@ export const WebFetchSettingsTab: React.FC = () => {
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <FileText className="h-4 w-4" />
-            Web Page Fetching Configuration
+            {t('webFetchSettings.title')}
           </CardTitle>
           <CardDescription className="text-sm">
-            Configure how web pages are fetched and processed for research.
+            {t('webFetchSettings.description')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label className="text-sm font-medium">Fetch Provider</Label>
+              <Label className="text-sm font-medium">{t('webFetchSettings.fetchProvider')}</Label>
               <Select
                 value={draftSettings.web_fetch?.provider || 'original'}
                 onValueChange={handleProviderChange}
               >
                 <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Select fetch provider" />
+                  <SelectValue placeholder={t('webFetchSettings.selectFetchProvider')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="original">Original (Built-in)</SelectItem>
-                  <SelectItem value="jina">Jina Reader API</SelectItem>
-                  <SelectItem value="original_with_jina_fallback">Original + Jina Fallback</SelectItem>
+                  <SelectItem value="original">{t('webFetchSettings.original')}</SelectItem>
+                  <SelectItem value="jina">{t('webFetchSettings.jina')}</SelectItem>
+                  <SelectItem value="original_with_jina_fallback">{t('webFetchSettings.originalWithJinaFallback')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -70,13 +72,13 @@ export const WebFetchSettingsTab: React.FC = () => {
             {(draftSettings.web_fetch?.provider || 'original') === 'original' && (
               <div className="space-y-3 pl-3 border-l-2 border-gray-200 bg-gray-50/30 rounded-r-lg p-3">
                 <p className="text-xs text-muted-foreground-foreground mb-2">
-                  Built-in web page fetcher using newspaper3k and PyMuPDF for content extraction.
+                  {t('webFetchSettings.originalDescription')}
                 </p>
                 <ul className="text-xs text-muted-foreground space-y-1">
-                  <li>• Supports HTML and PDF content</li>
-                  <li>• Local caching for improved performance</li>
-                  <li>• Automatic metadata extraction</li>
-                  <li>• No API key required</li>
+                  <li>• {t('webFetchSettings.originalFeature1')}</li>
+                  <li>• {t('webFetchSettings.originalFeature2')}</li>
+                  <li>• {t('webFetchSettings.originalFeature3')}</li>
+                  <li>• {t('webFetchSettings.originalFeature4')}</li>
                 </ul>
               </div>
             )}
@@ -84,10 +86,10 @@ export const WebFetchSettingsTab: React.FC = () => {
             {draftSettings.web_fetch?.provider === 'jina' && (
               <div className="space-y-3 pl-3 border-l-2 border-orange-200 bg-orange-50/30 rounded-r-lg p-3">
                 <p className="text-xs text-muted-foreground-foreground mb-2">
-                  Jina Reader API (r.jina.ai) provides advanced web page reading with browser rendering.
+                  {t('webFetchSettings.jinaDescription')}
                 </p>
                 <p className="text-xs text-muted-foreground mb-3">
-                  Uses the same API key configured in Search settings. Free tier available with rate limits.
+                  {t('webFetchSettings.jinaApiKeyNote')}
                 </p>
               </div>
             )}
@@ -95,13 +97,13 @@ export const WebFetchSettingsTab: React.FC = () => {
             {draftSettings.web_fetch?.provider === 'original_with_jina_fallback' && (
               <div className="space-y-3 pl-3 border-l-2 border-blue-200 bg-blue-50/30 rounded-r-lg p-3">
                 <p className="text-xs text-muted-foreground-foreground mb-2">
-                  Uses the built-in fetcher first, automatically falling back to Jina Reader API if the site blocks access.
+                  {t('webFetchSettings.fallbackDescription')}
                 </p>
                 <ul className="text-xs text-muted-foreground space-y-1">
-                  <li>• Best of both worlds - fast local fetching when possible</li>
-                  <li>• Automatic fallback for sites that block scrapers (403 errors)</li>
-                  <li>• Uses Jina settings configured below when fallback is triggered</li>
-                  <li>• Requires Jina API key for fallback functionality</li>
+                  <li>• {t('webFetchSettings.fallbackFeature1')}</li>
+                  <li>• {t('webFetchSettings.fallbackFeature2')}</li>
+                  <li>• {t('webFetchSettings.fallbackFeature3')}</li>
+                  <li>• {t('webFetchSettings.fallbackFeature4')}</li>
                 </ul>
               </div>
             )}
@@ -115,55 +117,55 @@ export const WebFetchSettingsTab: React.FC = () => {
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
               <Settings className="h-4 w-4" />
-              Jina Reader Configuration
+              {t('webFetchSettings.jinaConfiguration')}
             </CardTitle>
             <CardDescription className="text-sm">
-              Configure advanced options for Jina Reader API.
+              {t('webFetchSettings.jinaConfigurationDescription')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="space-y-3">
               <div className="space-y-1.5">
-                <Label htmlFor="browser-engine" className="text-sm">Browser Engine</Label>
+                <Label htmlFor="browser-engine" className="text-sm">{t('webFetchSettings.browserEngine')}</Label>
                 <Select
                   value={draftSettings.web_fetch?.jina_browser_engine || 'default'}
                   onValueChange={(value) => handleJinaSettingChange('jina_browser_engine', value)}
                 >
                   <SelectTrigger className="h-9">
-                    <SelectValue placeholder="Select browser engine" />
+                    <SelectValue placeholder={t('webFetchSettings.selectBrowserEngine')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="default">Default (Balanced)</SelectItem>
-                    <SelectItem value="chrome">Chrome (High Quality)</SelectItem>
-                    <SelectItem value="lightweight">Lightweight (Fast)</SelectItem>
+                    <SelectItem value="default">{t('webFetchSettings.defaultBalanced')}</SelectItem>
+                    <SelectItem value="chrome">{t('webFetchSettings.chromeHighQuality')}</SelectItem>
+                    <SelectItem value="lightweight">{t('webFetchSettings.lightweightFast')}</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  Browser engine affects quality, speed, and completeness of content extraction.
+                  {t('webFetchSettings.browserEngineDescription')}
                 </p>
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="content-format" className="text-sm">Content Format</Label>
+                <Label htmlFor="content-format" className="text-sm">{t('webFetchSettings.contentFormat')}</Label>
                 <Select
                   value={draftSettings.web_fetch?.jina_content_format || 'default'}
                   onValueChange={(value) => handleJinaSettingChange('jina_content_format', value)}
                 >
                   <SelectTrigger className="h-9">
-                    <SelectValue placeholder="Select content format" />
+                    <SelectValue placeholder={t('webFetchSettings.selectContentFormat')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="default">Default (Markdown)</SelectItem>
-                    <SelectItem value="json">JSON (Structured)</SelectItem>
+                    <SelectItem value="default">{t('webFetchSettings.defaultMarkdown')}</SelectItem>
+                    <SelectItem value="json">{t('webFetchSettings.jsonStructured')}</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  Response format for extracted content.
+                  {t('webFetchSettings.contentFormatDescription')}
                 </p>
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="timeout" className="text-sm">Timeout (seconds)</Label>
+                <Label htmlFor="timeout" className="text-sm">{t('webFetchSettings.timeout')}</Label>
                 <Input
                   id="timeout"
                   type="number"
@@ -177,12 +179,12 @@ export const WebFetchSettingsTab: React.FC = () => {
                   className="h-8 text-sm"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Maximum page load wait time (5-60 seconds).
+                  {t('webFetchSettings.timeoutDescription')}
                 </p>
               </div>
 
               <div className="space-y-3 pt-2">
-                <Label className="text-sm">Content Processing Options</Label>
+                <Label className="text-sm">{t('webFetchSettings.contentProcessingOptions')}</Label>
                 
                 <div className="flex items-center space-x-2">
                   <Switch
@@ -191,7 +193,7 @@ export const WebFetchSettingsTab: React.FC = () => {
                     onCheckedChange={(checked) => handleJinaSettingChange('jina_gather_links', checked)}
                   />
                   <Label htmlFor="gather-links" className="text-sm font-normal cursor-pointer">
-                    Gather all links at the end
+                    {t('webFetchSettings.gatherLinks')}
                   </Label>
                 </div>
 
@@ -202,7 +204,7 @@ export const WebFetchSettingsTab: React.FC = () => {
                     onCheckedChange={(checked) => handleJinaSettingChange('jina_gather_images', checked)}
                   />
                   <Label htmlFor="gather-images" className="text-sm font-normal cursor-pointer">
-                    Gather all images at the end
+                    {t('webFetchSettings.gatherImages')}
                   </Label>
                 </div>
               </div>
@@ -216,40 +218,40 @@ export const WebFetchSettingsTab: React.FC = () => {
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Zap className="h-4 w-4" />
-            Webpage Fetching Provider Comparison
+            {t('webFetchSettings.comparisonTitle')}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-3 text-xs">
             <div className="grid grid-cols-3 gap-2">
-              <div className="font-medium">Feature</div>
-              <div className="font-medium">Built-in</div>
-              <div className="font-medium">Jina Reader</div>
+              <div className="font-medium">{t('webFetchSettings.feature')}</div>
+              <div className="font-medium">{t('webFetchSettings.builtIn')}</div>
+              <div className="font-medium">{t('webFetchSettings.jinaReader')}</div>
             </div>
             <div className="grid grid-cols-3 gap-2">
-              <div>JavaScript Rendering</div>
-              <div className="text-muted-foreground">Limited</div>
-              <div className="text-green-600">Full browser</div>
+              <div>{t('webFetchSettings.jsRendering')}</div>
+              <div className="text-muted-foreground">{t('webFetchSettings.limited')}</div>
+              <div className="text-green-600">{t('webFetchSettings.fullBrowser')}</div>
             </div>
             <div className="grid grid-cols-3 gap-2">
-              <div>PDF Support</div>
-              <div className="text-green-600">Native</div>
-              <div className="text-green-600">Supported</div>
+              <div>{t('webFetchSettings.pdfSupport')}</div>
+              <div className="text-green-600">{t('webFetchSettings.native')}</div>
+              <div className="text-green-600">{t('webFetchSettings.supported')}</div>
             </div>
             <div className="grid grid-cols-3 gap-2">
-              <div>Caching</div>
-              <div className="text-green-600">Local cache</div>
-              <div className="text-muted-foreground">No cache</div>
+              <div>{t('webFetchSettings.caching')}</div>
+              <div className="text-green-600">{t('webFetchSettings.localCache')}</div>
+              <div className="text-muted-foreground">{t('webFetchSettings.noCache')}</div>
             </div>
             <div className="grid grid-cols-3 gap-2">
-              <div>API Cost</div>
-              <div className="text-green-600">Free</div>
-              <div className="text-orange-600">Rate limited/Paid</div>
+              <div>{t('webFetchSettings.apiCost')}</div>
+              <div className="text-green-600">{t('webFetchSettings.free')}</div>
+              <div className="text-orange-600">{t('webFetchSettings.rateLimitedPaid')}</div>
             </div>
             <div className="grid grid-cols-3 gap-2">
-              <div>Content Quality</div>
-              <div className="text-muted-foreground">Good</div>
-              <div className="text-green-600">Excellent</div>
+              <div>{t('webFetchSettings.contentQuality')}</div>
+              <div className="text-muted-foreground">{t('webFetchSettings.good')}</div>
+              <div className="text-green-600">{t('webFetchSettings.excellent')}</div>
             </div>
           </div>
         </CardContent>

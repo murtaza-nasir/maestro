@@ -66,18 +66,13 @@ class PlanningAgent(BaseAgent):
             agent_name=agent_name,
             model_dispatcher=model_dispatcher,
             tool_registry=tool_registry, # Pass it to BaseAgent
-            system_prompt="Placeholder", # Use a placeholder first
             model_name=effective_model_name
         )
         self.controller = controller # Store controller
         self.mission_id = None # Initialize mission_id as None
-        # Now that self.tool_registry exists, set the actual system prompt
-        self.system_prompt = system_prompt or self._default_system_prompt()
-        # Update the print statement if needed, though BaseAgent already prints
-        # print(f"Initialized {self.agent_name} (Model: {self.model_name or 'Default'}) with system prompt.")
         logger.info(f"{self.agent_name} initialized (Model: {self.model_name or 'Default'})")
 
-    def _default_system_prompt(self, language: str = "pt") -> str:
+    def _default_system_prompt(self, language: str = "en") -> str:
         """Generates the default system prompt including tool descriptions."""
         prompt_path = f"ai_researcher/prompts/planning_agent_system_prompt_{language}.txt"
         with open(prompt_path, "r", encoding="utf-8") as f:
@@ -115,7 +110,8 @@ class PlanningAgent(BaseAgent):
         active_thoughts: Optional[List[ThoughtEntry]] = None, # NEW: Added active thoughts
         mission_id: Optional[str] = None, # Add mission_id parameter
         log_queue: Optional[Any] = None, # Add log_queue parameter for UI updates
-        update_callback: Optional[Any] = None # Add update_callback parameter for UI updates
+        update_callback: Optional[Any] = None, # Add update_callback parameter for UI updates
+        lang: str = "en"
         ) -> Tuple[Optional[SimplifiedPlanResponse], Optional[Dict[str, Any]], Optional[str]]: # Modified return type
         """
         Generates or revises a research plan based on the user request, active goals, active thoughts, and optional context.
@@ -204,9 +200,12 @@ class PlanningAgent(BaseAgent):
         # print("--- END DEBUG ---\n")
         # --- END TEMPORARY DEBUGGING ---
 
+        system_prompt = self._default_system_prompt(language=lang)
+
         # Call the LLM - it now returns a tuple
         llm_response, model_call_details = await self._call_llm( # Add await here
             user_prompt=prompt,
+            system_prompt_override=system_prompt,
             response_format=response_format_pydantic,
             agent_mode="planning", # <-- Pass agent_mode
             log_queue=log_queue, # Pass log_queue for UI updates

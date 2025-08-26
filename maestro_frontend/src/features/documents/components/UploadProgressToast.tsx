@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { FileText, CheckCircle, AlertCircle, Loader2, ChevronUp, ChevronDown, X, XCircle } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import type { UploadFile } from './DocumentUploadZone';
@@ -18,10 +19,10 @@ export const UploadProgressToast: React.FC<UploadProgressToastProps> = ({
   onClearCompleted,
   onDismissFile,
 }) => {
+  const { t } = useTranslation();
   const [isMinimized, setIsMinimized] = useState(false);
   const location = useLocation();
   
-  // Auto-dismiss duplicate detection errors after 5 seconds
   useEffect(() => {
     const duplicateFiles = uploadingFiles.filter(
       f => f.status === 'error' && f.error?.includes('already been uploaded')
@@ -66,19 +67,19 @@ export const UploadProgressToast: React.FC<UploadProgressToastProps> = ({
   const getStatusText = (file: UploadFile) => {
     switch (file.status) {
       case 'pending':
-        return 'Waiting to upload...';
+        return t('uploadProgress.waiting');
       case 'uploading':
-        return `Uploading... ${file.progress}%`;
+        return t('uploadProgress.uploading', { progress: file.progress });
       case 'processing':
-        return `Processing... ${file.progress}%`;
+        return t('uploadProgress.processing', { progress: file.progress });
       case 'completed':
-        return 'Upload complete';
+        return t('uploadProgress.completed');
       case 'cancelled':
-        return 'Cancelled by user';
+        return t('uploadProgress.cancelled');
       case 'error':
-        return file.error || 'Upload failed';
+        return file.error || t('uploadProgress.failed');
       default:
-        return 'Unknown status';
+        return t('uploadProgress.unknown');
     }
   };
 
@@ -94,22 +95,19 @@ export const UploadProgressToast: React.FC<UploadProgressToastProps> = ({
     setIsMinimized(!isMinimized);
   };
 
-  // Determine position based on current route
-  // Documents page has pagination at the bottom, so we position higher
   const isDocumentsPage = location.pathname === '/app/documents';
   const bottomPosition = isDocumentsPage ? 'bottom-20' : 'bottom-4';
   
   return (
     <div className={`fixed ${bottomPosition} right-4 w-full max-w-md z-50 transition-all duration-300`}>
       <div className="bg-background rounded-lg shadow-sm border border-border flex flex-col max-h-[60vh]">
-        {/* Header */}
         <div className="flex items-center justify-between p-3 border-b border-border cursor-pointer" onClick={handleToggleMinimize}>
           <div className="flex items-center space-x-3">
             <h2 className="text-md font-semibold text-text-primary">
-              Uploads
+              {t('uploadProgress.uploads')}
             </h2>
             <span className="text-xs text-text-secondary">
-              ({completedFiles.length}/{uploadingFiles.length} completed)
+              {t('uploadProgress.completedOfTotal', { completed: completedFiles.length, total: uploadingFiles.length })}
             </span>
           </div>
           <div className="flex items-center space-x-2 text-text-secondary">
@@ -119,10 +117,9 @@ export const UploadProgressToast: React.FC<UploadProgressToastProps> = ({
 
         {!isMinimized && (
           <>
-            {/* Overall Progress */}
             <div className="p-4 border-b border-border bg-background-alt">
               <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-text-secondary">Overall Progress</span>
+                <span className="text-xs font-medium text-text-secondary">{t('uploadProgress.overallProgress')}</span>
                 <span className="text-xs text-text-secondary">{totalProgress}%</span>
               </div>
               <div className="w-full bg-muted rounded-full h-1.5">
@@ -133,7 +130,6 @@ export const UploadProgressToast: React.FC<UploadProgressToastProps> = ({
               </div>
             </div>
 
-            {/* File List */}
             <div className="flex-1 overflow-y-auto p-3 max-h-96">
               <div className="space-y-3">
                 {uploadingFiles.map((uploadFile) => (
@@ -152,7 +148,7 @@ export const UploadProgressToast: React.FC<UploadProgressToastProps> = ({
                           <button
                             onClick={() => onCancelUpload(uploadFile.id)}
                             className="p-1 hover:bg-background-alt rounded-full transition-colors"
-                            title="Cancel upload"
+                            title={t('uploadProgress.cancelUpload')}
                           >
                             <X className="h-3 w-3 text-text-tertiary" />
                           </button>
@@ -161,7 +157,7 @@ export const UploadProgressToast: React.FC<UploadProgressToastProps> = ({
                           <button
                             onClick={() => onDismissFile(uploadFile.id)}
                             className="p-1 hover:bg-background-alt rounded-full transition-colors"
-                            title="Dismiss"
+                            title={t('uploadProgress.dismiss')}
                           >
                             <X className="h-3 w-3 text-text-tertiary" />
                           </button>
@@ -169,7 +165,6 @@ export const UploadProgressToast: React.FC<UploadProgressToastProps> = ({
                       </div>
                     </div>
                     
-                    {/* Individual Progress Bar */}
                     <div className="w-full bg-background-alt rounded-full h-1.5 mb-1">
                       <div
                         className={`h-1.5 rounded-full transition-all duration-300 ${
@@ -183,7 +178,6 @@ export const UploadProgressToast: React.FC<UploadProgressToastProps> = ({
                       />
                     </div>
                     
-                    {/* Status Text */}
                     <div className="flex items-center justify-between">
                       <p className={`text-xs flex-1 ${
                         uploadFile.status === 'error' 
@@ -193,7 +187,7 @@ export const UploadProgressToast: React.FC<UploadProgressToastProps> = ({
                           : 'text-text-secondary'
                       }`}>{getStatusText(uploadFile)}</p>
                       {uploadFile.status === 'error' && uploadFile.error?.includes('already been uploaded') && (
-                        <span className="text-xs text-muted-foreground ml-2 italic">(auto-dismiss)</span>
+                        <span className="text-xs text-muted-foreground ml-2 italic">{t('uploadProgress.autoDismiss')}</span>
                       )}
                     </div>
                   </div>
@@ -201,7 +195,6 @@ export const UploadProgressToast: React.FC<UploadProgressToastProps> = ({
               </div>
             </div>
 
-            {/* Footer */}
             <div className="p-3 border-t border-border bg-background-alt">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -210,7 +203,7 @@ export const UploadProgressToast: React.FC<UploadProgressToastProps> = ({
                     className="text-xs text-text-secondary hover:text-text-primary transition-colors"
                     disabled={completedFiles.length === 0}
                   >
-                    Clear Completed
+                    {t('uploadProgress.clearCompleted')}
                   </button>
                   {errorFiles.length > 0 && (
                     <button
@@ -218,7 +211,7 @@ export const UploadProgressToast: React.FC<UploadProgressToastProps> = ({
                       className="text-xs text-destructive hover:text-destructive/80 transition-colors flex items-center gap-1"
                     >
                       <XCircle className="h-3 w-3" />
-                      Clear {errorFiles.length} Error{errorFiles.length !== 1 ? 's' : ''}
+                      {errorFiles.length !== 1 ? t('uploadProgress.clearErrors', { count: errorFiles.length }) : t('uploadProgress.clearError', { count: errorFiles.length })}
                     </button>
                   )}
                 </div>
@@ -227,7 +220,7 @@ export const UploadProgressToast: React.FC<UploadProgressToastProps> = ({
                   className="text-xs text-destructive hover:text-destructive/80 transition-colors"
                   disabled={activeFiles.length === 0}
                 >
-                  Cancel All
+                  {t('uploadProgress.cancelAll')}
                 </button>
               </div>
             </div>

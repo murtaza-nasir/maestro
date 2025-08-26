@@ -1,6 +1,6 @@
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 import { useSettingsStore } from './SettingsStore'
-// import { Button } from '../../../components/ui/button'
 import { Input } from '../../../components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card'
 import { Label } from '../../../components/ui/label'
@@ -11,22 +11,22 @@ import { Checkbox } from '../../../components/ui/checkbox'
 import { Switch } from '../../../components/ui/switch'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../../../components/ui/dropdown-menu'
 
-// SearXNG category options
-const SEARXNG_CATEGORIES = [
-  { value: 'general', label: 'General' },
-  { value: 'images', label: 'Images' },
-  { value: 'videos', label: 'Videos' },
-  { value: 'news', label: 'News' },
-  { value: 'map', label: 'Map' },
-  { value: 'music', label: 'Music' },
-  { value: 'it', label: 'IT' },
-  { value: 'science', label: 'Science' },
-  { value: 'files', label: 'Files' },
-  { value: 'social media', label: 'Social Media' }
-]
-
 export const SearchSettingsTab: React.FC = () => {
+  const { t } = useTranslation()
   const { draftSettings, setDraftSettings } = useSettingsStore()
+
+  const SEARXNG_CATEGORIES = [
+    { value: 'general', label: t('searchSettings.categories.general') },
+    { value: 'images', label: t('searchSettings.categories.images') },
+    { value: 'videos', label: t('searchSettings.categories.videos') },
+    { value: 'news', label: t('searchSettings.categories.news') },
+    { value: 'map', label: t('searchSettings.categories.map') },
+    { value: 'music', label: t('searchSettings.categories.music') },
+    { value: 'it', label: t('searchSettings.categories.it') },
+    { value: 'science', label: t('searchSettings.categories.science') },
+    { value: 'files', label: t('searchSettings.categories.files') },
+    { value: 'social media', label: t('searchSettings.categories.socialMedia') }
+  ]
 
   const handleProviderChange = (provider: 'tavily' | 'linkup' | 'searxng' | 'jina') => {
     if (!draftSettings) return
@@ -83,13 +83,13 @@ export const SearchSettingsTab: React.FC = () => {
 
   const getSelectedCategoriesDisplay = (): string => {
     const selected = getSelectedCategories()
-    if (selected.length === 0) return 'Select categories'
+    if (selected.length === 0) return t('searchSettings.selectCategories')
     if (selected.length === 1) return SEARXNG_CATEGORIES.find(c => c.value === selected[0])?.label || selected[0]
-    return `${selected.length} categories selected`
+    return t('searchSettings.categoriesSelected', { count: selected.length })
   }
 
   if (!draftSettings) {
-    return <div>Loading...</div>
+    return <div>{t('searchSettings.loading')}</div>
   }
 
   return (
@@ -98,28 +98,28 @@ export const SearchSettingsTab: React.FC = () => {
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Globe className="h-4 w-4" />
-            Search Provider Configuration
+            {t('searchSettings.providerConfiguration')}
           </CardTitle>
           <CardDescription className="text-sm">
-            Configure your search provider for web research capabilities.
+            {t('searchSettings.providerConfigurationDescription')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label className="text-sm font-medium">Search Provider</Label>
+              <Label className="text-sm font-medium">{t('searchSettings.searchProvider')}</Label>
               <Select
                 value={draftSettings.search.provider}
                 onValueChange={handleProviderChange}
               >
                 <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Select search provider" />
+                  <SelectValue placeholder={t('searchSettings.selectSearchProvider')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="tavily">Tavily</SelectItem>
-                  <SelectItem value="linkup">LinkUp</SelectItem>
-                  <SelectItem value="searxng">SearXNG</SelectItem>
-                  <SelectItem value="jina">Jina</SelectItem>
+                  <SelectItem value="tavily">{t('searchSettings.tavily')}</SelectItem>
+                  <SelectItem value="linkup">{t('searchSettings.linkup')}</SelectItem>
+                  <SelectItem value="searxng">{t('searchSettings.searxng')}</SelectItem>
+                  <SelectItem value="jina">{t('searchSettings.jina')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -127,28 +127,28 @@ export const SearchSettingsTab: React.FC = () => {
             {draftSettings.search.provider === 'tavily' && (
               <div className="space-y-3 pl-3 border-l-2 border-blue-200 bg-blue-50/30 rounded-r-lg p-3">
                 <p className="text-xs text-muted-foreground-foreground mb-2">
-                  AI-powered search with real-time web data and citations.
+                  {t('searchSettings.tavilyDescription')}
                 </p>
                 <div className="space-y-1.5">
-                  <Label htmlFor="tavily-api-key" className="text-sm">Tavily API Key</Label>
+                  <Label htmlFor="tavily-api-key" className="text-sm">{t('searchSettings.tavilyApiKey')}</Label>
                   <Input
                     id="tavily-api-key"
                     type="password"
                     value={draftSettings.search.tavily_api_key || ''}
                     onChange={(e) => handleApiKeyChange('tavily_api_key', e.target.value)}
-                    placeholder="tvly-..."
+                    placeholder={t('searchSettings.tavilyApiKeyPlaceholder')}
                     className="h-8 text-sm"
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Get your API key from{' '}
+                  {t('searchSettings.getApiKeyFrom')}{' '}
                   <a 
                     href="https://app.tavily.com/home" 
                     target="_blank" 
                     rel="noopener noreferrer"
                     className="text-blue-600 hover:underline"
                   >
-                    Tavily Dashboard
+                    {t('searchSettings.tavilyDashboard')}
                   </a>
                 </p>
               </div>
@@ -157,28 +157,28 @@ export const SearchSettingsTab: React.FC = () => {
             {draftSettings.search.provider === 'linkup' && (
               <div className="space-y-3 pl-3 border-l-2 border-green-200 bg-green-50/30 rounded-r-lg p-3">
                 <p className="text-xs text-muted-foreground-foreground mb-2">
-                  Real-time search API with comprehensive web coverage.
+                  {t('searchSettings.linkupDescription')}
                 </p>
                 <div className="space-y-1.5">
-                  <Label htmlFor="linkup-api-key" className="text-sm">LinkUp API Key</Label>
+                  <Label htmlFor="linkup-api-key" className="text-sm">{t('searchSettings.linkupApiKey')}</Label>
                   <Input
                     id="linkup-api-key"
                     type="password"
                     value={draftSettings.search.linkup_api_key || ''}
                     onChange={(e) => handleApiKeyChange('linkup_api_key', e.target.value)}
-                    placeholder="7a8d9e1b-..."
+                    placeholder={t('searchSettings.linkupApiKeyPlaceholder')}
                     className="h-8 text-sm"
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Get your API key from{' '}
+                  {t('searchSettings.getApiKeyFrom')}{' '}
                   <a 
                     href="https://linkup.com/dashboard" 
                     target="_blank" 
                     rel="noopener noreferrer"
                     className="text-blue-600 hover:underline"
                   >
-                    LinkUp Dashboard
+                    {t('searchSettings.linkupDashboard')}
                   </a>
                 </p>
               </div>
@@ -187,30 +187,30 @@ export const SearchSettingsTab: React.FC = () => {
             {draftSettings.search.provider === 'jina' && (
               <div className="space-y-3 pl-3 border-l-2 border-orange-200 bg-orange-50/30 rounded-r-lg p-3">
                 <p className="text-xs text-muted-foreground-foreground mb-2">
-                  AI-powered search and web page reading with advanced extraction capabilities.
+                  {t('searchSettings.jinaDescription')}
                 </p>
                 <div className="space-y-1.5">
-                  <Label htmlFor="jina-api-key" className="text-sm">Jina API Key</Label>
+                  <Label htmlFor="jina-api-key" className="text-sm">{t('searchSettings.jinaApiKey')}</Label>
                   <Input
                     id="jina-api-key"
                     type="password"
                     value={draftSettings.search.jina_api_key || ''}
                     onChange={(e) => handleApiKeyChange('jina_api_key', e.target.value)}
-                    placeholder="jina_..."
+                    placeholder={t('searchSettings.jinaApiKeyPlaceholder')}
                     className="h-8 text-sm"
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Get your API key from{' '}
+                  {t('searchSettings.getApiKeyFrom')}{' '}
                   <a 
                     href="https://jina.ai/reader" 
                     target="_blank" 
                     rel="noopener noreferrer"
                     className="text-orange-600 hover:underline"
                   >
-                    Jina.ai Dashboard
+                    {t('searchSettings.jinaDashboard')}
                   </a>
-                  . Free tier available with rate limits.
+                  . {t('searchSettings.jinaFreeTier')}
                 </p>
               </div>
             )}
@@ -218,21 +218,21 @@ export const SearchSettingsTab: React.FC = () => {
             {draftSettings.search.provider === 'searxng' && (
               <div className="space-y-3 pl-3 border-l-2 border-purple-200 bg-purple-50/30 rounded-r-lg p-3">
                 <p className="text-xs text-muted-foreground-foreground mb-2">
-                  Open-source metasearch engine that aggregates results from multiple search engines.
+                  {t('searchSettings.searxngDescription')}
                 </p>
                 <div className="space-y-1.5">
-                  <Label htmlFor="searxng-base-url" className="text-sm">SearXNG Base URL</Label>
+                  <Label htmlFor="searxng-base-url" className="text-sm">{t('searchSettings.searxngBaseUrl')}</Label>
                   <Input
                     id="searxng-base-url"
                     type="url"
                     value={draftSettings.search.searxng_base_url || ''}
                     onChange={(e) => handleApiKeyChange('searxng_base_url', e.target.value)}
-                    placeholder="https://your-searxng-instance.com"
+                    placeholder={t('searchSettings.searxngBaseUrlPlaceholder')}
                     className="h-8 text-sm"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-sm">Search Categories</Label>
+                  <Label className="text-sm">{t('searchSettings.searchCategories')}</Label>
                   <div className="relative">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -247,7 +247,7 @@ export const SearchSettingsTab: React.FC = () => {
                       <DropdownMenuContent className="w-full p-0" align="start">
                         <div className="p-3">
                           <p className="text-xs text-muted-foreground-foreground mb-3">
-                            Select one or more categories for search results:
+                            {t('searchSettings.selectCategoriesDescription')}
                           </p>
                           <div className="space-y-2">
                             {SEARXNG_CATEGORIES.map((category) => {
@@ -282,17 +282,17 @@ export const SearchSettingsTab: React.FC = () => {
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Enter the URL of your SearXNG instance. You can use a public instance or{' '}
+                  {t('searchSettings.searxngInstanceUrl')}{' '}
                   <a 
                     href="https://docs.searxng.org/" 
                     target="_blank" 
                     rel="noopener noreferrer"
                     className="text-purple-600 hover:underline"
                   >
-                    deploy your own
+                    {t('searchSettings.deployYourOwn')}
                   </a>
                   <br />
-                  <strong>Note:</strong> Your SearXNG instance must be configured to output JSON format.
+                  <strong>{t('searchSettings.searxngNote')}</strong>
                 </p>
               </div>
             )}
@@ -306,16 +306,16 @@ export const SearchSettingsTab: React.FC = () => {
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
               <Settings className="h-4 w-4" />
-              Search Configuration
+              {t('searchSettings.searchConfiguration')}
             </CardTitle>
             <CardDescription className="text-sm">
-              Configure search behavior and parameters for {draftSettings.search.provider === 'tavily' ? 'Tavily' : 'LinkUp'}.
+              {t('searchSettings.searchConfigurationDescription', { provider: draftSettings.search.provider === 'tavily' ? 'Tavily' : 'LinkUp' })}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="space-y-3">
               <div className="space-y-1.5">
-                <Label htmlFor="max-search-results" className="text-sm">Maximum Search Results</Label>
+                <Label htmlFor="max-search-results" className="text-sm">{t('searchSettings.maxSearchResults')}</Label>
                 <Input
                   id="max-search-results"
                   type="number"
@@ -329,37 +329,37 @@ export const SearchSettingsTab: React.FC = () => {
                   className="h-8 text-sm"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Number of search results to return per query (1-20). Higher values may increase API costs.
+                  {t('searchSettings.maxSearchResultsDescriptionTavily')}
                 </p>
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="search-depth" className="text-sm">Search Depth</Label>
+                <Label htmlFor="search-depth" className="text-sm">{t('searchSettings.searchDepth')}</Label>
                 <Select
                   value={draftSettings.search.search_depth || 'standard'}
                   onValueChange={(value) => handleApiKeyChange('search_depth', value)}
                 >
                   <SelectTrigger className="h-9">
-                    <SelectValue placeholder="Select search depth" />
+                    <SelectValue placeholder={t('searchSettings.selectSearchDepth')} />
                   </SelectTrigger>
                   <SelectContent>
                     {draftSettings.search.provider === 'tavily' ? (
                       <>
-                        <SelectItem value="standard">Standard (Basic - 1 credit)</SelectItem>
-                        <SelectItem value="advanced">Advanced (2 credits)</SelectItem>
+                        <SelectItem value="standard">{t('searchSettings.standardBasic')}</SelectItem>
+                        <SelectItem value="advanced">{t('searchSettings.advancedCredits')}</SelectItem>
                       </>
                     ) : (
                       <>
-                        <SelectItem value="standard">Standard (Fast)</SelectItem>
-                        <SelectItem value="advanced">Deep (Comprehensive)</SelectItem>
+                        <SelectItem value="standard">{t('searchSettings.standardFast')}</SelectItem>
+                        <SelectItem value="advanced">{t('searchSettings.deepComprehensive')}</SelectItem>
                       </>
                     )}
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
                   {draftSettings.search.provider === 'tavily' 
-                    ? 'Advanced search provides more comprehensive results but costs 2x API credits.'
-                    : 'Deep search uses an agentic workflow for more comprehensive results but takes longer.'}
+                    ? t('searchSettings.tavilySearchDepthDescription')
+                    : t('searchSettings.linkupSearchDepthDescription')}
                 </p>
               </div>
             </div>
@@ -373,16 +373,16 @@ export const SearchSettingsTab: React.FC = () => {
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
               <Settings className="h-4 w-4" />
-              Jina Search Configuration
+              {t('searchSettings.jinaSearchConfiguration')}
             </CardTitle>
             <CardDescription className="text-sm">
-              Configure search parameters for Jina.ai.
+              {t('searchSettings.jinaSearchConfigurationDescription')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="space-y-3">
               <div className="space-y-1.5">
-                <Label htmlFor="max-search-results-jina" className="text-sm">Maximum Search Results</Label>
+                <Label htmlFor="max-search-results-jina" className="text-sm">{t('searchSettings.maxSearchResults')}</Label>
                 <Input
                   id="max-search-results-jina"
                   type="number"
@@ -396,7 +396,7 @@ export const SearchSettingsTab: React.FC = () => {
                   className="h-8 text-sm"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Number of search results to return per query (1-10).
+                  {t('searchSettings.maxSearchResultsDescriptionJina')}
                 </p>
               </div>
 
@@ -408,11 +408,11 @@ export const SearchSettingsTab: React.FC = () => {
                     onCheckedChange={(checked) => handleApiKeyChange('jina_read_full_content', checked)}
                   />
                   <Label htmlFor="jina-read-full" className="text-sm font-normal cursor-pointer">
-                    Read Full Content of SERP
+                    {t('searchSettings.readFullContent')}
                   </Label>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Visit every URL in search results and return full content using Reader. This provides more comprehensive information but takes longer.
+                  {t('searchSettings.readFullContentDescription')}
                 </p>
               </div>
 
@@ -424,11 +424,11 @@ export const SearchSettingsTab: React.FC = () => {
                     onCheckedChange={(checked) => handleApiKeyChange('jina_fetch_favicons', checked)}
                   />
                   <Label htmlFor="jina-fetch-favicons" className="text-sm font-normal cursor-pointer">
-                    Fetch Favicons
+                    {t('searchSettings.fetchFavicons')}
                   </Label>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Include website favicons in search results for better visual identification.
+                  {t('searchSettings.fetchFaviconsDescription')}
                 </p>
               </div>
 
@@ -440,11 +440,11 @@ export const SearchSettingsTab: React.FC = () => {
                     onCheckedChange={(checked) => handleApiKeyChange('jina_bypass_cache', checked)}
                   />
                   <Label htmlFor="jina-bypass-cache" className="text-sm font-normal cursor-pointer">
-                    Bypass Cached Content
+                    {t('searchSettings.bypassCache')}
                   </Label>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Ignore cached results and fetch fresh content directly. Useful for time-sensitive searches.
+                  {t('searchSettings.bypassCacheDescription')}
                 </p>
               </div>
             </div>
@@ -458,15 +458,15 @@ export const SearchSettingsTab: React.FC = () => {
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
               <Settings className="h-4 w-4" />
-              SearXNG Configuration
+              {t('searchSettings.searxngConfiguration')}
             </CardTitle>
             <CardDescription className="text-sm">
-              Configure search parameters for your SearXNG instance.
+              {t('searchSettings.searxngConfigurationDescription')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="space-y-1.5">
-              <Label htmlFor="max-search-results" className="text-sm">Maximum Search Results</Label>
+              <Label htmlFor="max-search-results" className="text-sm">{t('searchSettings.maxSearchResults')}</Label>
               <Input
                 id="max-search-results"
                 type="number"
@@ -480,11 +480,11 @@ export const SearchSettingsTab: React.FC = () => {
                 className="h-8 text-sm"
               />
               <p className="text-xs text-muted-foreground">
-                Number of search results to return per query (1-20).
+                {t('searchSettings.maxSearchResultsDescriptionSearxng')}
               </p>
             </div>
             <p className="text-xs text-muted-foreground">
-              SearXNG aggregates results from multiple search engines. No API costs involved.
+              {t('searchSettings.searxngNoApiCosts')}
             </p>
           </CardContent>
         </Card>

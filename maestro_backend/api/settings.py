@@ -9,6 +9,7 @@ from database.database import get_db
 from auth.dependencies import get_current_user_from_cookie
 from api import schemas
 from database.models import User
+from api.locales import get_message
 
 router = APIRouter()
 
@@ -167,10 +168,12 @@ def get_user_settings(current_user: User = Depends(get_current_user_from_cookie)
 @router.put("/me/settings", response_model=schemas.GlobalUserSettings)
 def update_user_settings(
     settings_update: SettingsUpdate,
+    fastapi_request: Request,
     current_user: User = Depends(get_current_user_from_cookie),
     db: Session = Depends(get_db)
 ):
     """Update current user's settings"""
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     settings_dict = settings_update.settings.dict(exclude_unset=True)
     
     # Separate appearance settings from other settings
@@ -180,7 +183,7 @@ def update_user_settings(
     if settings_dict:
         updated_user = crud.update_user_settings(db, current_user.id, settings_dict)
         if not updated_user:
-            raise HTTPException(status_code=500, detail="Failed to update user settings")
+            raise HTTPException(status_code=500, detail=get_message("settings.updateFailed", lang))
     else:
         updated_user = current_user
 
@@ -188,7 +191,7 @@ def update_user_settings(
     if appearance_settings:
         updated_user = crud.update_user_appearance(db, current_user.id, schemas.AppearanceSettings(**appearance_settings))
         if not updated_user:
-            raise HTTPException(status_code=500, detail="Failed to update appearance settings")
+            raise HTTPException(status_code=500, detail=get_message("settings.updateAppearanceFailed", lang))
 
     return get_user_settings(updated_user)
 
@@ -204,14 +207,16 @@ def get_user_profile(current_user: User = Depends(get_current_user_from_cookie))
 @router.put("/me/profile", response_model=schemas.UserProfile)
 def update_user_profile(
     profile_update: schemas.UserProfileUpdate,
+    fastapi_request: Request,
     current_user: User = Depends(get_current_user_from_cookie),
     db: Session = Depends(get_db)
 ):
     """Update current user's profile"""
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     updated_user = crud.update_user_profile(db, current_user.id, profile_update)
     
     if not updated_user:
-        raise HTTPException(status_code=500, detail="Failed to update user profile")
+        raise HTTPException(status_code=500, detail=get_message("settings.updateProfileFailed", lang))
     
     return {
         "full_name": updated_user.full_name,
@@ -222,9 +227,11 @@ def update_user_profile(
 @router.post("/me/settings/test-connection")
 async def test_ai_connection(
     connection_config: Dict[str, Any],
+    fastapi_request: Request,
     current_user: User = Depends(get_current_user_from_cookie)
 ):
     """Test AI endpoint connection"""
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         provider = connection_config.get("provider", "openrouter")
         api_key = connection_config.get("api_key")
@@ -236,14 +243,14 @@ async def test_ai_connection(
         
         # Validate base URL format
         if not base_url:
-            raise HTTPException(status_code=400, detail="Base URL is required")
+            raise HTTPException(status_code=400, detail=get_message("settings.baseUrlRequired", lang))
         
         if not (base_url.startswith("http://") or base_url.startswith("https://")):
-            raise HTTPException(status_code=400, detail="Base URL must start with 'http://' or 'https://'")
+            raise HTTPException(status_code=400, detail=get_message("settings.baseUrlFormat", lang))
         
         # For OpenRouter and OpenAI, API key is required (but not for custom)
         if provider in ["openrouter", "openai"] and not api_key:
-            raise HTTPException(status_code=400, detail="API key is required for this provider")
+            raise HTTPException(status_code=400, detail=get_message("settings.apiKeyRequired", lang))
         
         # Prepare headers - only add Authorization if we have an API key
         headers = {}
@@ -257,27 +264,29 @@ async def test_ai_connection(
                 headers=headers
             )
             response.raise_for_status()
-            return {"success": True, "message": "Connection successful"}
+            return {"success": True, "message": get_message("settings.connectionSuccess", lang)}
             
     except httpx.HTTPStatusError as e:
         raise HTTPException(
             status_code=e.response.status_code,
-            detail=f"Connection failed: {e.response.text}"
+            detail=get_message("settings.connectionFailed", lang, error=e.response.text)
         )
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Connection test failed: {str(e)}"
+            detail=get_message("settings.connectionTestFailed", lang, error=str(e))
         )
 
 @router.get("/me/settings/models")
 async def get_available_models(
+    fastapi_request: Request,
     provider: Optional[str] = None,
     api_key: Optional[str] = None,
     base_url: Optional[str] = None,
     current_user: User = Depends(get_current_user_from_cookie)
 ):
     """Get available models from configured AI provider"""
+    lang = fastapi_request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0]
     try:
         # Get user settings
         settings = current_user.settings or {}
@@ -342,7 +351,7 @@ async def get_available_models(
         
         # For OpenRouter and OpenAI, API key is required (but not for custom)
         if target_provider in ["openrouter", "openai"] and not provider_config.get("api_key"):
-            raise HTTPException(status_code=400, detail=f"No API key configured for provider: {target_provider}")
+            raise HTTPException(status_code=400, detail=get_message("settings.noApiKey", lang, provider=target_provider))
         
         # Fetch models from provider
         final_base_url = provider_config.get("base_url", "https://openrouter.ai/api/v1/")
@@ -354,10 +363,10 @@ async def get_available_models(
         
         # Validate base URL format
         if not final_base_url:
-            raise HTTPException(status_code=400, detail="Base URL is required")
+            raise HTTPException(status_code=400, detail=get_message("settings.baseUrlRequired", lang))
         
         if not (final_base_url.startswith("http://") or final_base_url.startswith("https://")):
-            raise HTTPException(status_code=400, detail="Base URL must start with 'http://' or 'https://'")
+            raise HTTPException(status_code=400, detail=get_message("settings.baseUrlFormat", lang))
         
         # Prepare headers - only add Authorization if we have an API key
         headers = {}
@@ -383,10 +392,10 @@ async def get_available_models(
     except httpx.HTTPStatusError as e:
         raise HTTPException(
             status_code=e.response.status_code,
-            detail=f"Failed to fetch models: {e.response.text}"
+            detail=get_message("settings.fetchModelsFailed", lang, error=e.response.text)
         )
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to fetch models: {str(e)}"
+            detail=get_message("settings.fetchModelsFailed", lang, error=str(e))
         )
