@@ -5,6 +5,8 @@ from typer.testing import CliRunner
 from pathlib import Path
 import re
 import os
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import json # Added for potential metadata parsing if needed
 
 # Import the CLI app and necessary components

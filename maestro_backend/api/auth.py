@@ -8,6 +8,7 @@ from database.database import get_db
 from auth import security
 from auth.dependencies import get_current_user_from_cookie, get_current_user_with_csrf
 from api import schemas
+from api.locales import get_message
 
 router = APIRouter()
 
@@ -15,11 +16,11 @@ router = APIRouter()
 def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     registration_enabled_setting = crud.get_system_setting(db, key="registration_enabled")
     if registration_enabled_setting and registration_enabled_setting.value is False:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User registration is disabled")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=get_message("registration_disabled"))
 
     db_user = crud.get_user_by_username(db, username=user.username)
     if db_user:
-        raise HTTPException(status_code=400, detail="Username already registered")
+        raise HTTPException(status_code=400, detail=get_message("username_exists"))
     return crud.create_user(db=db, user=user)
 
 @router.post("/login")
@@ -33,7 +34,7 @@ def login_for_access_token(
     if not user or not security.verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
+            detail=get_message("incorrect_credentials"),
             headers={"WWW-Authenticate": "Bearer"},
         )
     
@@ -102,7 +103,7 @@ def login_for_access_token(
     )
     
     return {
-        "message": "Login successful", 
+        "message": get_message("login_successful"),
         "csrf_token": csrf_token,
         "access_token": access_token,  # Include token in response for WebSocket use
         "token_type": "bearer",
@@ -115,7 +116,7 @@ def logout(response: Response):
     # Clear the authentication cookies
     response.delete_cookie(key="access_token")
     response.delete_cookie(key="csrf_token")
-    return {"message": "Logout successful"}
+    return {"message": get_message("logout_successful")}
 
 @router.get("/me", response_model=schemas.User)
 def read_users_me(current_user: schemas.User = Depends(get_current_user_from_cookie)):
@@ -138,10 +139,10 @@ def change_password(
     if not security.verify_password(password_data.current_password, current_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Current password is incorrect"
+            detail=get_message("incorrect_password")
         )
     
     # Update password
     crud.update_user_password(db, user_id=current_user.id, new_password=password_data.new_password)
     
-    return {"message": "Password changed successfully"}
+    return {"message": get_message("password_changed")}

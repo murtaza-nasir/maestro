@@ -1,4 +1,5 @@
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 import { AlertTriangle, Trash2, X } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './dialog'
 import { Button } from './button'
@@ -28,6 +29,8 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
   variant = 'single',
   count = 1
 }) => {
+  const { t } = useTranslation()
+
   const getIcon = () => {
     switch (itemType) {
       case 'chat':
@@ -41,10 +44,7 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
   }
 
   const getWarningText = () => {
-    if (variant === 'bulk') {
-      return `This will permanently delete ${count} ${itemType}${count !== 1 ? 's' : ''}.`
-    }
-    return `This will permanently delete this ${itemType}.`
+    return t(`deleteConfirmation.permanentDeleteWarning`, { count, itemType, nsSeparator: false, defaultValue: `This will permanently delete this ${itemType}.` })
   }
 
   return (
@@ -57,7 +57,7 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
           disabled={isLoading}
         >
           <X className="h-4 w-4" />
-          <span className="sr-only">Close</span>
+          <span className="sr-only">{t('deleteConfirmation.close')}</span>
         </button>
 
         {/* Header with proper padding */}
@@ -101,7 +101,7 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
               <AlertTriangle className="h-5 w-5 text-destructive mt-0.5 flex-shrink-0" />
               <div className="space-y-2">
                 <p className="text-sm font-semibold text-destructive">
-                  This action cannot be undone
+                  {t('deleteConfirmation.warning')}
                 </p>
                 <p className="text-xs text-destructive/80 leading-relaxed">
                   {getWarningText()}
@@ -120,7 +120,7 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
               disabled={isLoading}
               className="flex-1 sm:flex-none h-10 px-6 text-sm font-medium border-border hover:bg-muted/50 hover:text-foreground"
             >
-              Cancel
+              {t('deleteConfirmation.cancel')}
             </Button>
             <Button
               variant="destructive"
@@ -131,13 +131,13 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
               {isLoading ? (
                 <div className="flex items-center gap-2">
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                  <span>Deleting...</span>
+                  <span>{t('deleteConfirmation.deleting')}</span>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
                   <Trash2 className="h-4 w-4" />
                   <span>
-                    Delete{variant === 'bulk' && count > 1 ? ` ${count} items` : ''}
+                    {variant === 'bulk' && count > 1 ? t('deleteConfirmation.deleteItems', { count }) : t('deleteConfirmation.delete')}
                   </span>
                 </div>
               )}

@@ -7,9 +7,8 @@ import asyncio # Import asyncio for async tests
 import httpx # Import httpx for exception types
 
 # Add project root to sys.path for imports
-project_root = Path(__file__).resolve().parents[3] # Go up three levels from tests/agentic_layer/tools
-sys.path.insert(0, str(project_root))
-print(f"Added to sys.path for testing: {project_root}")
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
+
 
 from ai_researcher.agentic_layer.tools.web_search_tool import WebSearchTool, WebSearchInput
 
