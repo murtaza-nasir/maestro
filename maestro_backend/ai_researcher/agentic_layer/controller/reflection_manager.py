@@ -268,8 +268,8 @@ class ReflectionManager:
                       all_suggestion_details.append(
                            # Use section_id from the tuple, not output.section_id
                            f"- Structural Modification Suggestion (for section '{section_id}'):\n"
-                           f"    Type='{mod.modification_type}', Target ID='{mod.target_section_id}', "
-                           f"New Title='{mod.new_title}', New Description='{mod.new_description}', "
+                           f"    Type='{mod.modification_type}', Target ID='{mod.details.section_id}', "
+                           f"New Title='{mod.details.new_title}', New Description='{mod.details.new_topic}', "
                            f"Reasoning='{mod.reasoning}'"
                       )
                       total_structural_suggestions += 1
