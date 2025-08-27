@@ -804,7 +804,7 @@ async def resume_mission_execution(
                 detail="Mission not found"
             )
 
-        if mission_context.status != "stopped":
+        if mission_context.status not in ["stopped", "failed"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Mission cannot be resumed. Current status: {mission_context.status}"
