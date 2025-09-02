@@ -79,7 +79,7 @@ grep ADMIN_PASSWORD .env
 
 ### Step 4: Upload Your First Documents
 
-<!-- Image not available: Document Library (01-document-library.png) -->
+![Document Library](../assets/images/01-document-library.png)
 
 1. Navigate to **Documents** tab
 2. Create a Document Group and Select it from the sidebar
