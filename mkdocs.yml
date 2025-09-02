@@ -143,7 +143,7 @@ extra:
       link: https://hub.docker.com/r/murtaza-nasir/maestro
   analytics:
     provider: google
-    property: G-XXXXXXXXXX  # Replace with your Google Analytics ID
+    property: G-9JT06W6P05  # Replace with your Google Analytics ID
   consent:
     title: Cookie consent
     description: >- 
