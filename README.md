@@ -6,8 +6,8 @@
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Version](https://img.shields.io/badge/Version-0.1.5--alpha-green.svg)](https://github.com/murtaza-nasir/maestro.git)
-[![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://hub.docker.com/r/yourusername/maestro)
-[![Documentation](https://img.shields.io/badge/Docs-Available-brightgreen.svg)](https://yourusername.github.io/maestro/)
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://hub.docker.com/r/murtaza-nasir/maestro)
+[![Documentation](https://img.shields.io/badge/Docs-Available-brightgreen.svg)](https://murtaza-nasir.github.io/maestro/)
 
 > **Version 0.1.5-alpha (Sep 2, 2025) - Major Update**
 > 
@@ -18,18 +18,18 @@
 
 MAESTRO is an AI-powered research platform you can host on your own hardware. It's designed to manage complex research tasks from start to finish in a collaborative research environment. Plan your research, let AI agents carry it out, and watch as they generate detailed reports based on your documents and sources from the web.
 
-## 📚 Documentation
+## Documentation
 
-**[View Full Documentation](https://yourusername.github.io/maestro/)**
+**[View Full Documentation](https://murtaza-nasir.github.io/maestro/)**
 
-- **[Quick Start](https://yourusername.github.io/maestro/getting-started/quickstart/)** - Get up and running in minutes
-- **[Installation](https://yourusername.github.io/maestro/getting-started/installation/)** - Platform-specific setup
-- **[Configuration](https://yourusername.github.io/maestro/getting-started/configuration/overview/)** - AI providers and settings
-- **[User Guide](https://yourusername.github.io/maestro/user-guide/)** - Complete feature guide
-- **[Example Reports](https://yourusername.github.io/maestro/example-reports/)** - Sample outputs from various models
-- **[Troubleshooting](https://yourusername.github.io/maestro/troubleshooting/)** - Common issues and solutions
+- **[Quick Start](https://murtaza-nasir.github.io/maestro/getting-started/quickstart/)** - Get up and running in minutes
+- **[Installation](https://murtaza-nasir.github.io/maestro/getting-started/installation/)** - Platform-specific setup
+- **[Configuration](https://murtaza-nasir.github.io/maestro/getting-started/configuration/overview/)** - AI providers and settings
+- **[User Guide](https://murtaza-nasir.github.io/maestro/user-guide/)** - Complete feature guide
+- **[Example Reports](https://murtaza-nasir.github.io/maestro/example-reports/)** - Sample outputs from various models
+- **[Troubleshooting](https://murtaza-nasir.github.io/maestro/troubleshooting/)** - Common issues and solutions
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 - Docker and Docker Compose (v2.0+)
@@ -54,19 +54,19 @@ docker compose up -d
 docker compose logs -f maestro-backend
 ```
 
-Access at **http://localhost** • Default: `admin` / `admin123`
+Access at **http://localhost** • Default: `admin` / `pass found in .env`
 
-For detailed installation instructions, see the [Installation Guide](https://yourusername.github.io/maestro/getting-started/installation/).
+For detailed installation instructions, see the [Installation Guide](https://murtaza-nasir.github.io/maestro/getting-started/installation/).
 
-## 🔧 Configuration
+## Configuration
 
 - **CPU Mode**: Use `docker compose -f docker-compose.cpu.yml up -d`
 - **GPU Support**: Automatic detection on Linux/Windows with NVIDIA GPUs
 - **Network Access**: Configure via setup script options
 
-For troubleshooting and advanced configuration, see the [documentation](https://yourusername.github.io/maestro/).
+For troubleshooting and advanced configuration, see the [documentation](https://murtaza-nasir.github.io/maestro/).
 
-## 🛠️ Core Features
+## Core Features
 
 - **Multi-Agent Research System**: Planning, Research, Reflection, and Writing agents working in concert
 - **Advanced RAG Pipeline**: Dual BGE-M3 embeddings with PostgreSQL + pgvector
