@@ -28,7 +28,7 @@ MAESTRO's research system uses an agentic framework to gather information from w
 
 ## Starting a Research Session
 
-![Research Chat Interface](../../images/user-guide/Research view.png)
+<!-- Image not available: Research Chat Interface (Research view.png) -->
 
 ### Step 1: Initial Conversation
 
@@ -78,7 +78,7 @@ Once started, the chat interface is disabled and research begins.
 
 ## Monitoring Research Progress
 
-![Research Mission Interface](../../images/user-guide/Research view.png)
+<!-- Image not available: Research Mission Interface (Research view.png) -->
 
 ### The Mission Panel Tabs
 
@@ -86,7 +86,7 @@ During research, monitor progress through four main tabs:
 
 #### 1. Plan Tab
 
-![Planning Phase](../../images/user-guide/Research view-plan outline.png)
+<!-- Image not available: Planning Phase (Research view-plan outline.png) -->
 
 Shows the research outline with sections and subsections:
 
@@ -116,7 +116,7 @@ Each agent entry shows:
 
 #### 3. Notes Tab
 
-![Research Notes](../../images/user-guide/Resarch view notes.png)
+<!-- Image not available: Research Notes (Resarch view notes.png) -->
 
 Collected research findings:
 
@@ -134,7 +134,7 @@ Filter and search capabilities:
 
 #### 4. Draft Tab
 
-![Draft Generation](../../images/user-guide/Research view draft.png)
+<!-- Image not available: Draft Generation (Research view draft.png) -->
 
 Final report generation:
 
@@ -201,7 +201,7 @@ Final report generation:
 
 ## Research Configuration
 
-![Mission Settings](../../images/user-guide/research view settings.png)
+<!-- Image not available: Mission Settings (research view settings.png) -->
 
 Research missions can be configured through the Settings tab or customized per mission. For a complete reference of all parameters, see the [Research Parameters Reference](parameters.md).
 
@@ -323,4 +323,4 @@ Visual breakdown showing:
 3. **Start Researching** - Begin with a simple topic to learn the interface
 4. **Optimize Settings** - Adjust parameters based on your needs
 
-For additional help, see the [FAQ](../../troubleshooting/faq.md) or visit our [Community Forum](../../community/discussions.md).
+For additional help, see the [FAQ](../../troubleshooting/faq.md) or visit our [Community Forum](https://github.com/murtaza-nasir/maestro/discussions).

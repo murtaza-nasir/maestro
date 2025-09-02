@@ -2,7 +2,7 @@
 
 The Document Library is your centralized repository for all uploaded documents. It provides comprehensive tools for viewing, organizing, searching, and managing your document collection.
 
-![Document Library View](../../images/user-guide/doc view all docs.png)
+<!-- Image not available: Document Library View (doc view all docs.png) -->
 
 ## Library Interface
 
@@ -26,7 +26,7 @@ Each document card shows:
 ## Viewing Documents
 
 ### Document Grid View
-![Document Grid](../../images/user-guide/doc view all docs.png)
+<!-- Image not available: Document Grid (doc view all docs.png) -->
 - **Visual Layout**: Card-based display
 - **Quick Preview**: Hover for summary
 - **Batch Selection**: Click to select multiple
@@ -43,7 +43,7 @@ Alternative compact display:
 
 ## Filtering Documents
 
-![Filter Options](../../images/user-guide/doc view filters.png)
+<!-- Image not available: Filter Options (doc view filters.png) -->
 
 ### Available Filters
 Filter your library by:
@@ -270,6 +270,6 @@ Tools for maintenance:
 ## Next Steps
 
 - [Document Groups](document-groups.md) - Organizing collections
-- [Search Guide](search.md) - Advanced search techniques
+- [Search Guide](overview.md#search) - Advanced search techniques
 - [Uploading](uploading.md) - Adding new documents
-- [Supported Formats](supported-formats.md) - File type details
+- [Supported Formats](uploading.md#supported-formats) - File type details

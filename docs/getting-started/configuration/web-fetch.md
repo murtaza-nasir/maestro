@@ -2,7 +2,7 @@
 
 Configure how MAESTRO fetches and processes full content from web pages discovered during research.
 
-![Web Fetch Configuration Interface](../../assets/images/settings/web-fetch.png)
+![Web Fetch Configuration Interface](//assets/images/settings/web-fetch.png)
 
 ## Overview
 

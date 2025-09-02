@@ -2,7 +2,7 @@
 
 The document management system is the foundation of MAESTRO's research capabilities, allowing you to upload, organize, and search through your document library.
 
-![Document Library](../../images/user-guide/doc view all docs.png)
+<!-- Image not available: Document Library (doc view all docs.png) -->
 
 ## How Document Processing Works
 
@@ -166,5 +166,5 @@ du -sh maestro_backend/data/*
 
 - [Uploading Documents](uploading.md) - Detailed upload guide
 - [Document Groups](document-groups.md) - Organizing collections
-- [Search Guide](search.md) - Advanced search techniques
+- [Search Guide](overview.md#search) - Advanced search techniques
 - [CLI Commands](../../getting-started/installation/cli-commands.md) - Bulk operations

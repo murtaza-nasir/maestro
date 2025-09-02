@@ -370,4 +370,4 @@ docker compose logs maestro-backend --tail=100
 - [Database Management](database-reset.md) - Database operations
 - [User Guide](../../user-guide/index.md) - Using the web interface
 - [Troubleshooting](../../troubleshooting/index.md) - Common issues
-- [API Reference](../../api/index.md) - REST API documentation
+- [API Reference](#) - REST API documentation

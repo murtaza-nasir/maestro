@@ -40,11 +40,11 @@ If you're new to MAESTRO, follow this recommended path:
     
     Set up your AI providers and models
 
--   :material-numeric-4-circle: **[Start Your First Chat](research/chat-interface.md)**
+-   :material-numeric-4-circle: **[Start Your First Chat](research/overview.md)**
     
     Begin exploring your documents with AI
 
--   :material-numeric-5-circle: **[Create a Mission](research/missions.md)**
+-   :material-numeric-5-circle: **[Create a Mission](research/overview.md)**
     
     Launch your first autonomous research mission
 
@@ -152,7 +152,7 @@ If you need assistance:
 
 - Check the **[FAQ](../troubleshooting/faq.md)** for common questions
 - Browse **[Troubleshooting](../troubleshooting/index.md)** for solutions
-- Visit our **[Community Forum](../community/discussions.md)**
+- Visit our **[Community Forum](https://github.com/murtaza-nasir/maestro/discussions)**
 - Report issues on **[GitHub](https://github.com/murtaza-nasir/maestro/issues)**
 
 ---

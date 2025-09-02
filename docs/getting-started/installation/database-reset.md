@@ -260,4 +260,4 @@ docker system prune -a --volumes
 
 - [CLI Usage Guide](cli-commands.md)
 - [Document Processing](../../user-guide/documents/overview.md)
-- [Backup Automation](../configuration/backup.md)
+- [Backup Automation](../configuration/environment-variables.md#backup)

@@ -326,4 +326,4 @@ Parameters can be configured at multiple levels, with the following precedence (
 
 - [Research Overview](overview.md) - Understanding the research workflow
 - [AI Configuration](../settings/ai-config.md) - Model selection impacts
-- [Performance Tuning](../../troubleshooting/performance.md) - System optimization
+- [Performance Tuning](../../troubleshooting/common-issues/installation.md) - System optimization

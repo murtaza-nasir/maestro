@@ -2,7 +2,7 @@
 
 Configure web search providers for MAESTRO's research capabilities.
 
-![Search Configuration Interface](../../assets/images/settings/search.png)
+![Search Configuration Interface](//assets/images/settings/search.png)
 
 ## Overview
 
@@ -53,4 +53,4 @@ For comprehensive troubleshooting and best practices, see the [Search Provider C
 
 - [AI Configuration](ai-config.md) - Configure language models
 - [Research Settings](research-config.md) - Optimize research missions
-- [Web Fetch Settings](webfetch-config.md) - Configure web content fetching
+- [Web Fetch Settings](web-fetch-config.md) - Configure web content fetching

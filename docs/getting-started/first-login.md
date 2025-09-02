@@ -47,7 +47,7 @@ grep ADMIN_PASSWORD .env
 
 ### Step 2: Configure AI Provider
 
-![AI Configuration](../assets/images/settings/ai-config.png)
+![AI Configuration](/assets/images/settings/ai-config.png)
 
 1. Stay in Settings, click **AI Config** tab
 2. Select your AI Provider:
@@ -65,7 +65,7 @@ grep ADMIN_PASSWORD .env
 
 ### Step 3: Configure Search Provider (Optional)
 
-![Search Configuration](../assets/images/settings/search.png)
+![Search Configuration](/assets/images/settings/search.png)
 
 1. Click **Search** tab in Settings
 2. Select a search provider:
@@ -79,7 +79,7 @@ grep ADMIN_PASSWORD .env
 
 ### Step 4: Upload Your First Documents
 
-![Document Library](../../images/01-document-library.png)
+<!-- Image not available: Document Library (01-document-library.png) -->
 
 1. Navigate to **Documents** tab
 2. Create a Document Group and Select it from the sidebar
@@ -191,9 +191,9 @@ grep ADMIN_PASSWORD .env
 
 ### Documentation
 
-- [User Guide](../../user-guide/index.md) - Complete feature guide
-- [Troubleshooting](../../troubleshooting/index.md) - Problem solving
-- [FAQ](../../troubleshooting/faq.md) - Common questions
+- [User Guide](../user-guide/index.md) - Complete feature guide
+- [Troubleshooting](../troubleshooting/index.md) - Problem solving
+- [FAQ](../troubleshooting/faq.md) - Common questions
 
 ### Community Support
 

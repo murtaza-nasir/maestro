@@ -2,7 +2,7 @@
 
 MAESTRO provides multiple ways to upload documents to your library, supporting various file formats and batch uploads. The system automatically processes documents for semantic search and research capabilities.
 
-![Drag and Drop Upload](../../images/user-guide/doc view drag and drop upload.png)
+<!-- Image not available: Drag and Drop Upload (doc view drag and drop upload.png) -->
 
 ## Upload Methods
 
@@ -285,5 +285,17 @@ If uploaded documents don't appear:
 
 - [Document Library](document-library.md) - Managing your documents
 - [Document Groups](document-groups.md) - Organizing collections
-- [Search](search.md) - Finding documents
-- [Supported Formats](supported-formats.md) - Format details
+- [Search](overview.md#search) - Finding documents
+- [Supported Formats](uploading.md#supported-formats) - Format details
+
+## Supported Formats
+
+MAESTRO supports the following document formats:
+
+- **PDF** (.pdf) - Portable Document Format
+- **Microsoft Word** (.docx, .doc) - Word documents
+- **Markdown** (.md, .markdown) - Markdown files
+- **Plain Text** (.txt) - Plain text files
+- **Rich Text Format** (.rtf) - RTF documents
+
+Documents are automatically processed and indexed for searching after upload.

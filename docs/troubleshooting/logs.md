@@ -168,6 +168,6 @@ docker compose restart
 
 ## Related Documentation
 
-- [Common Issues](common-issues/index.md)
+- [Common Issues](common-issues/installation.md)
 - [Database Issues](common-issues/database.md)
 - [AI Model Issues](common-issues/ai-models.md)

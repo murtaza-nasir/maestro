@@ -2,7 +2,7 @@
 
 Customize MAESTRO's visual appearance to suit your preferences.
 
-![Appearance Settings](../../assets/images/settings/appearance.png)
+![Appearance Settings](//assets/images/settings/appearance.png)
 
 ## Dark Mode
 

@@ -226,7 +226,7 @@ docker compose restart maestro-backend
 ### Check Documentation
 
 - [Installation Guide](../getting-started/installation/index.md)
-- [Common Issues](common-issues/index.md)
+- [Common Issues](common-issues/installation.md)
 - [Logs Guide](logs.md)
 - [Database Reset](database-reset.md)
 

@@ -2,7 +2,7 @@
 
 Manage your personal information and account security.
 
-![Profile Settings](../../assets/images/settings/profile.png)
+![Profile Settings](//assets/images/settings/profile.png)
 
 ## User Profile
 

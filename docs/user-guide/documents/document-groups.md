@@ -2,7 +2,7 @@
 
 Document Groups allow you to organize your library into logical collections, making it easier to manage large document sets and focus research on specific topics.
 
-![Document Groups View](../../images/user-guide/doc view document groups.png)
+<!-- Image not available: Document Groups View (doc view document groups.png) -->
 
 ## What are Document Groups?
 
@@ -79,7 +79,7 @@ Each group has:
 ## Group Operations
 
 ### Viewing Group Contents
-![Group Documents](../../images/user-guide/doc view document groups.png)
+<!-- Image not available: Group Documents (doc view document groups.png) -->
 
 Group view shows:
 - **Document List**: All documents in group
@@ -128,7 +128,7 @@ Groups provide focused context:
 - **Search Scope**: Search within group only
 
 ### Group Selection
-![Group Selection in Research](../../images/user-guide/doc view filters.png)
+<!-- Image not available: Group Selection in Research (doc view filters.png) -->
 
 In research interfaces:
 1. Click **"Select Group"** dropdown
@@ -304,7 +304,7 @@ groups or deleting groups, use the web interface or direct database operations.
 
 ## Next Steps
 
-- [Search Guide](search.md) - Search within groups
+- [Search Guide](overview.md#search) - Search within groups
 - [Research Overview](../research/overview.md) - Using groups in research
-- [Mission Settings](../research/mission-settings.md) - Group-based missions
+- [Mission Settings](../research/parameters.md) - Group-based missions
 - [Document Library](document-library.md) - Managing documents

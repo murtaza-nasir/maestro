@@ -319,7 +319,7 @@ docker stack deploy -c docker-compose.yml maestro
 
 ### Kubernetes
 
-See [Kubernetes Deployment](../../deployment/kubernetes/helm-chart.md) for Helm chart installation.
+See [Kubernetes Deployment](../../deployment/local-llms.md) for Helm chart installation.
 
 ## Troubleshooting
 
@@ -416,4 +416,4 @@ After successful installation:
 3. **[Upload Documents](../../user-guide/documents/uploading.md)** - Build your library
 4. **[Quick Start Guide](../quickstart.md)** - Start using MAESTRO
 
-For additional help, see our [Troubleshooting Guide](../../troubleshooting/index.md) or visit the [Community Forum](../../community/discussions.md).
+For additional help, see our [Troubleshooting Guide](../../troubleshooting/index.md) or visit the [Community Forum](https://github.com/murtaza-nasir/maestro/discussions).

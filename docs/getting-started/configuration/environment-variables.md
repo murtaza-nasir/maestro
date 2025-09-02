@@ -318,3 +318,22 @@ ALLOW_CORS_WILDCARD=false
 - [Search Provider Configuration](search-providers.md) - Set up web search
 - [First Login](../first-login.md) - Initial setup guide
 - [Configuration Overview](overview.md) - General configuration guide
+
+## Backup
+
+To backup your MAESTRO installation:
+
+1. **Database Backup**:
+   ```bash
+   docker exec maestro-postgres pg_dump -U maestro_user maestro_db > backup.sql
+   ```
+
+2. **Document Files Backup**:
+   ```bash
+   tar -czf documents.tar.gz ./data/raw_files ./data/markdown_files
+   ```
+
+3. **Vector Store Backup**:
+   ```bash
+   tar -czf vector_store.tar.gz ./data/vector_store
+   ```
