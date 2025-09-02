@@ -134,7 +134,7 @@ class SimplifiedWritingAgent:
         self._retriever = None
         self._query_preparer = None
 
-    async def run(self, prompt: str, draft_content: str, chat_history: str, context_info: Optional[Dict[str, Any]] = None, status_callback: Optional[callable] = None) -> Dict[str, Any]:
+    async def run(self, prompt: str, draft_content: str, chat_history: List[Dict[str, str]], context_info: Optional[Dict[str, Any]] = None, status_callback: Optional[callable] = None) -> Dict[str, Any]:
         """
         Executes the two-step writing process with optional context information and status updates.
         """
@@ -146,10 +146,12 @@ class SimplifiedWritingAgent:
         use_deep_search = search_config.get("deep_search", False)
         max_search_iterations = search_config.get("max_iterations", 3 if use_deep_search else 1)
         max_decomposed_queries = search_config.get("max_decomposed_queries", 10 if use_deep_search else 3)
-        max_search_results = search_config.get("max_results", 5)  # Get max_results from config
+        max_search_results = search_config.get("max_results", 5)  # Get max_results for web search
+        max_doc_results = search_config.get("max_doc_results", 5)  # Get max_doc_results for document search
         
         logger.info(f"SimplifiedWritingAgent.run called with prompt: {prompt[:200] + '...' if len(prompt) > 200 else prompt}")
-        logger.info(f"Available tools - Web search: {context_info.get('use_web_search', False)}, Document group: {context_info.get('document_group_id')}")
+        document_group_info = f"{context_info.get('document_group_name', 'Unknown')} ({context_info.get('document_group_id')})" if context_info.get('document_group_id') else None
+        logger.info(f"Available tools - Web search: {context_info.get('use_web_search', False)}, Document group: {document_group_info}")
         
         try:
             # Send initial status
@@ -202,7 +204,8 @@ class SimplifiedWritingAgent:
                 doc_results, doc_sources = await self._perform_iterative_document_search(
                     prompt, context_info["document_group_id"], chat_history, session_id, status_callback,
                     max_attempts=max_search_iterations,
-                    max_decomposed_queries=max_decomposed_queries
+                    max_decomposed_queries=max_decomposed_queries,
+                    max_doc_results=max_doc_results
                 )
                 external_context += doc_results
                 sources.extend(doc_sources)
@@ -216,6 +219,11 @@ class SimplifiedWritingAgent:
             # Step 3: Main LLM call with all available context
             main_response = await self._run_main_llm(prompt, draft_content, chat_history, external_context, context_info)
 
+            # Process citations to replace ref IDs with numbers and filter sources
+            used_sources = []
+            if sources:
+                main_response, used_sources = self._process_citations_and_filter_sources(main_response, sources)
+            
             if status_callback:
                 await status_callback("complete", "Response generated successfully")
 
@@ -223,7 +231,7 @@ class SimplifiedWritingAgent:
                 "chat_response": main_response,
                 "document_delta": "",  # Placeholder for document changes
                 "tools_used": tools_used,
-                "sources": sources
+                "sources": used_sources
             }
             
         except Exception as e:
@@ -276,7 +284,7 @@ class SimplifiedWritingAgent:
         else:
             return f"Router made an unclear decision: {decision}"
 
-    async def _run_router(self, prompt: str, chat_history: str, context_info: Dict[str, Any], status_callback: Optional[callable] = None) -> str:
+    async def _run_router(self, prompt: str, chat_history: List[Dict[str, str]], context_info: Dict[str, Any], status_callback: Optional[callable] = None) -> str:
         """
         Decides if external information is needed based on available tools.
         """
@@ -315,17 +323,21 @@ class SimplifiedWritingAgent:
         if has_document_group and has_web_search:
             # Both tools available - prefer using both for comprehensive research
             system_prompt = (
-                "You must decide which information sources to use.\n"
+                "You are a routing agent that must analyze the conversation history and decide which tools to use.\n"
                 f"Available tools: {tools_text}.\n\n"
-                "Decision rules:\n"
-                "- Use 'both' for: research questions, academic queries, technical analysis, "
-                "comprehensive reviews, or ANY query that would benefit from multiple perspectives\n"
-                "- Use 'documents' ONLY when: user specifically asks to focus on documents/papers, "
-                "or the query is about specific content within the provided documents\n"
-                "- Use 'search' ONLY when: user specifically asks for web/current information, "
-                "or the query is exclusively about recent events, news, or real-time data\n"
-                "- Use 'none' ONLY for: general conversation, opinions, or creative writing with no factual requirements\n\n"
-                "When in doubt, prefer 'both' for comprehensive research coverage.\n"
+                "CRITICAL: You MUST carefully read and understand the conversation history before deciding.\n\n"
+                "Decision process:\n"
+                "1. Read the ENTIRE conversation history\n"
+                "2. Understand what information has already been tried and what worked/didn't work\n"
+                "3. If previous document searches yielded outdated or irrelevant information, don't repeat the same mistake\n"
+                "4. Consider the nature of the query - is it asking for current/recent/latest information?\n"
+                "5. If the user is questioning your previous choice of sources, learn from that feedback\n\n"
+                "Tool selection rules:\n"
+                "- 'both': DEFAULT choice for most research queries - provides comprehensive coverage\n"
+                "- 'search': When documents have proven unhelpful OR query needs current information\n"
+                "- 'documents': ONLY when user explicitly wants document-only search OR revisiting specific document content\n"
+                "- 'none': ONLY for pure creative tasks or casual conversation\n\n"
+                "Learn from the conversation: If documents didn't help before, they probably won't help now unless the query changed significantly.\n\n"
                 "Output ONLY one word: 'search', 'documents', 'both', or 'none'."
             )
         elif has_document_group:
@@ -356,34 +368,57 @@ class SimplifiedWritingAgent:
                 "Output ONLY: 'none'"
             )
         
-        # Use full chat history up to a reasonable token limit (approximately 100k tokens = ~400k chars)
-        MAX_HISTORY_CHARS = 400000  # Roughly 100k tokens
-        if len(chat_history) > MAX_HISTORY_CHARS:
-            # Keep the most recent history when we exceed the limit
-            truncated_history = "... [earlier conversation truncated] ...\n" + chat_history[-MAX_HISTORY_CHARS:]
+        # Build messages list with proper structure
+        messages = []
+        
+        # Add conversation history as proper messages (limit to recent history to avoid token overflow)
+        MAX_HISTORY_MESSAGES = 20  # Keep last 20 messages (10 exchanges)
+        if len(chat_history) > MAX_HISTORY_MESSAGES:
+            recent_history = chat_history[-MAX_HISTORY_MESSAGES:]
+            # Include truncation note in system prompt
+            system_prompt = "Note: Earlier conversation history has been truncated for context window management.\n\n" + system_prompt
         else:
-            truncated_history = chat_history
+            recent_history = chat_history
         
-        # Use full prompt without truncation
-        user_message = f"User request: {prompt}"
+        # Add system message
+        messages.append({"role": "system", "content": system_prompt})
         
-        # Add context if available
-        if truncated_history:
-            user_message = f"Recent conversation context:\n{truncated_history}\n\n{user_message}"
+        # Add the conversation history, ensuring role alternation
+        last_role = "system"
+        for msg in recent_history:
+            # Skip if same role as previous to maintain alternation
+            if msg["role"] == last_role:
+                # If it's the same role, we need to merge or skip
+                if last_role == "user":
+                    # For consecutive user messages, merge them
+                    messages[-1]["content"] += "\n\n" + msg["content"]
+                elif last_role == "assistant":
+                    # For consecutive assistant messages, merge them
+                    messages[-1]["content"] += "\n\n" + msg["content"]
+                # Skip system messages that would break alternation
+                continue
+            else:
+                messages.append({"role": msg["role"], "content": msg["content"]})
+                last_role = msg["role"]
+        
+        # Build the current user message
+        current_user_message = f"User request: {prompt}"
         
         # Add hint about document availability when relevant
         if has_document_group:
-            user_message += "\n\nNote: The user has provided documents for you to reference."
+            current_user_message += "\n\nNote: The user has provided documents for you to reference."
         
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message}
-        ]
+        # Only add user message if the last message wasn't from user
+        if last_role == "user":
+            # Merge with the last user message
+            messages[-1]["content"] += "\n\n" + current_user_message
+        else:
+            messages.append({"role": "user", "content": current_user_message})
         
         # Debug: Log message sizes
-        system_size = len(system_prompt)
-        user_size = len(user_message)
-        logger.info(f"Router message sizes - System: {system_size}, User: {user_size}, Total: {system_size + user_size}")
+        total_messages = len(messages)
+        total_chars = sum(len(msg["content"]) for msg in messages)
+        logger.info(f"Router messages - Total messages: {total_messages}, Total chars: {total_chars}")
         
         try:
             # Note: response_format may not be supported by all models, so we don't use it
@@ -482,7 +517,7 @@ class SimplifiedWritingAgent:
                 logger.debug(f"Failed router messages: {messages}")
                 return "none"
 
-    async def _enrich_search_query(self, raw_query: str, chat_history: str, context_type: str = "web") -> str:
+    async def _enrich_search_query(self, raw_query: str, chat_history: List[Dict[str, str]], context_type: str = "web") -> str:
         """
         Enriches a raw search query with context from chat history to make it more specific and effective.
         
@@ -502,11 +537,14 @@ class SimplifiedWritingAgent:
             # Extract recent context from chat history (last 2-3 exchanges)
             recent_context = ""
             if chat_history:
-                # Split by common patterns and take recent parts
-                history_parts = chat_history.split('\n\n')
-                # Take last few exchanges for context
-                recent_parts = history_parts[-6:] if len(history_parts) > 6 else history_parts
-                recent_context = '\n'.join(recent_parts)
+                # Take last 6 messages (3 exchanges) for context
+                recent_messages = chat_history[-6:] if len(chat_history) > 6 else chat_history
+                # Format as conversation
+                context_parts = []
+                for msg in recent_messages:
+                    role = "User" if msg["role"] == "user" else "Assistant"
+                    context_parts.append(f"{role}: {msg['content']}")
+                recent_context = '\n'.join(context_parts)
             
             # Create enrichment prompt based on search type
             if context_type == "web":
@@ -561,9 +599,10 @@ class SimplifiedWritingAgent:
             logger.error(f"Error during query enrichment: {e}", exc_info=True)
             return raw_query
 
-    async def _perform_web_search(self, query: str, chat_history: str = "", session_id: str = None, max_search_results: int = 5, status_callback: Optional[callable] = None) -> tuple[str, List[Dict[str, Any]]]:
+    async def _perform_web_search(self, query: str, chat_history: List[Dict[str, str]] = None, session_id: str = None, max_search_results: int = 5, status_callback: Optional[callable] = None) -> tuple[str, List[Dict[str, Any]]]:
         """
         Performs web search with query enrichment and returns formatted results with source metadata.
+        Now uses parallel processing for relevance checking and content fetching.
         Returns: (formatted_results, sources_list)
         """
         try:
@@ -576,7 +615,7 @@ class SimplifiedWritingAgent:
                 await status_callback("searching_web", f"Searching for: {query_preview}")
             
             # Enrich the query with context from chat history
-            enriched_query = await self._enrich_search_query(raw_query=query, chat_history=chat_history, context_type="web")
+            enriched_query = await self._enrich_search_query(raw_query=query, chat_history=chat_history or [], context_type="web")
             
             # Use cached web search tool or create new one
             if not self._web_search_tool:
@@ -601,83 +640,145 @@ class SimplifiedWritingAgent:
                 logger.warning("No web search results found")
                 return f"\n\n[No web search results found for: {query}]\n", []
             
-            # Format results with source metadata and collect sources
-            formatted_results = f"\n\n=== WEB SEARCH RESULTS ===\nOriginal Query: {query}\nEnriched Query: {enriched_query}\nProvider: {config.WEB_SEARCH_PROVIDER.capitalize()}\nResults found: {len(results)}\n\n"
-            sources = []
+            # PARALLEL STEP 1: Assess relevance of all results in parallel
+            if status_callback:
+                await status_callback("assessing_relevance", f"Evaluating relevance of {len(results)} search results...")
             
+            relevance_tasks = []
+            result_items = []
             for i, result_item in enumerate(results, 1):
                 title = result_item.get("title", "No Title")
                 snippet = result_item.get("snippet", "No content available")
                 url = result_item.get("url", "#")
                 
-                # Assess relevance of this result
-                is_relevant = await self._assess_search_result_relevance(
+                # Create coroutine for parallel relevance assessment
+                task = self._assess_search_result_relevance(
                     query=query,
                     title=title,
                     snippet=snippet,
                     url=url
                 )
+                relevance_tasks.append(task)
+                result_items.append((i, result_item))
+            
+            # Execute all relevance assessments in parallel using asyncio.gather
+            relevance_assessments = await asyncio.gather(*relevance_tasks, return_exceptions=True)
+            
+            # Process results and handle any exceptions
+            relevance_results = []
+            for (i, result_item), is_relevant in zip(result_items, relevance_assessments):
+                if isinstance(is_relevant, Exception):
+                    logger.error(f"Error assessing relevance for result {i}: {is_relevant}")
+                    is_relevant = False  # Default to not relevant on error
+                relevance_results.append((i, result_item, is_relevant))
+            
+            logger.info(f"Completed parallel relevance assessment for {len(results)} results")
+            
+            # Filter relevant results for content fetching
+            relevant_results = [(i, item) for i, item, is_relevant in relevance_results if is_relevant]
+            non_relevant_count = len(results) - len(relevant_results)
+            
+            if non_relevant_count > 0:
+                logger.info(f"Filtered {non_relevant_count} non-relevant results out of {len(results)} total")
+            
+            # PARALLEL STEP 2: Fetch content for all relevant results in parallel
+            if relevant_results and status_callback:
+                await status_callback("fetching_content", f"Fetching full content from {len(relevant_results)} relevant sources...")
+            
+            fetch_tasks = []
+            fetch_items = []
+            for i, result_item in relevant_results:
+                url = result_item.get("url", "#")
+                # Create coroutine for parallel content fetching
+                task = self._fetch_web_page_content(url, session_id)
+                fetch_tasks.append(task)
+                fetch_items.append((i, result_item))
+            
+            # Execute all content fetches in parallel using asyncio.gather
+            if fetch_tasks:
+                fetched_results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+            else:
+                fetched_results = []
+            
+            # Process fetched contents and handle exceptions
+            fetched_contents = []
+            for (i, result_item), content in zip(fetch_items, fetched_results):
+                if isinstance(content, Exception):
+                    logger.error(f"Error fetching content for result {i}: {content}")
+                    content = {"error": str(content)}
+                fetched_contents.append((i, result_item, content))
+            
+            logger.info(f"Completed parallel content fetching for {len(relevant_results)} relevant results")
+            
+            # Track web fetches for stats
+            if session_id and relevant_results:
+                # Track all fetches at once
+                for _ in relevant_results:
+                    await self.stats_tracker.track_web_fetch(session_id)
+            
+            # Format results with fetched content
+            formatted_results = f"\n\n=== WEB SEARCH RESULTS ===\nOriginal Query: {query}\nEnriched Query: {enriched_query}\nProvider: {config.WEB_SEARCH_PROVIDER.capitalize()}\nResults found: {len(results)}\n\n"
+            sources = []
+            
+            # Create reference ID mapping for citations
+            import hashlib
+            
+            # Process fetched contents
+            for i, result_item, full_content in fetched_contents:
+                title = result_item.get("title", "No Title")
+                snippet = result_item.get("snippet", "No content available")
+                url = result_item.get("url", "#")
                 
-                if is_relevant:
-                    logger.info(f"Result {i} deemed relevant, fetching full content from: {url[:60]}...")
-                    
-                    # Send status update when fetching content
-                    if status_callback:
-                        await status_callback("fetching_content", f"Fetching full content from: {title[:50]}...")
-                    
-                    # Fetch full content using the web page fetcher
-                    full_content = await self._fetch_web_page_content(url, session_id)
-                    
-                    if full_content and "error" not in full_content:
-                        # Use full content instead of snippet
-                        content_text = full_content.get("text", snippet)[:5000]  # Limit content length
-                        formatted_results += f"**Result {i}: {title}** [FULL CONTENT]\n"
-                        formatted_results += f"Source: {url}\n"
-                        formatted_results += f"Content: {content_text}\n\n"
-                        
-                        # Track that we fetched full content
-                        if session_id:
-                            await self.stats_tracker.track_web_fetch(session_id)
-                        
-                        # Add to sources list ONLY if we successfully fetched content
-                        sources.append({
-                            "type": "web",
-                            "title": title,
-                            "url": url,
-                            "provider": config.WEB_SEARCH_PROVIDER.capitalize()
-                        })
-                    else:
-                        # Fall back to snippet if fetch failed
-                        logger.warning(f"Failed to fetch full content for {url[:60]}, using snippet")
-                        formatted_results += f"**Result {i}: {title}**\n"
-                        formatted_results += f"Source: {url}\n"
-                        formatted_results += f"Content: {snippet}\n\n"
-                        
-                        # Still add to sources since we're using the snippet
-                        sources.append({
-                            "type": "web",
-                            "title": title,
-                            "url": url,
-                            "provider": config.WEB_SEARCH_PROVIDER.capitalize()
-                        })
-                else:
-                    # Not relevant enough for full fetch, just use snippet
-                    logger.debug(f"Result {i} not relevant enough for full fetch: {title[:60]}")
-                    formatted_results += f"**Result {i}: {title}** [NOT RELEVANT]\n"
+                # Generate a stable reference ID for this source (using URL hash)
+                ref_id = hashlib.sha1(url.encode()).hexdigest()[:8]
+                
+                if full_content and "error" not in full_content:
+                    # Use full content instead of snippet
+                    content_text = full_content.get("text", snippet)[:5000]  # Limit content length
+                    formatted_results += f"**Result {i}: {title}** [FULL CONTENT]\n"
                     formatted_results += f"Source: {url}\n"
+                    formatted_results += f"**Citation ID: [{ref_id}]** - Use this ID when citing information from this source\n"
+                    formatted_results += f"Content: {content_text}\n\n"
+                    
+                    # Add to sources list with reference ID
+                    sources.append({
+                        "type": "web",
+                        "title": title,
+                        "url": url,
+                        "ref_id": ref_id,
+                        "provider": config.WEB_SEARCH_PROVIDER.capitalize()
+                    })
+                else:
+                    # Fall back to snippet if fetch failed
+                    logger.warning(f"Failed to fetch full content for {url[:60]}, using snippet")
+                    formatted_results += f"**Result {i}: {title}**\n"
+                    formatted_results += f"Source: {url}\n"
+                    formatted_results += f"**Citation ID: [{ref_id}]** - Use this ID when citing information from this source\n"
                     formatted_results += f"Content: {snippet}\n\n"
-                    # DO NOT add non-relevant results to sources list
+                    
+                    # Still add to sources since we're using the snippet
+                    sources.append({
+                        "type": "web",
+                        "title": title,
+                        "url": url,
+                        "ref_id": ref_id,
+                        "provider": config.WEB_SEARCH_PROVIDER.capitalize()
+                    })
+            
+            # Add summary of filtered results
+            if non_relevant_count > 0:
+                formatted_results += f"\n[Note: {non_relevant_count} out of {len(results)} sources were deemed not relevant and excluded]\n\n"
             
             formatted_results += "=== END WEB SEARCH RESULTS ===\n"
             
-            logger.info(f"Web search completed successfully, found {len(results)} results")
+            logger.info(f"Web search completed successfully with parallel processing, found {len(results)} results, {len(sources)} relevant")
             return formatted_results, sources
             
         except Exception as e:
             logger.error(f"Error performing web search: {e}", exc_info=True)
             return f"\n\n[Web Search Error: {str(e)}]\n", []
 
-    async def _search_documents(self, query: str, document_group_id: str, chat_history: str = "", session_id: str = None) -> tuple[str, List[Dict[str, Any]]]:
+    async def _search_documents(self, query: str, document_group_id: str, chat_history: List[Dict[str, str]] = None, session_id: str = None, max_doc_results: int = 5) -> tuple[str, List[Dict[str, Any]]]:
         """
         Searches documents in the specified group with query enrichment and returns relevant content with source metadata.
         Returns: (formatted_results, sources_list)
@@ -691,7 +792,7 @@ class SimplifiedWritingAgent:
             from ai_researcher.core_rag.reranker import TextReranker
             
             # Enrich the query with context from chat history for document search
-            enriched_query = await self._enrich_search_query(raw_query=query, chat_history=chat_history, context_type="document")
+            enriched_query = await self._enrich_search_query(raw_query=query, chat_history=chat_history or [], context_type="document")
             
             # Use cached RAG components when possible
             logger.info(f"Using document search components for group: {document_group_id}")
@@ -750,7 +851,7 @@ class SimplifiedWritingAgent:
             logger.info(f"Executing document search for enriched query: {enriched_query} in group: {document_group_id}")
             results = await doc_search_tool.execute(
                 query=enriched_query,
-                n_results=5,
+                n_results=max_doc_results,
                 document_group_id=document_group_id,
                 use_reranker=True
             )
@@ -794,9 +895,18 @@ class SimplifiedWritingAgent:
                 
                 chunk_id = metadata.get("chunk_id", "Unknown")
                 
+                # Use the first 8 chars of doc_id as reference ID (or generate one if doc_id is missing)
+                if doc_id != "Unknown" and len(doc_id) >= 8:
+                    ref_id = doc_id[:8]
+                else:
+                    # Generate a hash-based ID from content for consistency
+                    import hashlib
+                    ref_id = hashlib.sha1(text.encode()).hexdigest()[:8]
+                
                 formatted_results += f"**Document Result {i}**\n"
                 formatted_results += f"Source: {filename} (Page {page_num})\n"
                 formatted_results += f"Document ID: {doc_id}\n"
+                formatted_results += f"**Citation ID: [{ref_id}]** - Use this ID when citing information from this document\n"
                 formatted_results += f"Chunk ID: {chunk_id}\n"
                 formatted_results += f"Content: {text[:500]}{'...' if len(text) > 500 else ''}\n\n"
                 
@@ -812,6 +922,7 @@ class SimplifiedWritingAgent:
                         "title": display_title,
                         "page": str(page_num) if page_num != "Unknown" else "Unknown",
                         "doc_id": doc_id,
+                        "ref_id": ref_id,
                         "chunk_id": chunk_id
                     })
                     seen_documents[doc_id] = True
@@ -842,6 +953,8 @@ class SimplifiedWritingAgent:
                 f"You are a content quality assessor. Evaluate if the retrieved {content_type} content adequately addresses the user's query.\n\n"
                 f"User's Query: {query}\n\n"
                 f"Retrieved Content:\n{content[:2000]}{'...' if len(content) > 2000 else ''}\n\n"
+                f"IMPORTANT: If you see notes about sources being filtered as not relevant, "
+                f"score the quality MUCH lower (typically 2-3/10) and suggest query refinements.\n\n"
                 f"Rate the content quality and determine if more searches are needed.\n\n"
                 f"CRITICAL: Respond with ONLY a JSON object, no other text:\n"
                 f"{{\n"
@@ -922,7 +1035,7 @@ class SimplifiedWritingAgent:
                 "refined_query_suggestion": query
             }
 
-    async def _decompose_complex_query(self, query: str, chat_history: str = "", search_type: str = "web", max_queries: int = 10) -> List[str]:
+    async def _decompose_complex_query(self, query: str, chat_history: List[Dict[str, str]] = None, search_type: str = "web", max_queries: int = 10) -> List[str]:
         """
         Breaks down complex queries into separate, focused search queries for better results.
         
@@ -943,9 +1056,14 @@ class SimplifiedWritingAgent:
             # Extract recent context for better decomposition
             recent_context = ""
             if chat_history:
-                history_parts = chat_history.split('\n\n')
-                recent_parts = history_parts[-4:] if len(history_parts) > 4 else history_parts
-                recent_context = '\n'.join(recent_parts)
+                # Take last 4 messages (2 exchanges) for context
+                recent_messages = chat_history[-4:] if len(chat_history) > 4 else chat_history
+                # Format as conversation
+                context_parts = []
+                for msg in recent_messages:
+                    role = "User" if msg["role"] == "user" else "Assistant"
+                    context_parts.append(f"{role}: {msg['content']}")
+                recent_context = '\n'.join(context_parts)
             
             decomposition_prompt = (
                 f"You are a query decomposition specialist. Your job is to analyze complex queries and break them down into "
@@ -1089,7 +1207,7 @@ class SimplifiedWritingAgent:
         # No decomposition possible
         return [query]
 
-    async def _perform_iterative_web_search(self, query: str, chat_history: str = "", session_id: str = None, status_callback: Optional[callable] = None, max_attempts: int = 3, max_decomposed_queries: int = 10, max_search_results: int = 5) -> tuple[str, List[Dict[str, Any]]]:
+    async def _perform_iterative_web_search(self, query: str, chat_history: List[Dict[str, str]] = None, session_id: str = None, status_callback: Optional[callable] = None, max_attempts: int = 3, max_decomposed_queries: int = 10, max_search_results: int = 5) -> tuple[str, List[Dict[str, Any]]]:
         """
         Performs iterative web search with advanced reasoning - decomposes complex queries 
         into focused searches and performs quality-driven iteration.
@@ -1161,7 +1279,7 @@ class SimplifiedWritingAgent:
         
         return all_results, all_sources
 
-    async def _perform_focused_iterative_web_search(self, focused_query: str, original_query: str, chat_history: str = "", session_id: str = None, global_seen_urls: set = None, max_attempts: int = 3, status_callback: Optional[callable] = None, max_search_results: int = 5, search_number: int = 1, total_searches: int = 1) -> tuple[str, List[Dict[str, Any]]]:
+    async def _perform_focused_iterative_web_search(self, focused_query: str, original_query: str, chat_history: List[Dict[str, str]] = None, session_id: str = None, global_seen_urls: set = None, max_attempts: int = 3, status_callback: Optional[callable] = None, max_search_results: int = 5, search_number: int = 1, total_searches: int = 1) -> tuple[str, List[Dict[str, Any]]]:
         """
         Performs iterative search for a single focused query with quality assessment.
         Integrates with existing query enrichment for optimal results.
@@ -1220,84 +1338,134 @@ class SimplifiedWritingAgent:
                             search_results = f"\n\n[No focused web search results found for: {current_query}]\n"
                             search_sources = []
                         else:
-                            # Format results similar to _perform_web_search
+                            # PARALLEL PROCESSING: Process all results in parallel
                             search_results = f"\n\nFocused Query: {current_query}\nEnriched Query: {enriched_query}\nProvider: {config.WEB_SEARCH_PROVIDER.capitalize()}\nResults found: {len(results)}\n\n"
-                            search_sources = []
                             
+                            # Filter out already-seen URLs first
+                            unseen_results = []
                             for i, result_item in enumerate(results, 1):
-                                title = result_item.get("title", "No Title")
-                                snippet = result_item.get("snippet", "No content available")
                                 url = result_item.get("url", "#")
-                                
-                                # Skip if URL already seen
-                                if url in global_seen_urls or url in local_seen_urls:
+                                if url not in global_seen_urls and url not in local_seen_urls:
+                                    unseen_results.append((i, result_item))
+                                    local_seen_urls.add(url)  # Track immediately
+                                else:
                                     if url in global_seen_urls:
                                         logger.debug(f"Filtered globally seen URL: {url[:60]}...")
                                     else:
                                         logger.debug(f"Filtered locally seen URL: {url[:60]}...")
-                                    continue
+                            
+                            if unseen_results:
+                                # STEP 1: Assess relevance of all unseen results in parallel
+                                if status_callback and len(unseen_results) > 1:
+                                    await status_callback("assessing_relevance", f"[Search {search_number}/{total_searches}] Evaluating {len(unseen_results)} results...")
                                 
-                                # Assess relevance of this result
-                                is_relevant = await self._assess_search_result_relevance(
-                                    query=original_query,
-                                    title=title,
-                                    snippet=snippet,
-                                    url=url
-                                )
-                                
-                                if is_relevant:
-                                    logger.info(f"Result {i} deemed relevant, fetching full content from: {url[:60]}...")
+                                relevance_tasks = []
+                                for i, result_item in unseen_results:
+                                    title = result_item.get("title", "No Title")
+                                    snippet = result_item.get("snippet", "No content available")
+                                    url = result_item.get("url", "#")
                                     
-                                    # Update status to show we're fetching content
+                                    task = self._assess_search_result_relevance(
+                                        query=original_query,
+                                        title=title,
+                                        snippet=snippet,
+                                        url=url
+                                    )
+                                    relevance_tasks.append((i, result_item, task))
+                                
+                                # Execute all relevance assessments in parallel
+                                all_relevance_coroutines = [task for _, _, task in relevance_tasks]
+                                relevance_assessments = await asyncio.gather(*all_relevance_coroutines, return_exceptions=True)
+                                
+                                # Process results
+                                relevance_results = []
+                                for (i, result_item, _), is_relevant in zip(relevance_tasks, relevance_assessments):
+                                    if isinstance(is_relevant, Exception):
+                                        logger.error(f"Error assessing relevance for result {i}: {is_relevant}")
+                                        is_relevant = False
+                                    relevance_results.append((i, result_item, is_relevant))
+                                
+                                # Filter relevant results
+                                relevant_for_fetch = [(i, item) for i, item, is_relevant in relevance_results if is_relevant]
+                                
+                                if relevant_for_fetch:
+                                    # STEP 2: Fetch content for all relevant results in parallel
                                     if status_callback:
-                                        fetch_msg = f"[Search {search_number}/{total_searches}] Fetching content from relevant result..."
-                                        await status_callback("fetching_content", fetch_msg)
+                                        await status_callback("fetching_content", f"[Search {search_number}/{total_searches}] Fetching {len(relevant_for_fetch)} relevant sources...")
                                     
-                                    # Fetch full content using the web page fetcher
-                                    full_content = await self._fetch_web_page_content(url, session_id)
+                                    fetch_tasks = []
+                                    for i, result_item in relevant_for_fetch:
+                                        url = result_item.get("url", "#")
+                                        task = self._fetch_web_page_content(url, session_id)
+                                        fetch_tasks.append((i, result_item, task))
                                     
-                                    if full_content and "error" not in full_content:
-                                        # Use full content instead of snippet
-                                        content_text = full_content.get("text", snippet)[:5000]  # Limit content length
-                                        search_results += f"**Result {i}: {title}** [FULL CONTENT]\n"
-                                        search_results += f"Source: {url}\n"
-                                        search_results += f"Content: {content_text}\n\n"
-                                        
-                                        # Track that we fetched full content
-                                        if session_id:
+                                    # Execute all fetches in parallel
+                                    fetched_contents = await asyncio.gather(*[task for _, _, task in fetch_tasks], return_exceptions=True)
+                                    
+                                    # Track all web fetches for stats
+                                    if session_id:
+                                        for _ in relevant_for_fetch:
                                             await self.stats_tracker.track_web_fetch(session_id)
+                                    
+                                    # Process fetched content
+                                    search_sources = []
+                                    for (i, result_item, _), content in zip(fetch_tasks, fetched_contents):
+                                        title = result_item.get("title", "No Title")
+                                        snippet = result_item.get("snippet", "No content available")
+                                        url = result_item.get("url", "#")
                                         
-                                        # Add to sources ONLY if we successfully fetched content
-                                        search_sources.append({
-                                            "type": "web",
-                                            "title": title,
-                                            "url": url,
-                                            "provider": config.WEB_SEARCH_PROVIDER.capitalize()
-                                        })
-                                    else:
-                                        # Fall back to snippet if fetch failed
-                                        logger.warning(f"Failed to fetch full content for {url[:60]}, using snippet")
-                                        search_results += f"**Result {i}: {title}**\n"
-                                        search_results += f"Source: {url}\n"
-                                        search_results += f"Content: {snippet}\n\n"
+                                        if isinstance(content, Exception):
+                                            logger.error(f"Error fetching content: {content}")
+                                            content = {"error": str(content)}
                                         
-                                        # Still add to sources since we're using the snippet
-                                        search_sources.append({
-                                            "type": "web",
-                                            "title": title,
-                                            "url": url,
-                                            "provider": config.WEB_SEARCH_PROVIDER.capitalize()
-                                        })
+                                        # Generate a stable reference ID for this source (using URL hash)
+                                        import hashlib
+                                        ref_id = hashlib.sha1(url.encode()).hexdigest()[:8]
+                                        
+                                        if content and "error" not in content:
+                                            # Use full content
+                                            content_text = content.get("text", snippet)[:5000]
+                                            search_results += f"**Result {i}: {title}** [FULL CONTENT]\n"
+                                            search_results += f"Source: {url}\n"
+                                            search_results += f"**Citation ID: [{ref_id}]** - Use this ID when citing information from this source\n"
+                                            search_results += f"Content: {content_text}\n\n"
+                                            
+                                            search_sources.append({
+                                                "type": "web",
+                                                "title": title,
+                                                "url": url,
+                                                "ref_id": ref_id,
+                                                "provider": config.WEB_SEARCH_PROVIDER.capitalize()
+                                            })
+                                        else:
+                                            # Fall back to snippet
+                                            logger.warning(f"Failed to fetch full content for {url[:60]}, using snippet")
+                                            search_results += f"**Result {i}: {title}**\n"
+                                            search_results += f"Source: {url}\n"
+                                            search_results += f"**Citation ID: [{ref_id}]** - Use this ID when citing information from this source\n"
+                                            search_results += f"Content: {snippet}\n\n"
+                                            
+                                            search_sources.append({
+                                                "type": "web",
+                                                "title": title,
+                                                "url": url,
+                                                "ref_id": ref_id,
+                                                "provider": config.WEB_SEARCH_PROVIDER.capitalize()
+                                            })
                                 else:
-                                    # Not relevant enough for full fetch, don't use
-                                    logger.debug(f"Result {i} not relevant enough for full fetch: {title[:60]}")
-                                    search_results += f"**Result {i}: {title}** [NOT RELEVANT]\n"
-                                    search_results += f"Source: {url}\n"
-                                    search_results += f"Content: {snippet}\n\n"
-                                    # DO NOT add non-relevant results to sources list
-                                
-                                # Track seen URLs regardless of relevance
-                                local_seen_urls.add(url)
+                                    search_sources = []
+                                    logger.info(f"No relevant results found in {len(unseen_results)} unseen URLs")
+                            else:
+                                search_sources = []
+                                logger.info("All URLs were already seen")
+                            
+                            # Add summary of filtered results
+                            total_results = len(results)
+                            relevant_results = len(search_sources)
+                            non_relevant_count = total_results - relevant_results
+                            
+                            if non_relevant_count > 0:
+                                search_results += f"\n[Note: {non_relevant_count} out of {total_results} sources were deemed not relevant and excluded]\n"
                             
                             search_results += "\n"
                             
@@ -1305,6 +1473,12 @@ class SimplifiedWritingAgent:
                     logger.error(f"Error performing focused web search: {search_error}", exc_info=True)
                     search_results = f"\n\n[Focused Web Search Error: {str(search_error)}]\n"
                     search_sources = []
+                
+                # Check if we found NO relevant sources at all
+                if len(search_sources) == 0 and attempt < max_attempts:
+                    # Force at least one more attempt when no sources are relevant
+                    logger.info(f"No relevant sources found on attempt {attempt + 1}, forcing additional attempt")
+                    max_attempts = max(max_attempts, attempt + 2)  # Ensure at least one more try
                 
                 # Assess quality against the original query intent
                 assessment = await self._assess_content_quality(original_query, search_results, "web")
@@ -1347,7 +1521,7 @@ class SimplifiedWritingAgent:
         
         return focused_results, focused_sources
 
-    async def _perform_iterative_document_search(self, query: str, document_group_id: str, chat_history: str = "", session_id: str = None, status_callback: Optional[callable] = None, max_attempts: int = 3, max_decomposed_queries: int = 10) -> tuple[str, List[Dict[str, Any]]]:
+    async def _perform_iterative_document_search(self, query: str, document_group_id: str, chat_history: List[Dict[str, str]] = None, session_id: str = None, status_callback: Optional[callable] = None, max_attempts: int = 3, max_decomposed_queries: int = 10, max_doc_results: int = 5) -> tuple[str, List[Dict[str, Any]]]:
         """
         Performs iterative document search with advanced reasoning - decomposes complex queries 
         into focused searches and performs quality-driven iteration.
@@ -1374,7 +1548,7 @@ class SimplifiedWritingAgent:
             
             # Perform iterative search for this focused query
             focused_results, focused_sources = await self._perform_focused_iterative_document_search(
-                focused_query, query, document_group_id, chat_history, session_id, seen_doc_ids, max_attempts, status_callback
+                focused_query, query, document_group_id, chat_history, session_id, seen_doc_ids, max_attempts, status_callback, max_doc_results
             )
             
             # Add results with clear separation
@@ -1393,7 +1567,7 @@ class SimplifiedWritingAgent:
         
         return all_results, all_sources
 
-    async def _perform_focused_iterative_document_search(self, focused_query: str, original_query: str, document_group_id: str, chat_history: str = "", session_id: str = None, global_seen_docs: set = None, max_attempts: int = 3, status_callback: Optional[callable] = None) -> tuple[str, List[Dict[str, Any]]]:
+    async def _perform_focused_iterative_document_search(self, focused_query: str, original_query: str, document_group_id: str, chat_history: List[Dict[str, str]] = None, session_id: str = None, global_seen_docs: set = None, max_attempts: int = 3, status_callback: Optional[callable] = None, max_doc_results: int = 5) -> tuple[str, List[Dict[str, Any]]]:
         """
         Performs iterative document search for a single focused query with quality assessment.
         Integrates with existing query enrichment for optimal results.
@@ -1423,7 +1597,7 @@ class SimplifiedWritingAgent:
                 # Perform the search using the existing _search_documents method 
                 # which already handles enrichment, so we'll pass the focused query directly
                 # to avoid double-enrichment
-                search_results, search_sources = await self._search_documents(current_query, document_group_id, chat_history, session_id)
+                search_results, search_sources = await self._search_documents(current_query, document_group_id, chat_history, session_id, max_doc_results)
                 
                 # Filter out documents we've already seen globally and locally
                 filtered_sources = []
@@ -1481,7 +1655,7 @@ class SimplifiedWritingAgent:
         
         return focused_results, focused_sources
 
-    async def _run_main_llm(self, prompt: str, draft_content: str, chat_history: str, external_context: str = "", context_info: Dict[str, Any] = None) -> str:
+    async def _run_main_llm(self, prompt: str, draft_content: str, chat_history: List[Dict[str, str]], external_context: str = "", context_info: Dict[str, Any] = None) -> str:
         """
         Generates the main response and document modifications with all available context.
         """
@@ -1499,13 +1673,15 @@ class SimplifiedWritingAgent:
         # Build tool status information
         web_search_enabled = context_info.get("use_web_search", False)
         document_group_id = context_info.get("document_group_id")
+        document_group_name = context_info.get("document_group_name")
         document_search_enabled = bool(document_group_id)
         
         tool_status = f"\n\nCURRENT TOOL STATUS:\n"
         tool_status += f"- Web Search: {'ENABLED' if web_search_enabled else 'DISABLED'}\n"
         tool_status += f"- Document Search: {'ENABLED' if document_search_enabled else 'DISABLED'}"
         if document_search_enabled:
-            tool_status += f" (Document Group: {document_group_id})"
+            group_display = document_group_name if document_group_name else document_group_id
+            tool_status += f" (Document Group: {group_display})"
         tool_status += "\n"
         
         # Get custom system prompt addition from context_info
@@ -1513,39 +1689,68 @@ class SimplifiedWritingAgent:
         
         # Default system prompt (always used as base)
         system_prompt = (
-            "You are a collaborative writing assistant helping users write documents. "
+            "You are Maestro, a collaborative writing assistant helping users write documents. "
             "Your responses should be helpful, informative, and directly address the user's request. "
             "You have access to information about which tools are currently enabled or disabled. "
-            "If a user's request would benefit from a tool that is currently disabled, suggest they enable it. "
-            "When you have access to external information (web search results or document search results), "
-            "integrate that information naturally into your response and cite your sources appropriately. "
+            "\n\nCRITICAL - MATHEMATICAL NOTATION: Always use standard Markdown/LaTeX notation:\n"
+            "• For inline math: $formula$ (single dollar signs)\n"
+            "• For display math: $$formula$$ (double dollar signs on separate lines)\n"
+            "• NEVER use square brackets [ ], parentheses \\( \\), or \\begin{equation} for math delimiters\n"
+            "If a user's request would benefit from a tool that is currently disabled, suggest they enable it.\n\n"
+            "CITATION INSTRUCTIONS:\n"
+            "When you have access to external information (web search or document search results), you MUST:\n"
+            "1. Integrate that information naturally into your response\n"
+            "2. Add citations using the EXACT Citation IDs provided in square brackets\n"
+            "3. Place citations IMMEDIATELY after the relevant statement or claim\n"
+            "4. Use ONLY the 8-character Citation IDs shown in the search results\n\n"
+            "CORRECT citation examples:\n"
+            "- 'Recent studies show that climate change is accelerating [a3b4c5d6].'\n"
+            "- 'The document states that revenue increased by 25% [f2e8d9c1] in Q3.'\n"
+            "- 'According to the research [b7a4e3f2], this method improves accuracy.'\n\n"
+            "INCORRECT citations (NEVER do this):\n"
+            "- 'Recent studies show this [1].' ← Wrong! Don't use numbers\n"
+            "- 'The data shows [Source 1]...' ← Wrong! Use the exact Citation ID\n"
+            "- 'According to research...' ← Wrong! Missing citation\n\n"
+            "Each search result will show '**Citation ID: [xxxxxxxx]**' - use these EXACT IDs.\n"
             "If the user's request implies changes to the document, describe what changes you would make. "
             "Always be specific about where information comes from when using external sources.\n\n"
             "WRITING STYLE GUIDELINES:\n"
             "Use bullet points only sparingly and only if absolutely necessary. Otherwise, write in reasonably length paragraphs that flow naturally and provide comprehensive coverage of topics.\n\n"
             "IMPORTANT FORMATTING INSTRUCTIONS:\n"
-            "When generating substantial content (like sections, paragraphs, lists, or complete documents), "
-            "wrap each distinct content block in special markdown blocks using this format:\n"
+            "When generating substantial content, wrap each distinct content block using this format:\n"
             "```content-block:BLOCK_TYPE\n"
             "Your content here...\n"
             "```\n\n"
-            "Available BLOCK_TYPE options:\n"
-            "- document: Complete document or large section\n"
-            "- section: Individual section with heading\n"
-            "- paragraph: Single paragraph or short content\n"
-            "- list: Lists, bullet points, or numbered items\n"
-            "- note: Important notes or callouts\n"
-            "- code: Code snippets or technical content\n\n"
-            "Example:\n"
-            "Here's a section about downtown attractions:\n\n"
+            "Available BLOCK_TYPE options (USE THE MOST APPROPRIATE ONE):\n"
+            "- document: Complete document or article (use for full documents with multiple sections)\n"
+            "- section: Individual section with headings and content (use for major parts of a document)\n"
+            "- paragraph: Single paragraph or brief explanatory text (use for short responses)\n"
+            "- list: Bullet points or numbered lists (use ONLY for actual lists)\n"
+            "- note: Important notes, warnings, or callouts (use sparingly for special notices)\n"
+            "- code: ONLY for actual programming code, scripts, or terminal commands\n\n"
+            "CRITICAL RULES:\n"
+            "1. DO NOT use 'code' block type for regular text, formulas, or tables\n"
+            "2. For mathematical formulas and equations:\n"
+            "   - Use single dollar signs for inline math: $E = mc^2$\n"
+            "   - Use double dollar signs for display math: $$\\int_{-\\infty}^{\\infty} e^{-x^2} dx = \\sqrt{\\pi}$$\n"
+            "   - NEVER use square brackets [ ] or parentheses \\( \\) for LaTeX delimiters\n"
+            "   - ALWAYS escape backslashes in LaTeX commands (use \\\\ instead of \\)\n"
+            "3. For tables, use 'section' or 'paragraph' with Markdown table syntax\n"
+            "4. Default to 'section' for most structured content\n"
+            "5. Use 'paragraph' for brief responses\n\n"
+            "Example for scientific content with formulas:\n"
             "```content-block:section\n"
-            "# Downtown Attractions\n\n"
-            "## 1. Historic District\n"
-            "The historic district features...\n\n"
-            "## 2. Art Museum\n"
-            "The local art museum showcases...\n"
+            "# Mathematical Formulas\n\n"
+            "The quadratic equation $ax^2 + bx + c = 0$ has solutions given by:\n\n"
+            "$$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$\n\n"
+            "For quantum mechanics, the Schrödinger equation is:\n\n"
+            "$$i\\hbar\\frac{\\partial}{\\partial t}\\Psi = \\hat{H}\\Psi$$\n\n"
+            "Note how we use $ for inline math and $$ for display equations.\n"
             "```\n\n"
-            "This allows users to copy individual content blocks while still seeing them formatted properly."
+            "WRONG FORMAT (NEVER DO THIS):\n"
+            "- [ \\hbar\\frac{\\partial}{\\partial t}\\Psi ] ← Wrong! Use $$ instead\n"
+            "- \\( E = mc^2 \\) ← Wrong! Use $ instead\n"
+            "- \\begin{equation}...\\end{equation} ← Wrong! Use $$ instead"
         )
         
         # Append user's custom instructions if provided
@@ -1553,12 +1758,22 @@ class SimplifiedWritingAgent:
             system_prompt += f"\n\nADDITIONAL USER INSTRUCTIONS:\n{custom_system_prompt_addition.strip()}"
         
         if external_context:
-            system_prompt += (
-                "\n\nIMPORTANT: You have access to external information from enabled tools. "
-                "Use this information to provide more accurate, detailed, and well-sourced responses. "
-                "When referencing information from these sources, mention the source (e.g., 'According to [source]' or 'Based on the search results'). "
-                "If the external information contradicts something in the current draft, point this out to the user."
-            )
+            # Check if we have the "sources were deemed not relevant" note
+            if "sources were deemed not relevant and excluded" in external_context:
+                system_prompt += (
+                    "\n\nIMPORTANT: Some or all search results were filtered as not relevant to your query. "
+                    "You should inform the user that you couldn't find highly relevant current sources. "
+                    "Suggest they either: 1) Enable deep search mode for more thorough results, 2) Rephrase their query to be more specific, "
+                    "or 3) Check if the information they're looking for might be too recent or specialized. "
+                    "Do NOT attempt to answer based on general knowledge when the user explicitly asked for current/recent information."
+                )
+            else:
+                system_prompt += (
+                    "\n\nIMPORTANT: You have access to external information from enabled tools. "
+                    "Use this information to provide more accurate, detailed, and well-sourced responses. "
+                    "When referencing information from these sources, mention the source (e.g., 'According to [source]' or 'Based on the search results'). "
+                    "If the external information contradicts something in the current draft, point this out to the user."
+                )
         else:
             system_prompt += (
                 "\n\nNOTE: No external information was gathered for this request. "
@@ -1566,7 +1781,39 @@ class SimplifiedWritingAgent:
                 "suggest they enable the appropriate tools using the controls in the interface."
             )
         
-        user_content = f"Current Draft:\n```markdown\n{draft_content}\n```\n\nUser Context:\n{user_context}\n\nChat History:\n{chat_history}"
+        # Build messages list with proper structure
+        messages = []
+        
+        # Add system message
+        messages.append({"role": "system", "content": system_prompt})
+        
+        # Add conversation history as proper messages (limit to recent history)
+        MAX_HISTORY_MESSAGES = 20  # Keep last 20 messages
+        if len(chat_history) > MAX_HISTORY_MESSAGES:
+            recent_history = chat_history[-MAX_HISTORY_MESSAGES:]
+        else:
+            recent_history = chat_history
+        
+        # Add the conversation history, ensuring role alternation
+        last_role = "system"
+        for msg in recent_history:
+            # Skip if same role as previous to maintain alternation
+            if msg["role"] == last_role:
+                # If it's the same role, we need to merge or skip
+                if last_role == "user":
+                    # For consecutive user messages, merge them
+                    messages[-1]["content"] += "\n\n" + msg["content"]
+                elif last_role == "assistant":
+                    # For consecutive assistant messages, merge them
+                    messages[-1]["content"] += "\n\n" + msg["content"]
+                # Skip system messages that would break alternation
+                continue
+            else:
+                messages.append({"role": msg["role"], "content": msg["content"]})
+                last_role = msg["role"]
+        
+        # Build the current user message with all context
+        user_content = f"Current Draft:\n```markdown\n{draft_content}\n```\n\nUser Context:\n{user_context}"
         user_content += tool_status
         
         if external_context:
@@ -1574,10 +1821,12 @@ class SimplifiedWritingAgent:
         
         user_content += f"\n\nUser Request: {prompt}"
         
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content}
-        ]
+        # Only add user message if the last message wasn't from user
+        if last_role == "user":
+            # Merge with the last user message
+            messages[-1]["content"] += "\n\n" + user_content
+        else:
+            messages.append({"role": "user", "content": user_content})
 
         try:
             response, model_details = await self.model_dispatcher.dispatch(messages=messages, agent_mode="simplified_writing")
@@ -1599,185 +1848,141 @@ class SimplifiedWritingAgent:
             logger.error(f"Error in main LLM: {e}", exc_info=True)
             return handle_api_error(e)
 
-    async def _run_main_llm_with_streaming(self, prompt: str, draft_content: str, chat_history: str, external_context: str = "", context_info: Dict[str, Any] = None, status_callback: Optional[callable] = None) -> str:
+    def _process_citations_and_filter_sources(self, content: str, sources: List[Dict[str, Any]]) -> tuple[str, List[Dict[str, Any]]]:
         """
-        Generates the main response with streaming support and status updates.
-        """
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        user_profile_info = context_info.get("user_profile", {})
-        user_context = (
-            f"User Profile:\n"
-            f"- Name: {user_profile_info.get('full_name', 'N/A')}\n"
-            f"- Location: {user_profile_info.get('location', 'N/A')}\n"
-            f"- Role: {user_profile_info.get('job_title', 'N/A')}\n"
-            f"Current Time: {current_time}\n"
-        )
-        context_info = context_info or {}
+        Process citation placeholders in the content, replace them with numbered references,
+        and filter sources to only include those actually cited.
+        Maps the reference IDs (e.g., [a3b4c5d6]) to sequential numbers [1], [2], etc.
         
-        # Build tool status information
-        web_search_enabled = context_info.get("use_web_search", False)
-        document_group_id = context_info.get("document_group_id")
-        document_search_enabled = bool(document_group_id)
-        
-        tool_status = f"\n\nCURRENT TOOL STATUS:\n"
-        tool_status += f"- Web Search: {'ENABLED' if web_search_enabled else 'DISABLED'}\n"
-        tool_status += f"- Document Search: {'ENABLED' if document_search_enabled else 'DISABLED'}"
-        if document_search_enabled:
-            tool_status += f" (Document Group: {document_group_id})"
-        tool_status += "\n"
-        
-        system_prompt = (
-            "You are a collaborative writing assistant helping users write documents. "
-            "Your responses should be helpful, informative, and directly address the user's request. "
-            "You have access to information about which tools are currently enabled or disabled. "
-            "If a user's request would benefit from a tool that is currently disabled, suggest they enable it. "
-            "When you have access to external information (web search results or document search results), "
-            "integrate that information naturally into your response and cite your sources appropriately. "
-            "If the user's request implies changes to the document, describe what changes you would make. "
-            "Always be specific about where information comes from when using external sources.\n\n"
-            "IMPORTANT FORMATTING INSTRUCTIONS:\n"
-            "When generating substantial content (like sections, paragraphs, lists, or complete documents), "
-            "wrap each distinct content block in special markdown blocks using this format:\n"
-            "```content-block:BLOCK_TYPE\n"
-            "Your content here...\n"
-            "```\n\n"
-            "Available BLOCK_TYPE options:\n"
-            "- document: Complete document or large section\n"
-            "- section: Individual section with heading\n"
-            "- paragraph: Single paragraph or short content\n"
-            "- list: Lists, bullet points, or numbered items\n"
-            "- note: Important notes or callouts\n"
-            "- code: Code snippets or technical content\n\n"
-            "Example:\n"
-            "Here's a section about downtown attractions:\n\n"
-            "```content-block:section\n"
-            "# Downtown Attractions\n\n"
-            "## 1. Historic District\n"
-            "The historic district features...\n\n"
-            "## 2. Art Museum\n"
-            "The local art museum showcases...\n"
-            "```\n\n"
-            "This allows users to copy individual content blocks while still seeing them formatted properly."
-        )
-        
-        if external_context:
-            system_prompt += (
-                "\n\nIMPORTANT: You have access to external information from enabled tools. "
-                "Use this information to provide more accurate, detailed, and well-sourced responses. "
-                "When referencing information from these sources, mention the source (e.g., 'According to [source]' or 'Based on the search results'). "
-                "If the external information contradicts something in the current draft, point this out to the user."
-            )
-        else:
-            system_prompt += (
-                "\n\nNOTE: No external information was gathered for this request. "
-                "If the user's question would benefit from web search or document search, "
-                "suggest they enable the appropriate tools using the controls in the interface."
-            )
-        
-        user_content = f"Current Draft:\n```markdown\n{draft_content}\n```\n\nUser Context:\n{user_context}\n\nChat History:\n{chat_history}"
-        user_content += tool_status
-        
-        if external_context:
-            user_content += f"\n\nExternal Information Available:\n{external_context}"
-        
-        user_content += f"\n\nUser Request: {prompt}"
-        
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content}
-        ]
-
-        try:
-            # Check if streaming is supported by the model dispatcher
-            session_id = context_info.get("session_id")
+        Args:
+            content: The generated content with citation placeholders
+            sources: List of source dictionaries with ref_id fields
             
-            # Try to get streaming response
-            try:
-                if status_callback:
-                    await status_callback("streaming", "Streaming response...")
-                
-                # Collect streamed content
-                full_response = ""
-                async for chunk in self.model_dispatcher.dispatch_stream(messages=messages, agent_mode="writing"):
-                    if chunk and hasattr(chunk, 'choices') and chunk.choices:
-                        delta = chunk.choices[0].delta
-                        if hasattr(delta, 'content') and delta.content:
-                            full_response += delta.content
-                            # Send streaming update via WebSocket
-                            if status_callback:
-                                await status_callback("streaming_chunk", delta.content)
-                
-                # Track LLM call for stats (approximate token count for streaming)
-                if session_id:
-                    # Estimate tokens for streaming response
-                    estimated_prompt_tokens = len(str(messages)) // 4  # Rough estimate
-                    estimated_completion_tokens = len(full_response) // 4  # Rough estimate
-                    model_details = {
-                        "prompt_tokens": estimated_prompt_tokens,
-                        "completion_tokens": estimated_completion_tokens,
-                        "native_total_tokens": estimated_prompt_tokens + estimated_completion_tokens,
-                        "cost": 0.0  # Cost calculation would need to be implemented
-                    }
-                    await self.stats_tracker.track_llm_call(session_id, model_details)
-                
-                return full_response if full_response else "Error: No content received from streaming response."
-                
-            except Exception as e:
-                # Fallback to non-streaming if dispatch_stream fails for any reason
-                logger.info(f"Streaming failed ({e}), falling back to regular dispatch")
-                response, model_details = await self.model_dispatcher.dispatch(messages=messages, agent_mode="writing")
-                
-                # Track LLM call for stats
-                if session_id and model_details:
-                    await self.stats_tracker.track_llm_call(session_id, model_details)
-
-                if response and response.choices:
-                    return response.choices[0].message.content
+        Returns:
+            Tuple of (processed content with numbered citations, filtered and numbered sources)
+        """
+        if not sources:
+            return content, []
+        
+        import re
+        
+        # Find all citation placeholders in the content
+        # Pattern matches [8-char-hex] format
+        citation_pattern = re.compile(r'\[([a-f0-9]{8})\]')
+        
+        # Find all unique ref_ids that are actually cited in the content
+        cited_ref_ids = []
+        seen_ref_ids = set()
+        
+        for match in citation_pattern.finditer(content):
+            ref_id = match.group(1)
+            if ref_id not in seen_ref_ids:
+                cited_ref_ids.append(ref_id)
+                seen_ref_ids.add(ref_id)
+        
+        # Filter sources to only include those that are cited
+        # and create mapping from ref_id to new number
+        ref_id_to_number = {}
+        used_sources = []
+        
+        for ref_id in cited_ref_ids:
+            # Find the source with this ref_id
+            for source in sources:
+                if source.get("ref_id") == ref_id:
+                    # Assign the next number
+                    new_number = len(used_sources) + 1
+                    ref_id_to_number[ref_id] = new_number
                     
-                return "Error: Could not generate a response."
+                    # Add the source with its reference number
+                    source_copy = source.copy()
+                    source_copy['reference_number'] = new_number
+                    used_sources.append(source_copy)
+                    break
+        
+        # Replace all citations with their new numbers
+        def replace_citation(match):
+            ref_id = match.group(1)
+            if ref_id in ref_id_to_number:
+                return f"[{ref_id_to_number[ref_id]}]"
+            else:
+                # If ref_id not found in sources, keep original
+                logger.warning(f"Citation ID [{ref_id}] not found in sources")
+                return match.group(0)
+        
+        # Replace all citations with numbers
+        processed_content = citation_pattern.sub(replace_citation, content)
+        
+        return processed_content, used_sources
+    
+    def _process_citations(self, content: str, sources: List[Dict[str, Any]]) -> str:
+        """
+        Process citation placeholders in the content and replace them with numbered references.
+        Maps the reference IDs (e.g., [a3b4c5d6]) to sequential numbers [1], [2], etc.
+        
+        Args:
+            content: The generated content with citation placeholders
+            sources: List of source dictionaries with ref_id fields
             
-        except Exception as e:
-            # Handle authentication and other API errors with user-friendly messages
-            from ai_researcher.agentic_layer.utils.error_messages import handle_api_error
-            
-            logger.error(f"Error in streaming main LLM: {e}", exc_info=True)
-            return handle_api_error(e)
-
+        Returns:
+            Content with processed citations
+        """
+        if not sources:
+            return content
+        
+        import re
+        
+        # Create mapping from ref_id to number
+        ref_id_to_number = {}
+        for i, source in enumerate(sources, 1):
+            ref_id = source.get("ref_id")
+            if ref_id:
+                ref_id_to_number[ref_id] = i
+        
+        # Find all citation placeholders in the content
+        # Pattern matches [8-char-hex] format
+        citation_pattern = re.compile(r'\[([a-f0-9]{8})\]')
+        
+        def replace_citation(match):
+            ref_id = match.group(1)
+            if ref_id in ref_id_to_number:
+                return f"[{ref_id_to_number[ref_id]}]"
+            else:
+                # If ref_id not found, keep original
+                logger.warning(f"Citation ID [{ref_id}] not found in sources")
+                return match.group(0)
+        
+        # Replace all citations with numbers
+        processed_content = citation_pattern.sub(replace_citation, content)
+        
+        return processed_content
+    
     def _format_sources(self, sources: List[Dict[str, Any]]) -> str:
         """
-        Formats sources into a compact, professional reference section.
+        Formats sources into a numbered reference section for inline citations.
+        Numbers correspond to the citation numbers in the processed content.
         """
         if not sources:
             return ""
         
-        web_sources = [s for s in sources if s.get("type") == "web"]
-        doc_sources = [s for s in sources if s.get("type") == "document"]
+        formatted = "\n\n---\n**References:**\n"
         
-        formatted = "\n\n---\n**Sources:** "
-        
-        all_formatted_sources = []
-        
-        # Format web sources compactly
-        for i, source in enumerate(web_sources, 1):
-            title = source.get("title", "Web Source")
-            url = source.get("url", "#")
-            # Truncate long titles
-            if len(title) > 40:
-                title = title[:37] + "..."
-            all_formatted_sources.append(f"[{title}]({url})")
-        
-        # Format document sources compactly
-        for i, source in enumerate(doc_sources, 1):
-            title = source.get("title", "Document")
-            page = source.get("page", "")
-            # Truncate long titles
-            if len(title) > 30:
-                title = title[:27] + "..."
-            page_info = f" (p.{page})" if page and page != "Unknown" else ""
-            all_formatted_sources.append(f"{title}{page_info}")
-        
-        # Join all sources with bullet separators
-        formatted += " • ".join(all_formatted_sources)
+        # Format sources in order with their assigned numbers
+        for i, source in enumerate(sources, 1):
+            source_type = source.get("type", "unknown")
+            
+            if source_type == "web":
+                title = source.get("title", "Web Source")
+                url = source.get("url", "#")
+                # Truncate long titles for display
+                display_title = title[:60] + "..." if len(title) > 60 else title
+                formatted += f"[{i}] [{display_title}]({url})\n"
+            elif source_type == "document":
+                title = source.get("title", "Document")
+                page = source.get("page", "")
+                # Truncate long titles for display
+                display_title = title[:50] + "..." if len(title) > 50 else title
+                page_info = f" (p.{page})" if page and page != "Unknown" else ""
+                formatted += f"[{i}] {display_title}{page_info}\n"
         
         return formatted
     

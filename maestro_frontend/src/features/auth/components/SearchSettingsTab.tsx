@@ -315,25 +315,6 @@ export const SearchSettingsTab: React.FC = () => {
           <CardContent className="space-y-3">
             <div className="space-y-3">
               <div className="space-y-1.5">
-                <Label htmlFor="max-search-results" className="text-sm">Maximum Search Results</Label>
-                <Input
-                  id="max-search-results"
-                  type="number"
-                  min="1"
-                  max="20"
-                  value={draftSettings.search.max_results || 5}
-                  onChange={(e) => {
-                    const value = Math.max(1, Math.min(20, parseInt(e.target.value) || 5))
-                    handleApiKeyChange('max_results', value.toString())
-                  }}
-                  className="h-8 text-sm"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Number of search results to return per query (1-20). Higher values may increase API costs.
-                </p>
-              </div>
-
-              <div className="space-y-1.5">
                 <Label htmlFor="search-depth" className="text-sm">Search Depth</Label>
                 <Select
                   value={draftSettings.search.search_depth || 'standard'}
@@ -381,24 +362,6 @@ export const SearchSettingsTab: React.FC = () => {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="max-search-results-jina" className="text-sm">Maximum Search Results</Label>
-                <Input
-                  id="max-search-results-jina"
-                  type="number"
-                  min="1"
-                  max="10"
-                  value={draftSettings.search.max_results || 5}
-                  onChange={(e) => {
-                    const value = Math.max(1, Math.min(10, parseInt(e.target.value) || 5))
-                    handleApiKeyChange('max_results', value.toString())
-                  }}
-                  className="h-8 text-sm"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Number of search results to return per query (1-10).
-                </p>
-              </div>
 
               <div className="space-y-1.5">
                 <div className="flex items-center space-x-2">
@@ -465,24 +428,6 @@ export const SearchSettingsTab: React.FC = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="max-search-results" className="text-sm">Maximum Search Results</Label>
-              <Input
-                id="max-search-results"
-                type="number"
-                min="1"
-                max="20"
-                value={draftSettings.search.max_results || 5}
-                onChange={(e) => {
-                  const value = Math.max(1, Math.min(20, parseInt(e.target.value) || 5))
-                  handleApiKeyChange('max_results', value.toString())
-                }}
-                className="h-8 text-sm"
-              />
-              <p className="text-xs text-muted-foreground">
-                Number of search results to return per query (1-20).
-              </p>
-            </div>
             <p className="text-xs text-muted-foreground">
               SearXNG aggregates results from multiple search engines. No API costs involved.
             </p>

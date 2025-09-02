@@ -22,7 +22,7 @@ This guide explains how to configure Maestro to run in CPU-only mode, which is p
 
 3. **Start the application**:
    ```bash
-   docker-compose up -d
+   docker compose up -d
    ```
 
 ### Method 2: Using CPU-Only Docker Compose
@@ -31,7 +31,7 @@ We provide a dedicated CPU-only Docker Compose configuration that doesn't requir
 
 ```bash
 # Use the CPU-only configuration
-docker-compose -f docker-compose.cpu.yml up -d
+docker compose -f docker-compose.cpu.yml up -d
 ```
 
 This configuration automatically sets `FORCE_CPU_MODE=true` and removes all GPU-related settings.
@@ -137,7 +137,7 @@ MAX_CONCURRENT_REQUESTS=1
 
 **Solution**: Use the CPU-only Docker Compose file:
 ```bash
-docker-compose -f docker-compose.cpu.yml up -d
+docker compose -f docker-compose.cpu.yml up -d
 ```
 
 ## Community Contributions

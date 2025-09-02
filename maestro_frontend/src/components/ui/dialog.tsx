@@ -95,6 +95,19 @@ const DialogTitle: React.FC<DialogTitleProps> = ({ children, className = '' }) =
   )
 }
 
+interface DialogDescriptionProps {
+  children: React.ReactNode
+  className?: string
+}
+
+const DialogDescription: React.FC<DialogDescriptionProps> = ({ children, className = '' }) => {
+  return (
+    <p className={`text-sm text-muted-foreground ${className}`}>
+      {children}
+    </p>
+  )
+}
+
 interface DialogFooterProps {
   children: React.ReactNode
   className?: string
@@ -108,4 +121,4 @@ const DialogFooter: React.FC<DialogFooterProps> = ({ children, className = '' })
   )
 }
 
-export { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter }
+export { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter }

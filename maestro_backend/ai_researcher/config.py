@@ -34,6 +34,7 @@ try:
         get_web_search_provider, get_tavily_api_key, get_linkup_api_key,
         get_initial_research_max_depth, get_initial_research_max_questions,
         get_structured_research_rounds, get_writing_passes, get_thought_pad_context_limit,
+        get_max_suggestions_per_batch,
         get_max_concurrent_requests, get_skip_final_replanning,
         get_initial_exploration_doc_results, get_initial_exploration_web_results,
         get_main_research_doc_results, get_main_research_web_results,
@@ -122,7 +123,7 @@ except ImportError:
         return get_setting_with_fallback("MAX_CONCURRENT_REQUESTS", 5, int)
 
     def get_skip_final_replanning() -> bool:
-        return get_setting_with_fallback("SKIP_FINAL_REPLANNING", False, bool)
+        return get_setting_with_fallback("skip_final_replanning", False, bool)
 
     # Additional research parameters for mission settings
     def get_initial_exploration_doc_results() -> int:
@@ -345,12 +346,13 @@ WEB_SEARCH_COST_PER_CALL = float(os.getenv("WEB_SEARCH_COST_PER_CALL", 0.005)) #
 WEB_CACHE_EXPIRATION_DAYS = int(os.getenv("WEB_CACHE_EXPIRATION_DAYS", 2)) # Days to keep cached web pages
 
 # --- Tool Keys Status ---
-print("--- Tool Keys ---")
-print(f"Web Search Provider: {WEB_SEARCH_PROVIDER.capitalize()}")
-print(f"  Tavily API Key Loaded: {'Yes' if TAVILY_API_KEY else 'No'}")
-print(f"  LinkUp API Key Loaded: {'Yes' if LINKUP_API_KEY else 'No'}")
-print(f"  Cost Per Search Call: ${WEB_SEARCH_COST_PER_CALL:.4f}") # Added print for cost
-print(f"Web Cache Expiration: {WEB_CACHE_EXPIRATION_DAYS} days")
+# Settings now configured through user settings in the application
+# print("--- Tool Keys ---")
+# print(f"Web Search Provider: {WEB_SEARCH_PROVIDER.capitalize()}")
+# print(f"  Tavily API Key Loaded: {'Yes' if TAVILY_API_KEY else 'No'}")
+# print(f"  LinkUp API Key Loaded: {'Yes' if LINKUP_API_KEY else 'No'}")
+# print(f"  Cost Per Search Call: ${WEB_SEARCH_COST_PER_CALL:.4f}")
+# print(f"Web Cache Expiration: {WEB_CACHE_EXPIRATION_DAYS} days")
 
 # Example: Database Configuration
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./ai_researcher/data/vector_store/chroma.db") # Example path
@@ -444,41 +446,47 @@ PROVIDER_CONFIG = {
     }
 }
 
-print("--- LLM Configuration ---")
-print(f"Fast Model Provider: {FAST_LLM_PROVIDER}")
-print(f"Mid Model Provider: {MID_LLM_PROVIDER}")
-print(f"Intelligent Model Provider: {INTELLIGENT_LLM_PROVIDER}")
-print(f"Verifier Model Provider: {VERIFIER_LLM_PROVIDER}")
-print(f"OpenRouter Base URL: {OPENROUTER_BASE_URL}")
-print(f"Local LLM Base URL: {LOCAL_LLM_BASE_URL}")
-print("NOTE: Model names are loaded dynamically per user session")
-print("--- Research Loop Settings ---")
-print(f"Max Total Iterations: {MAX_TOTAL_ITERATIONS}")
-print(f"Max Research Cycles Per Section: {MAX_RESEARCH_CYCLES_PER_SECTION}") # Updated print statement
-# print(f"Max Depth Pass 1: {MAX_DEPTH_PASS1}") # Commented out as less relevant
-print(f"Max Total Depth: {MAX_TOTAL_DEPTH}")
-print("--- Advanced Workflow Settings ---")
-print(f"Initial Research Max Depth: {INITIAL_RESEARCH_MAX_DEPTH}")
-print(f"Initial Research Max Questions: {INITIAL_RESEARCH_MAX_QUESTIONS}")
-print(f"Structured Research Rounds: {STRUCTURED_RESEARCH_ROUNDS}")
-print(f"Writing Passes: {WRITING_PASSES}")
-print(f"Max Planning Context Chars: {MAX_PLANNING_CONTEXT_CHARS}")
-print(f"Writing Previous Content Preview Chars: {WRITING_PREVIOUS_CONTENT_PREVIEW_CHARS}") # Added print statement
-print(f"Thought Pad Context Limit: {THOUGHT_PAD_CONTEXT_LIMIT}") # Added print statement
-print(f"Skip Final Replanning: {SKIP_FINAL_REPLANNING}") # Added print for new setting
-print("--- Initial Exploration Settings ---")
-print(f"Consult RAG for Initial Questions: {CONSULT_RAG_FOR_INITIAL_QUESTIONS}") # Added print for new setting
-print(f"Initial Exploration Doc Results: {INITIAL_EXPLORATION_DOC_RESULTS}")
-print(f"Initial Exploration Web Results: {INITIAL_EXPLORATION_WEB_RESULTS}") # Added print
-print(f"Initial Exploration Use Reranker: {INITIAL_EXPLORATION_USE_RERANKER}")
-print(f"Research Note Content Limit: {RESEARCH_NOTE_CONTENT_LIMIT}")
-print("--- Main Research Settings ---") # Added section header
-print(f"Main Research Doc Results: {MAIN_RESEARCH_DOC_RESULTS}") # Added print
-print(f"Main Research Web Results: {MAIN_RESEARCH_WEB_RESULTS}") # Added print
-print("--- Agent Max Tokens ---")
-for role, tokens in AGENT_ROLE_MAX_TOKENS.items():
-    print(f"  {role.capitalize()}: {tokens if tokens is not None else 'Default'}")
-print("--- Concurrency Settings ---")
-print(f"Max Concurrent Requests: {'Unlimited' if MAX_CONCURRENT_REQUESTS == 0 else MAX_CONCURRENT_REQUESTS}")
-print(f"LLM Request Timeout: {LLM_REQUEST_TIMEOUT}s")
-print("-------------------------")
+# --- LLM Configuration ---
+# Settings now configured through user settings in the application
+# print("--- LLM Configuration ---")
+# print(f"Fast Model Provider: {FAST_LLM_PROVIDER}")
+# print(f"Mid Model Provider: {MID_LLM_PROVIDER}")
+# print(f"Intelligent Model Provider: {INTELLIGENT_LLM_PROVIDER}")
+# print(f"Verifier Model Provider: {VERIFIER_LLM_PROVIDER}")
+# print(f"OpenRouter Base URL: {OPENROUTER_BASE_URL}")
+# print(f"Local LLM Base URL: {LOCAL_LLM_BASE_URL}")
+# print("NOTE: Model names are loaded dynamically per user session")
+# --- Research Loop Settings ---
+# Settings now configured through user settings in the application
+# print("--- Research Loop Settings ---")
+# print(f"Max Total Iterations: {MAX_TOTAL_ITERATIONS}")
+# print(f"Max Research Cycles Per Section: {MAX_RESEARCH_CYCLES_PER_SECTION}")
+# print(f"Max Total Depth: {MAX_TOTAL_DEPTH}")
+# --- Advanced Workflow Settings ---
+# Settings now configured through user settings in the application
+# print("--- Advanced Workflow Settings ---")
+# print(f"Initial Research Max Depth: {INITIAL_RESEARCH_MAX_DEPTH}")
+# print(f"Initial Research Max Questions: {INITIAL_RESEARCH_MAX_QUESTIONS}")
+# print(f"Structured Research Rounds: {STRUCTURED_RESEARCH_ROUNDS}")
+# print(f"Writing Passes: {WRITING_PASSES}")
+# Settings now configured through user settings in the application
+# print(f"Max Planning Context Chars: {MAX_PLANNING_CONTEXT_CHARS}")
+# print(f"Writing Previous Content Preview Chars: {WRITING_PREVIOUS_CONTENT_PREVIEW_CHARS}")
+# print(f"Thought Pad Context Limit: {THOUGHT_PAD_CONTEXT_LIMIT}")
+# print(f"Skip Final Replanning: {SKIP_FINAL_REPLANNING}")
+# print("--- Initial Exploration Settings ---")
+# print(f"Consult RAG for Initial Questions: {CONSULT_RAG_FOR_INITIAL_QUESTIONS}")
+# print(f"Initial Exploration Doc Results: {INITIAL_EXPLORATION_DOC_RESULTS}")
+# print(f"Initial Exploration Web Results: {INITIAL_EXPLORATION_WEB_RESULTS}")
+# print(f"Initial Exploration Use Reranker: {INITIAL_EXPLORATION_USE_RERANKER}")
+# print(f"Research Note Content Limit: {RESEARCH_NOTE_CONTENT_LIMIT}")
+# print("--- Main Research Settings ---")
+# print(f"Main Research Doc Results: {MAIN_RESEARCH_DOC_RESULTS}")
+# print(f"Main Research Web Results: {MAIN_RESEARCH_WEB_RESULTS}")
+# print("--- Agent Max Tokens ---")
+# for role, tokens in AGENT_ROLE_MAX_TOKENS.items():
+#     print(f"  {role.capitalize()}: {tokens if tokens is not None else 'Default'}")
+# print("--- Concurrency Settings ---")
+# print(f"Max Concurrent Requests: {'Unlimited' if MAX_CONCURRENT_REQUESTS == 0 else MAX_CONCURRENT_REQUESTS}")
+# print(f"LLM Request Timeout: {LLM_REQUEST_TIMEOUT}s")
+# print("-------------------------")

@@ -63,6 +63,7 @@ class Chat(Base):
     document_group_id = Column(StringUUID, ForeignKey("document_groups.id"), nullable=True, index=True)
     title = Column(String, nullable=False)
     chat_type = Column(String, nullable=False, default="research", index=True)  # 'research' or 'writing'
+    settings = Column(JSONB, nullable=True)  # Store chat-specific settings (web search, doc group, etc.)
     created_at = Column(DateTime(timezone=True))
     updated_at = Column(DateTime(timezone=True))
     

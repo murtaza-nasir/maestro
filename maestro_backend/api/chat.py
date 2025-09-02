@@ -78,6 +78,26 @@ async def chat_with_ai(
         
         logger.info(f"Processing chat request from user {current_user.username} with {len(chat_history)} history pairs")
         
+        # Save chat settings if provided
+        if request.chat_id and (request.document_group_id is not None or request.use_web_search is not None):
+            from database import crud
+            try:
+                settings = {}
+                if request.document_group_id is not None:
+                    settings['document_group_id'] = request.document_group_id
+                if request.use_web_search is not None:
+                    settings['use_web_search'] = request.use_web_search
+                
+                crud.update_chat_settings(
+                    db=db,
+                    chat_id=request.chat_id,
+                    user_id=current_user.id,
+                    settings=settings
+                )
+                logger.info(f"Updated chat {request.chat_id} settings: {settings}")
+            except Exception as e:
+                logger.warning(f"Failed to update chat settings: {e}")
+        
         # Create a queue and callback for WebSocket updates if a mission is involved
         log_queue = queue.Queue() if request.mission_id else None
         
@@ -360,7 +380,7 @@ async def approve_research_questions(
         
         if success:
             # Update mission status to indicate research is starting
-            agent_controller.context_manager.update_mission_status(
+            await agent_controller.context_manager.update_mission_status(
                 request.mission_id, 
                 "planning"
             )
@@ -383,7 +403,7 @@ async def approve_research_questions(
                 except Exception as research_error:
                     logger.error(f"Background research execution failed for mission {request.mission_id}: {research_error}", exc_info=True)
                     # Update mission status to failed if research execution fails
-                    agent_controller.context_manager.update_mission_status(
+                    await agent_controller.context_manager.update_mission_status(
                         request.mission_id, 
                         "failed", 
                         f"Research execution failed: {str(research_error)}"

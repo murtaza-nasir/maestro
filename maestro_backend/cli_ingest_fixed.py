@@ -892,6 +892,14 @@ def search(
             typer.secho(f"Error: User '{username}' not found.", fg=typer.colors.RED)
             raise typer.Exit(code=1)
         
+        # Get user's documents to filter search
+        user_docs = crud.get_user_documents(db, user_id=user.id, skip=0, limit=1000)
+        if not user_docs:
+            typer.echo(f"No documents found for user '{username}'.")
+            return
+        
+        doc_ids = [doc.id for doc in user_docs]
+        
         # Initialize vector store for search
         vector_store = VectorStore()
         embedder = TextEmbedder(model_name="BAAI/bge-m3")
@@ -902,11 +910,12 @@ def search(
         # Embed query
         query_embedding = embedder.embed_query(query)
         
-        # Search in vector store
-        results = vector_store.search(
-            query_embedding=query_embedding,
-            user_id=user.id,
-            n_results=limit
+        # Search in vector store using the query method
+        results = vector_store.query(
+            query_dense_embedding=query_embedding['dense'],
+            query_sparse_embedding_dict=query_embedding['sparse'],
+            n_results=limit,
+            filter_metadata={"doc_id": {"$in": doc_ids}}  # Only search this user's documents
         )
         
         if not results:

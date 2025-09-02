@@ -251,7 +251,7 @@ Write-Host ""
 Write-Host "IMPORTANT - First Run:" -ForegroundColor Yellow
 Write-Host "  Initial startup takes 5-10 minutes to download AI models" -ForegroundColor Yellow
 Write-Host "  Monitor progress with: docker compose logs -f maestro-backend" -ForegroundColor Yellow
-Write-Host "  Wait for message: Application startup complete" -ForegroundColor Yellow
+Write-Host "  Wait for message: MAESTRO Backend Started Successfully!" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "To modify settings later:"
 Write-Host "  notepad .env" 

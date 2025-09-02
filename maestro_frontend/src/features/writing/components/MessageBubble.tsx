@@ -1,6 +1,5 @@
 import React, { useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { MathMarkdown } from '../../../components/markdown/MathMarkdown'
 import { Copy, RotateCcw, Check, Bot, User, Trash2 } from 'lucide-react'
 import { formatChatMessageTime } from '../../../utils/timezone'
 import { SourceBubbles } from './SourceBubbles'
@@ -27,6 +26,53 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
 }) => {
   const [copiedContent, setCopiedContent] = useState<string | null>(null)
   const [hoveredCodeBlock, setHoveredCodeBlock] = useState<string | null>(null)
+
+  // Function to process content and highlight citations
+  const processCitations = (text: string) => {
+    // Pattern to match citations - handles both single [1] and multiple [1,2,3] or [1, 2, 3]
+    const citationPattern = /\[(\d+(?:\s*,\s*\d+)*)\]/g
+    
+    // Split text by citations and create elements
+    const parts: React.ReactNode[] = []
+    let lastIndex = 0
+    let match
+    
+    while ((match = citationPattern.exec(text)) !== null) {
+      // Add text before citation
+      if (match.index > lastIndex) {
+        parts.push(text.slice(lastIndex, match.index))
+      }
+      
+      // Parse the citation numbers (could be single or multiple)
+      const citationText = match[1]
+      const citationNumbers = citationText.split(',').map(num => num.trim())
+      
+      // Create appropriate title text
+      const titleText = citationNumbers.length === 1 
+        ? `Reference ${citationNumbers[0]}`
+        : `References ${citationNumbers.join(', ')}`
+      
+      // Add citation with special styling
+      parts.push(
+        <span
+          key={`citation-${match.index}`}
+          className="inline-flex items-center px-1 py-0.5 mx-0.5 rounded text-xs font-semibold bg-primary/10 text-primary hover:bg-primary/20 transition-colors cursor-help"
+          title={titleText}
+        >
+          [{citationText}]
+        </span>
+      )
+      
+      lastIndex = match.index + match[0].length
+    }
+    
+    // Add remaining text
+    if (lastIndex < text.length) {
+      parts.push(text.slice(lastIndex))
+    }
+    
+    return parts.length > 0 ? parts : text
+  }
 
   const copyToClipboard = async (text: string, type: 'message' | 'code' = 'message') => {
     try {
@@ -184,8 +230,9 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                 if (segment.type === 'text') {
                   return (
                     <div key={index}>
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
+                      <MathMarkdown
+                        content={segment.content}
+                        className="prose prose-xs max-w-none"
                         components={{
                           // Links
                           a: ({node, ...props}) => (
@@ -203,15 +250,29 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                           li: ({node, ...props}) => <li {...props} className="ml-4" />,
                           
                           // Paragraphs
-                          p: ({node, ...props}) => <p {...props} className="mb-1 last:mb-0 break-words leading-relaxed" />,
+                          p: ({node, children, ...props}) => {
+                            // Process children to highlight citations
+                            const processedChildren = React.Children.map(children, (child) => {
+                              if (typeof child === 'string') {
+                                return processCitations(child)
+                              }
+                              return child
+                            })
+                            
+                            return (
+                              <p {...props} className="mb-1 last:mb-0 break-words leading-relaxed">
+                                {processedChildren}
+                              </p>
+                            )
+                          },
                           
-                          // Headings
-                          h1: ({node, ...props}) => <h1 {...props} className="text-lg font-bold mb-1 mt-2 first:mt-0" />,
-                          h2: ({node, ...props}) => <h2 {...props} className="text-base font-semibold mb-1 mt-1.5 first:mt-0" />,
-                          h3: ({node, ...props}) => <h3 {...props} className="text-sm font-medium mb-0.5 mt-1 first:mt-0" />,
-                          h4: ({node, ...props}) => <h4 {...props} className="text-xs font-medium mb-0.5 mt-0.5 first:mt-0" />,
-                          h5: ({node, ...props}) => <h5 {...props} className="text-xs font-medium mb-0.5 mt-0.5 first:mt-0" />,
-                          h6: ({node, ...props}) => <h6 {...props} className="text-xs font-medium mb-0.5 mt-0.5 first:mt-0" />,
+                          // Headings with consistent primary color
+                          h1: ({node, ...props}) => <h1 {...props} className="text-lg font-bold mb-1 mt-2 first:mt-0 text-primary" />,
+                          h2: ({node, ...props}) => <h2 {...props} className="text-base font-semibold mb-1 mt-1.5 first:mt-0 text-primary" />,
+                          h3: ({node, ...props}) => <h3 {...props} className="text-sm font-medium mb-0.5 mt-1 first:mt-0 text-primary" />,
+                          h4: ({node, ...props}) => <h4 {...props} className="text-xs font-medium mb-0.5 mt-0.5 first:mt-0 text-primary" />,
+                          h5: ({node, ...props}) => <h5 {...props} className="text-xs font-medium mb-0.5 mt-0.5 first:mt-0 text-primary" />,
+                          h6: ({node, ...props}) => <h6 {...props} className="text-xs font-medium mb-0.5 mt-0.5 first:mt-0 text-primary" />,
                           
                           // Blockquotes
                           blockquote: ({node, ...props}) => (
@@ -230,7 +291,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                             </div>
                           ),
                           th: ({node, ...props}) => (
-                            <th {...props} className="border border-border px-3 py-2 bg-muted font-medium text-left" />
+                            <th {...props} className="border border-border px-3 py-2 bg-muted/50 font-medium text-left text-foreground" />
                           ),
                           td: ({node, ...props}) => (
                             <td {...props} className="border border-border px-3 py-2" />
@@ -326,9 +387,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                             <hr {...props} className="my-1.5 border-border" />
                           ),
                         }}
-                      >
-                        {segment.content}
-                      </ReactMarkdown>
+                      />
                     </div>
                   )
                 } else {
@@ -360,8 +419,9 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                           </pre>
                         ) : (
                           <div className="prose prose-xs max-w-none">
-                            <ReactMarkdown
-                              remarkPlugins={[remarkGfm]}
+                            <MathMarkdown
+                              content={segment.content}
+                              className="prose prose-xs max-w-none"
                               components={{
                                 // Same components as above but simplified for content blocks
                                 a: ({node, ...props}) => (
@@ -370,13 +430,27 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                 ul: ({node, ...props}) => <ul {...props} className="my-2 space-y-1" />,
                                 ol: ({node, ...props}) => <ol {...props} className="my-2 space-y-1" />,
                                 li: ({node, ...props}) => <li {...props} className="ml-4" />,
-                                p: ({node, ...props}) => <p {...props} className="mb-2 last:mb-0 break-words leading-relaxed" />,
-                                h1: ({node, ...props}) => <h1 {...props} className="text-lg font-bold mb-2 mt-3 first:mt-0" />,
-                                h2: ({node, ...props}) => <h2 {...props} className="text-base font-semibold mb-2 mt-2 first:mt-0" />,
-                                h3: ({node, ...props}) => <h3 {...props} className="text-sm font-medium mb-1 mt-2 first:mt-0" />,
-                                h4: ({node, ...props}) => <h4 {...props} className="text-xs font-medium mb-1 mt-1 first:mt-0" />,
-                                h5: ({node, ...props}) => <h5 {...props} className="text-xs font-medium mb-1 mt-1 first:mt-0" />,
-                                h6: ({node, ...props}) => <h6 {...props} className="text-xs font-medium mb-1 mt-1 first:mt-0" />,
+                                p: ({node, children, ...props}) => {
+                                  // Process children to highlight citations
+                                  const processedChildren = React.Children.map(children, (child) => {
+                                    if (typeof child === 'string') {
+                                      return processCitations(child)
+                                    }
+                                    return child
+                                  })
+                                  
+                                  return (
+                                    <p {...props} className="mb-2 last:mb-0 break-words leading-relaxed">
+                                      {processedChildren}
+                                    </p>
+                                  )
+                                },
+                                h1: ({node, ...props}) => <h1 {...props} className="text-lg font-bold mb-2 mt-3 first:mt-0 text-primary" />,
+                                h2: ({node, ...props}) => <h2 {...props} className="text-base font-semibold mb-2 mt-2 first:mt-0 text-primary" />,
+                                h3: ({node, ...props}) => <h3 {...props} className="text-sm font-medium mb-1 mt-2 first:mt-0 text-primary" />,
+                                h4: ({node, ...props}) => <h4 {...props} className="text-xs font-medium mb-1 mt-1 first:mt-0 text-primary" />,
+                                h5: ({node, ...props}) => <h5 {...props} className="text-xs font-medium mb-1 mt-1 first:mt-0 text-primary" />,
+                                h6: ({node, ...props}) => <h6 {...props} className="text-xs font-medium mb-1 mt-1 first:mt-0 text-primary" />,
                                 blockquote: ({node, ...props}) => (
                                   <blockquote {...props} className="border-l-4 border-border pl-4 my-3 italic" />
                                 ),
@@ -401,9 +475,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                   )
                                 },
                               }}
-                            >
-                              {segment.content}
-                            </ReactMarkdown>
+                            />
                           </div>
                         )}
                       </div>

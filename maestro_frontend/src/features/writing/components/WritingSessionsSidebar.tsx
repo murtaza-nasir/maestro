@@ -65,9 +65,11 @@ export const WritingSessionsSidebar: React.FC = React.memo(() => {
     }
   }
 
-  const filteredSessions = sessions.filter(session =>
-    session.name.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  const filteredSessions = Array.isArray(sessions)
+    ? sessions.filter(session =>
+        session.name.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : []
 
   const handleNewSession = useCallback(() => {
     setShowCreateForm(true)

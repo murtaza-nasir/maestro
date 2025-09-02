@@ -1,13 +1,26 @@
 import logging
 import aiohttp
+import asyncio
 from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional, Callable
 import queue
+import hashlib
+import datetime
+import pathlib
+import json
+import os
 from ai_researcher.dynamic_config import (
     get_jina_api_key, get_jina_browser_engine, get_jina_content_format, get_jina_remove_images
 )
 
 logger = logging.getLogger(__name__)
+
+# Global semaphore to limit concurrent web fetches
+# This prevents blocking the thread pool when multiple fetches happen
+WEB_FETCH_SEMAPHORE = asyncio.Semaphore(3)  # Allow max 3 concurrent fetches
+
+# Define cache directory for Jina fetcher (shared with native fetcher for consistency)
+CACHE_DIR = pathlib.Path("ai_researcher/data/web_cache/")
 
 # Define the input schema
 class JinaWebFetcherInput(BaseModel):
@@ -31,6 +44,13 @@ class JinaWebFetcherTool:
             logger.info("JinaWebFetcherTool initialized with API key.")
         else:
             logger.warning("JinaWebFetcherTool initialized without API key. Will work with rate limits.")
+        
+        # Ensure cache directory exists
+        try:
+            CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Cache directory ensured at: {CACHE_DIR.resolve()}")
+        except Exception as e:
+            logger.error(f"Failed to create cache directory {CACHE_DIR}: {e}", exc_info=True)
 
     async def execute(
         self,
@@ -53,6 +73,48 @@ class JinaWebFetcherTool:
             or a dictionary with an 'error' key on failure.
         """
         logger.info(f"Executing JinaWebFetcherTool for URL: {url}")
+
+        # --- Cache Check ---
+        cache_key = hashlib.sha256(f"jina_{url}".encode()).hexdigest()  # Prefix with "jina_" to avoid conflicts
+        cache_content_path = CACHE_DIR / f"{cache_key}.cache"
+        cache_meta_path = CACHE_DIR / f"{cache_key}.meta.json"
+        cache_hit = False
+
+        # Check if cache exists and is valid (24 hour expiration)
+        if cache_content_path.exists() and cache_meta_path.exists():
+            try:
+                with open(cache_meta_path, 'r', encoding='utf-8') as f:
+                    cache_meta = json.load(f)
+                
+                cached_time = datetime.datetime.fromisoformat(cache_meta['timestamp'])
+                cache_age = datetime.datetime.now() - cached_time
+                
+                # Use 24-hour cache expiration (same as native fetcher)
+                if cache_age < datetime.timedelta(hours=24):
+                    # Cache is valid, load content
+                    with open(cache_content_path, 'r', encoding='utf-8') as f:
+                        cache_data = json.load(f)
+                    
+                    logger.info(f"Cache hit for URL: {url} (age: {cache_age}, provider: jina)")
+                    
+                    # Send feedback for cache hit
+                    if update_callback and log_queue:
+                        feedback_payload = {
+                            "type": "web_fetch_cache_hit", 
+                            "url": url, 
+                            "provider": "jina",
+                            "cache_age_seconds": int(cache_age.total_seconds())
+                        }
+                        try:
+                            update_callback(log_queue, feedback_payload)
+                        except Exception as e:
+                            logger.error(f"Failed to send cache hit feedback: {e}")
+                    
+                    return cache_data
+                else:
+                    logger.info(f"Cache expired for URL: {url} (age: {cache_age})")
+            except Exception as e:
+                logger.warning(f"Failed to load cache for URL {url}: {e}")
 
         # Send feedback: Starting fetch
         if update_callback and log_queue:
@@ -94,16 +156,19 @@ class JinaWebFetcherTool:
                 headers["X-Remove-Images"] = "true"
             
             # Make the request with longer timeout (60 seconds for slow sites)
-            async with aiohttp.ClientSession() as session:
-                async with session.get(jina_url, headers=headers, timeout=aiohttp.ClientTimeout(total=60)) as response:
-                    response.raise_for_status()
-                    response_text = await response.text()
-                    response_headers = response.headers
+            # Use semaphore to limit concurrent fetches
+            async with WEB_FETCH_SEMAPHORE:
+                logger.debug(f"Acquired semaphore for Jina fetch of {url}")
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(jina_url, headers=headers, timeout=aiohttp.ClientTimeout(total=60)) as response:
+                        response.raise_for_status()
+                        response_text = await response.text()
+                        response_headers = response.headers
+                logger.debug(f"Released semaphore for Jina fetch of {url}")
             
             # Parse response based on format
             if content_format == "json" and response_headers.get('content-type', '').startswith('application/json'):
                 # JSON response format
-                import json
                 result = json.loads(response_text)
                 
                 # Jina Reader also returns a dict with 'code', 'status', 'data', 'meta' fields
@@ -153,6 +218,34 @@ class JinaWebFetcherTool:
             
             logger.info(f"Successfully extracted ~{len(extracted_text)} characters from URL: {url}")
             
+            # Prepare result
+            result = {
+                "text": extracted_text,
+                "title": extracted_title,
+                "metadata": extracted_metadata
+            }
+            
+            # --- Save to Cache ---
+            try:
+                # Save content
+                with open(cache_content_path, 'w', encoding='utf-8') as f:
+                    json.dump(result, f, ensure_ascii=False, indent=2)
+                
+                # Save metadata
+                cache_metadata = {
+                    "url": url,
+                    "timestamp": datetime.datetime.now().isoformat(),
+                    "provider": "jina",
+                    "browser_engine": browser_engine,
+                    "content_format": content_format
+                }
+                with open(cache_meta_path, 'w', encoding='utf-8') as f:
+                    json.dump(cache_metadata, f, ensure_ascii=False, indent=2)
+                
+                logger.info(f"Cached Jina response for URL: {url}")
+            except Exception as e:
+                logger.warning(f"Failed to cache response for URL {url}: {e}")
+            
             # Send feedback: Fetch complete
             if update_callback and log_queue:
                 feedback_payload = {
@@ -169,37 +262,33 @@ class JinaWebFetcherTool:
                 except Exception as cb_e:
                     logger.error(f"Failed to send web_fetch_complete feedback: {cb_e}", exc_info=False)
             
-            return {
-                "text": extracted_text,
-                "title": extracted_title,
-                "metadata": extracted_metadata
-            }
+            return result
             
-        except requests.exceptions.Timeout:
+        except aiohttp.ClientTimeout:
             error_msg = f"Timeout occurred while fetching URL via Jina: {url}"
             logger.error(error_msg)
             return {"error": error_msg, "error_type": "timeout", "url": url}
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 403:
+        except aiohttp.ClientResponseError as e:
+            if e.status == 403:
                 if self.api_key:
                     error_msg = f"Access denied (403) for URL via Jina: {url}. API key may be invalid or rate limited."
                 else:
                     error_msg = f"Access denied (403) for URL via Jina: {url}. Consider adding an API key for higher rate limits."
                 logger.warning(error_msg)
                 return {"error": error_msg, "error_type": "access_denied", "status_code": 403, "url": url}
-            elif e.response.status_code == 404:
+            elif e.status == 404:
                 error_msg = f"Page not found (404) for URL: {url}"
                 logger.warning(error_msg)
                 return {"error": error_msg, "error_type": "not_found", "status_code": 404, "url": url}
-            elif e.response.status_code == 429:
+            elif e.status == 429:
                 error_msg = f"Rate limit exceeded for Jina Reader. Please try again later or add an API key."
                 logger.warning(error_msg)
                 return {"error": error_msg, "error_type": "rate_limit", "status_code": 429, "url": url}
             else:
-                error_msg = f"HTTP error {e.response.status_code} occurred while fetching URL via Jina {url}: {e}"
+                error_msg = f"HTTP error {e.status} occurred while fetching URL via Jina {url}: {e}"
                 logger.error(error_msg)
-                return {"error": error_msg, "error_type": "http_error", "status_code": e.response.status_code, "url": url}
-        except requests.exceptions.RequestException as e:
+                return {"error": error_msg, "error_type": "http_error", "status_code": e.status, "url": url}
+        except aiohttp.ClientError as e:
             error_msg = f"Network error occurred while fetching URL via Jina {url}: {e}"
             logger.error(error_msg, exc_info=True)
             return {"error": error_msg, "error_type": "network_error", "url": url}

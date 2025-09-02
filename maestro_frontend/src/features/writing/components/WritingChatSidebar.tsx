@@ -69,9 +69,11 @@ export const WritingChatSidebar: React.FC<WritingChatSidebarProps> = React.memo(
     }
   }, [loadChats])
 
-  const filteredChats = chats.filter(chat =>
-    chat.title.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  const filteredChats = Array.isArray(chats) 
+    ? chats.filter(chat =>
+        chat.title.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : []
 
   const handleNewChat = useCallback(async () => {
     try {
@@ -274,7 +276,7 @@ export const WritingChatSidebar: React.FC<WritingChatSidebarProps> = React.memo(
                   onClick={() => handleChatSelect(chat.id)}
                   icon={<PenTool className="h-4 w-4" />}
                   title={chat.title}
-                  timestamp={formatRelativeTime(chat.updated_at)}
+                  timestamp={formatRelativeTime(chat.created_at)}
                   actions={actions}
                   showActionsPermanently={true}
                 />

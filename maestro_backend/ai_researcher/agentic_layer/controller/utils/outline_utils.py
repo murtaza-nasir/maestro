@@ -81,3 +81,6 @@ def find_parent_and_section(
             if found_section:
                 return parent_list, found_section
     return None, None
+
+# Alias for backward compatibility
+flatten_outline = get_sections_in_order

@@ -7,7 +7,7 @@ import logging
 from typing import Dict, Any, Optional, List, Callable, Tuple
 import queue
 
-from ai_researcher.agentic_layer.context_manager import ContextManager
+from ai_researcher.agentic_layer.async_context_manager import AsyncContextManager
 from ai_researcher.agentic_layer.model_dispatcher import ModelDispatcher
 from ai_researcher.agentic_layer.tool_registry import ToolRegistry
 from ai_researcher.core_rag.retriever import Retriever
@@ -36,7 +36,7 @@ class AgentController(CoreAgentController):
     def __init__(
         self,
         model_dispatcher: ModelDispatcher,
-        context_manager: ContextManager,
+        context_manager: AsyncContextManager,
         tool_registry: ToolRegistry,
         retriever: Optional[Retriever],
         reranker: Optional[TextReranker]

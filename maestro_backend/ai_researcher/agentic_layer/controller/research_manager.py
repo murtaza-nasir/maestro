@@ -12,7 +12,7 @@ from ai_researcher.dynamic_config import (
     get_min_notes_per_section_assignment,
     get_max_notes_per_section_assignment
 )
-from ai_researcher.agentic_layer.context_manager import ExecutionLogEntry
+from ai_researcher.agentic_layer.async_context_manager import ExecutionLogEntry
 from ai_researcher.agentic_layer.tool_registry import ToolRegistry
 from ai_researcher.agentic_layer.schemas.planning import SimplifiedPlan, ReportSection, SimplifiedPlanResponse
 from ai_researcher.agentic_layer.schemas.notes import Note
@@ -133,7 +133,7 @@ class ResearchManager:
             )
             
             if generated_questions:
-                self.controller.context_manager.log_execution_step(
+                await self.controller.context_manager.log_execution_step(
                     mission_id, "AgentController", "Generate Initial Questions (Controller)",
                     input_summary=f"User Request: {user_request[:50]}...",
                     output_summary=f"Generated {len(generated_questions)} initial questions.",
@@ -146,7 +146,7 @@ class ResearchManager:
             
             # Update Stats for the _generate_first_level_questions call
             if model_details:
-                self.controller.context_manager.update_mission_stats(mission_id, model_details, log_queue, update_callback)
+                await self.controller.context_manager.update_mission_stats(mission_id, model_details, log_queue, update_callback)
                 
             initial_questions = generated_questions
 
@@ -169,9 +169,13 @@ class ResearchManager:
         # Log initial queue state
         logger.info(f"Initial question queue: {len(question_queue)} questions at depth 0")
 
-        # Concurrency Setup
+        # Concurrency Setup - Use mission-specific setting
+        from ai_researcher.dynamic_config import get_max_concurrent_requests
         running_tasks = set()
-        max_concurrent = config.MAX_CONCURRENT_REQUESTS if config.MAX_CONCURRENT_REQUESTS > 0 else float('inf')
+        # Get the user's max concurrent setting for this mission
+        user_max_concurrent = get_max_concurrent_requests(mission_id)
+        max_concurrent = user_max_concurrent if user_max_concurrent > 0 else float('inf')
+        logger.info(f"Initial research phase using max_concurrent={max_concurrent} from user settings")
 
         # Loop while there are questions to process or tasks running
         while question_queue or running_tasks:
@@ -223,10 +227,14 @@ class ResearchManager:
                         active_goals = self.controller.context_manager.get_active_goals(mission_id)
                         active_thoughts = self.controller.context_manager.get_recent_thoughts(mission_id, limit=THOUGHT_PAD_CONTEXT_LIMIT)
 
-                        # Apply Semaphore INSIDE the task
-                        async with self.controller.maybe_semaphore:
-                            # Call the agent's explore_question method
-                            result_tuple = await self.controller.research_agent.explore_question(
+                        # Apply both mission-specific and controller semaphores
+                        # Mission semaphore limits per-mission concurrency based on user settings
+                        # Controller semaphore limits total LLM API calls
+                        mission_semaphore = self.controller.context_manager.get_mission_semaphore(mission_id)
+                        async with mission_semaphore:
+                            async with self.controller.maybe_semaphore:
+                                # Call the agent's explore_question method
+                                result_tuple = await self.controller.research_agent.explore_question(
                                 question=q,
                                 mission_id=mission_id,
                                 mission_goal=user_request,
@@ -278,7 +286,7 @@ class ResearchManager:
 
                     if isinstance(result_data, Exception):
                         logger.error(f"Exploration task for '{original_question}' failed: {result_data}")
-                        self.controller.context_manager.log_execution_step(
+                        await self.controller.context_manager.log_execution_step(
                             mission_id=mission_id, agent_name=self.controller.research_agent.agent_name,
                             action=f"Explore Question (Depth {original_depth})",
                             input_summary=f"Q: {original_question[:60]}...", status="failure", error_message=str(result_data),
@@ -290,7 +298,7 @@ class ResearchManager:
                     relevant_notes_with_context, new_sub_questions, updated_scratchpad, exec_details = result_data
                     actual_notes = [note_tuple[0] for note_tuple in relevant_notes_with_context]
 
-                    self.controller.context_manager.log_execution_step(
+                    await self.controller.context_manager.log_execution_step(
                         mission_id, self.controller.research_agent.agent_name, f"Explore Question (Depth {original_depth})",
                         input_summary=f"Q: {original_question[:60]}...",
                         output_summary=f"{len(actual_notes)} relevant notes found. {len(new_sub_questions)} new sub-Q generated.",
@@ -310,7 +318,7 @@ class ResearchManager:
 
                     if actual_notes:
                         all_relevant_notes.extend(actual_notes)
-                        self.controller.context_manager.add_notes(mission_id, actual_notes)
+                        await self.controller.context_manager.add_notes(mission_id, actual_notes)
 
                     if updated_scratchpad is not None:
                         last_scratchpad_update_in_batch = updated_scratchpad
@@ -334,7 +342,7 @@ class ResearchManager:
 
                 except Exception as task_exec_e:
                     logger.error(f"Error retrieving result from exploration task: {task_exec_e}", exc_info=True)
-                    self.controller.context_manager.log_execution_step(
+                    await self.controller.context_manager.log_execution_step(
                         mission_id=mission_id, agent_name=self.controller.research_agent.agent_name,
                         action="Explore Question Task Execution",
                         input_summary="N/A", status="failure", error_message=f"Task execution error: {task_exec_e}",
@@ -345,7 +353,7 @@ class ResearchManager:
             if last_scratchpad_update_in_batch is not None and last_scratchpad_update_in_batch != current_scratchpad:
                 logger.info("Applying scratchpad update from last completed task in batch.")
                 current_scratchpad = last_scratchpad_update_in_batch
-                self.controller.context_manager.update_scratchpad(mission_id, current_scratchpad)
+                await self.controller.context_manager.update_scratchpad(mission_id, current_scratchpad)
 
             # Log Queue State
             depth_counts = {}
@@ -580,7 +588,7 @@ Instructions:
                     # ADD AGENT STEP LOGGING
                     log_status_planning = "success" if batch_plan_response and not batch_plan_response.parsing_error else "failure"
                     log_error_planning = batch_plan_response.parsing_error if batch_plan_response and batch_plan_response.parsing_error else ("Agent returned None" if not batch_plan_response else None)
-                    self.controller.context_manager.log_execution_step(
+                    await self.controller.context_manager.log_execution_step(
                         mission_id=mission_id,
                         agent_name=self.controller.planning_agent.agent_name,
                         action=log_action,
@@ -597,7 +605,7 @@ Instructions:
 
                     # Handle Generated Thought
                     if batch_plan_response and hasattr(batch_plan_response, 'generated_thought') and batch_plan_response.generated_thought:
-                        self.controller.context_manager.add_thought(mission_id, self.controller.planning_agent.agent_name, batch_plan_response.generated_thought)
+                        await self.controller.context_manager.add_thought(mission_id, self.controller.planning_agent.agent_name, batch_plan_response.generated_thought)
                         logger.info(f"PlanningAgent generated thought (Batch 1): {batch_plan_response.generated_thought}")
 
                 else:
@@ -656,7 +664,7 @@ Instructions:
                     # ADD AGENT STEP LOGGING
                     log_status_planning_rev = "success" if batch_plan_response and not batch_plan_response.parsing_error else "failure"
                     log_error_planning_rev = batch_plan_response.parsing_error if batch_plan_response and batch_plan_response.parsing_error else ("Agent returned None" if not batch_plan_response else None)
-                    self.controller.context_manager.log_execution_step(
+                    await self.controller.context_manager.log_execution_step(
                         mission_id=mission_id,
                         agent_name=self.controller.planning_agent.agent_name,
                         action=log_action,
@@ -673,14 +681,14 @@ Instructions:
 
                     # Handle Generated Thought
                     if batch_plan_response and hasattr(batch_plan_response, 'generated_thought') and batch_plan_response.generated_thought:
-                        self.controller.context_manager.add_thought(mission_id, self.controller.planning_agent.agent_name, batch_plan_response.generated_thought)
+                        await self.controller.context_manager.add_thought(mission_id, self.controller.planning_agent.agent_name, batch_plan_response.generated_thought)
                         logger.info(f"PlanningAgent generated thought (Batch {i+1}): {batch_plan_response.generated_thought}")
 
                 # Process Batch Result
                 if batch_model_details:
                     model_call_details_list.append(batch_model_details)
                 if batch_scratchpad_update:
-                    self.controller.context_manager.update_scratchpad(mission_id, batch_scratchpad_update)
+                    await self.controller.context_manager.update_scratchpad(mission_id, batch_scratchpad_update)
                     logger.info(f"Updated scratchpad after planning batch {i+1}.")
 
                 if not batch_plan_response or not isinstance(batch_plan_response, SimplifiedPlanResponse) or batch_plan_response.parsing_error:
@@ -688,7 +696,7 @@ Instructions:
                     if batch_plan_response and batch_plan_response.parsing_error:
                         error_msg += f": {batch_plan_response.parsing_error}"
                     logger.error(f"{error_msg} for batch {i+1}.")
-                    self.controller.context_manager.log_execution_step(
+                    await self.controller.context_manager.log_execution_step(
                         mission_id, "PlanningAgent", log_action,
                         input_summary=f"Processing batch {i+1} notes.", status="failure",
                         error_message=error_msg, model_details=batch_model_details,
@@ -709,7 +717,7 @@ Instructions:
             except Exception as batch_e:
                 logger.error(f"Error processing planning batch {i+1}: {batch_e}", exc_info=True)
                 # Log failure
-                self.controller.context_manager.log_execution_step(
+                await self.controller.context_manager.log_execution_step(
                     mission_id, "PlanningAgent", log_action,
                     input_summary=f"Processing batch {i+1} notes.", status="failure",
                     error_message=str(batch_e), model_details=batch_model_details,
@@ -740,7 +748,7 @@ Instructions:
                 validation_result = self.controller._validate_outline_minimum_requirements(final_plan_obj.report_outline)
                 if not validation_result["valid"]:
                     logger.error(f"Outline validation failed: {validation_result['reason']}")
-                    self.controller.context_manager.log_execution_step(
+                    await self.controller.context_manager.log_execution_step(
                         mission_id, "AgentController", "Validate Outline",
                         input_summary="Checking minimum outline requirements",
                         output_summary=f"Validation failed: {validation_result['reason']}",
@@ -752,7 +760,7 @@ Instructions:
                 
                 logger.info(f"Preliminary outline generated/finalized for mission {mission_id} after {len(note_batches)} batches.")
                 # Log final success summary
-                self.controller.context_manager.log_execution_step(
+                await self.controller.context_manager.log_execution_step(
                     mission_id, "AgentController", "Finalize Preliminary Outline",
                     input_summary=f"Processed {len(note_batches)} batches.",
                     output_summary=f"Final outline has {len(final_plan_obj.report_outline)} sections.",
@@ -765,7 +773,7 @@ Instructions:
                 return final_plan_obj
             except Exception as e:
                 logger.error(f"Error creating final SimplifiedPlan from batched response: {e}", exc_info=True)
-                self.controller.context_manager.log_execution_step(
+                await self.controller.context_manager.log_execution_step(
                     mission_id, "AgentController", "Finalize Preliminary Outline",
                     input_summary="Converting final batched response.", status="failure", error_message=str(e),
                     full_input=plan_response.model_dump() if plan_response else None,
@@ -785,11 +793,13 @@ Instructions:
         mission_id: str,
         plan: SimplifiedPlan,
         log_queue: Optional[queue.Queue] = None,
-        update_callback: Optional[Callable[[queue.Queue, Any], None]] = None
+        update_callback: Optional[Callable[[queue.Queue, Any], None]] = None,
+        resume_checkpoint: Optional[Dict[str, Any]] = None
     ) -> bool:
         """
         Manages the core structured research loop based on mission-specific settings.
         Includes research, reflection, and potential outline revision between rounds.
+        Supports resuming from checkpoint data.
         """
         # Import dynamic config functions to get mission-specific settings
         from ai_researcher.dynamic_config import (
@@ -806,8 +816,24 @@ Instructions:
         thought_pad_context_limit = get_thought_pad_context_limit(mission_id)
         skip_final_replanning = get_skip_final_replanning(mission_id)
         
+        # Log the actual settings being used
+        logger.info(f"Research settings for mission {mission_id}:")
+        logger.info(f"  - Structured research rounds: {num_rounds}")
+        logger.info(f"  - Max cycles per section: {max_cycles_per_section}")
+        logger.info(f"  - Max concurrent requests: {max_concurrent_requests}")
+        logger.info(f"  - Thought pad context limit: {thought_pad_context_limit}")
+        logger.info(f"  - Skip final replanning: {skip_final_replanning}")
+        
         logger.info(f"--- Starting Research Plan Execution ({num_rounds} Rounds, Max {max_cycles_per_section} cycles/section) for mission {mission_id} ---")
         logger.info(f"Mission-specific settings: max_concurrent={max_concurrent_requests}, thought_pad_limit={thought_pad_context_limit}, skip_final_replanning={skip_final_replanning}")
+
+        # Check if we're resuming from a checkpoint
+        start_round = 1
+        completed_sections = set()
+        if resume_checkpoint:
+            start_round = resume_checkpoint.get('current_round', 1)
+            completed_sections = set(resume_checkpoint.get('completed_sections', []))
+            logger.info(f"Resuming from checkpoint: Round {start_round}, Completed sections: {completed_sections}")
 
         # Create Mission-Specific Feedback Callback
         mission_feedback_callback = None
@@ -819,7 +845,7 @@ Instructions:
                     logger.error(f"Error calling update_callback with feedback message: {e}", exc_info=True)
             mission_feedback_callback = _feedback_callback_impl
 
-        for round_num in range(1, num_rounds + 1):
+        for round_num in range(start_round, num_rounds + 1):
             logger.info(f"--- Starting Research Round {round_num}/{num_rounds} ---")
             mission_context = self.controller.context_manager.get_mission_context(mission_id)
             if not mission_context or not mission_context.plan:
@@ -886,15 +912,27 @@ Instructions:
                 section_id = section.section_id
                 strategy = section.research_strategy
 
+                # Skip sections that were already completed (from checkpoint)
+                if section_id in completed_sections:
+                    logger.info(f"Round {round_num}: Skipping already completed section {section_id} ('{section.title}')")
+                    processed_sections_this_round.add(section_id)
+                    continue
+
                 logger.info(f"Round {round_num}: Processing section {section_id} ('{section.title}') - Strategy: {strategy}")
 
                 # Check Strategy and Subsections BEFORE proceeding
                 if strategy != "research_based":
-                    logger.info(f"  Skipping research/reflection for section {section_id} ('{section.title}') due to strategy: {strategy}.")
+                    logger.info(f"  Section {section_id} ('{section.title}') has strategy: {strategy}. Will be written but not researched.")
+                    # IMPORTANT: Don't skip these sections entirely - they still need to be written!
+                    # Mark as processed for research but ensure they're included in writing phase
                     processed_sections_this_round.add(section_id)
+                    # Store a note that this section needs content generation without research
+                    if not hasattr(self.controller.context_manager, '_content_based_sections'):
+                        self.controller.context_manager._content_based_sections = set()
+                    self.controller.context_manager._content_based_sections.add(section_id)
                     continue
                 elif section.subsections:
-                    logger.warning(f"  Skipping research/reflection for section {section_id} ('{section.title}'). It's marked 'research_based' but has subsections (likely an outline issue). Treating as a parent section.")
+                    logger.warning(f"  Section {section_id} ('{section.title}'). It's marked 'research_based' but has subsections. Will synthesize from subsections.")
                     processed_sections_this_round.add(section_id)
                     continue
                 else:
@@ -950,7 +988,7 @@ Instructions:
                         log_status = "success" if generated_notes is not None else "failure"
                         log_error_msg = None if log_status == "success" else "ResearchAgent failed to generate notes."
 
-                        self.controller.context_manager.log_execution_step(
+                        await self.controller.context_manager.log_execution_step(
                             mission_id=mission_id,
                             agent_name=self.controller.research_agent.agent_name,
                             action=f"Research Section: {section.section_id} (Pass {round_num}, Cycle {log_cycle_num})",
@@ -972,12 +1010,17 @@ Instructions:
 
                         # Update scratchpad if agent returned an update
                         if scratchpad_update:
-                            self.controller.context_manager.update_scratchpad(mission_id, scratchpad_update)
+                            await self.controller.context_manager.update_scratchpad(mission_id, scratchpad_update)
                             logger.info(f"Updated scratchpad after research step for section {section.section_id} (Pass {round_num}, Cycle {log_cycle_num}).")
 
-                        # Check if research failed critically
+                        # Check if research failed critically or no notes were generated
                         if generated_notes is None:
                             logger.warning(f"ResearchAgent failed to generate notes for section {section_id} in cycle {cycle_count+1}. Skipping reflection and stopping refinement for this section.")
+                            section_fully_refined = True
+                            continue
+                        elif not generated_notes:
+                            # No notes generated (likely hit limit)
+                            logger.info(f"  No new notes generated for section {section_id} (likely at capacity). Marking as fully refined.")
                             section_fully_refined = True
                             continue
                         elif generated_notes:
@@ -985,7 +1028,7 @@ Instructions:
                             try:
                                 # First, add the generated notes to the context manager
                                 if generated_notes:
-                                    self.controller.context_manager.add_notes(mission_id, generated_notes)
+                                    await self.controller.context_manager.add_notes(mission_id, generated_notes)
                                     logger.info(f"  Added {len(generated_notes)} notes to context manager for mission {mission_id}.")
                                 
                                 # Then associate the note IDs with the section
@@ -1004,8 +1047,15 @@ Instructions:
                                         
                                         if len(updated_ids) > len(existing_ids):
                                             section_obj_to_update.associated_note_ids = sorted(list(updated_ids))
-                                            self.controller.context_manager.store_plan(mission_id, current_plan_for_update)
+                                            await self.controller.context_manager.store_plan(mission_id, current_plan_for_update)
                                             logger.info(f"  Associated {len(new_note_ids)} new notes with section {section_id}. Total associated: {len(section_obj_to_update.associated_note_ids)}.")
+                                            
+                                            # Check if we've reached the max notes per section limit
+                                            from ai_researcher.dynamic_config import get_max_notes_per_section_assignment
+                                            max_notes = get_max_notes_per_section_assignment(mission_id)
+                                            if len(section_obj_to_update.associated_note_ids) >= max_notes:
+                                                logger.info(f"  Section {section_id} has reached max notes limit ({max_notes}). Marking as fully refined.")
+                                                section_fully_refined = True
                                         else:
                                             logger.debug(f"  No new note IDs to associate with section {section_id}.")
                                     else:
@@ -1056,6 +1106,18 @@ Instructions:
                             section_fully_refined = True
                     
                     processed_sections_this_round.add(section_id)
+                    completed_sections.add(section_id)
+                    
+                    # Save checkpoint after completing section
+                    checkpoint_data = {
+                        'current_round': round_num,
+                        'completed_sections': list(completed_sections),
+                        'processed_sections_this_round': list(processed_sections_this_round),
+                        'phase': 'structured_research',
+                        'last_completed_section': section_id
+                    }
+                    await self.controller.context_manager.save_phase_checkpoint(mission_id, 'structured_research', checkpoint_data)
+                    logger.info(f"Saved checkpoint after completing section {section_id}")
 
             # Trigger Synthesis for Section Intros (after processing all sections in order)
             logger.info(f"Round {round_num}: Checking for section intros to synthesize...")
@@ -1098,8 +1160,8 @@ Instructions:
 
             # Inter-Round Outline Revision (Conditional)
             # Only run revision if it's NOT the last round
-            # For the last round, only run if SKIP_FINAL_REPLANNING is False
-            if round_num < num_rounds or (round_num == num_rounds and not config.SKIP_FINAL_REPLANNING):
+            # For the last round, only run if skip_final_replanning is False
+            if round_num < num_rounds or (round_num == num_rounds and not skip_final_replanning):
                 logger.info(f"--- Starting Inter-Round Outline Revision after Round {round_num} ---")
                 revision_success = await self.controller.reflection_manager.process_suggestions_and_update_plan(
                     mission_id,
@@ -1112,10 +1174,10 @@ Instructions:
                 else:
                     logger.info(f"--- Completed Inter-Round Outline Revision after Round {round_num} ---")
             else:
-                logger.info(f"--- Skipping final Inter-Round Outline Revision after Round {round_num} because SKIP_FINAL_REPLANNING is True ---")
+                logger.info(f"--- Skipping final Inter-Round Outline Revision after Round {round_num} because skip_final_replanning is True ---")
 
         logger.info(f"--- Research Plan Execution Completed ({num_rounds} Rounds) for mission {mission_id} ---")
-        self.controller.context_manager.log_execution_step(
+        await self.controller.context_manager.log_execution_step(
             mission_id, "AgentController", "Execute Research Plan",
             input_summary=f"Executed {num_rounds} research rounds.",
             status="success", output_summary="Research plan execution phase completed.",
@@ -1141,7 +1203,7 @@ Instructions:
 
         if not mission_context:
             logger.error(f"Cannot reassign notes: Mission context not found for {mission_id}.")
-            self.controller.context_manager.log_execution_step(
+            await self.controller.context_manager.log_execution_step(
                 mission_id, "AgentController", "Reassign Notes Setup",
                 status="failure", error_message="Mission context not found.",
                 log_queue=log_queue, update_callback=update_callback
@@ -1154,7 +1216,7 @@ Instructions:
 
         if not final_plan or not final_plan.report_outline:
             logger.error(f"Cannot reassign notes: Final plan or report outline not found for mission {mission_id}.")
-            self.controller.context_manager.log_execution_step(
+            await self.controller.context_manager.log_execution_step(
                 mission_id, "AgentController", "Reassign Notes Setup",
                 status="failure", error_message="Final plan or outline not found.",
                 log_queue=log_queue, update_callback=update_callback
@@ -1183,10 +1245,15 @@ Instructions:
         current_scratchpad = self.controller.context_manager.get_scratchpad(mission_id)
         mission_goal = final_plan.mission_goal
 
-        # Get sections in processing order
-        sections_to_process = outline_utils.get_sections_in_order(final_plan.report_outline)
-        total_sections = len(sections_to_process)
-        logger.info(f"Found {total_sections} sections in the outline to process sequentially for note assignment.")
+        # Get sections in processing order - only research_based sections need note assignment
+        all_sections = outline_utils.get_sections_in_order(final_plan.report_outline)
+        sections_to_process = [
+            s for s in all_sections 
+            if s.research_strategy == "research_based"
+        ]
+        total_sections = len(all_sections)
+        research_sections = len(sections_to_process)
+        logger.info(f"Found {research_sections} research-based sections (out of {total_sections} total) to process for note assignment.")
 
         all_assignments = {}
         globally_assigned_note_ids = set()
@@ -1201,7 +1268,7 @@ Instructions:
                 return None
             
             processed_count += 1
-            logger.info(f"Processing section {processed_count}/{total_sections}: '{section.section_id}' ('{section.title}')")
+            logger.info(f"Processing section {processed_count}/{research_sections}: '{section.section_id}' ('{section.title}')")
 
             # Step 1: Rerank Notes for the Section
             reranked_notes_subset = []
@@ -1221,7 +1288,7 @@ Instructions:
 
                 logger.info(f"  Reranked notes for section '{section.section_id}'. Kept top {len(reranked_notes_subset)} notes.")
                 # Log reranking step
-                self.controller.context_manager.log_execution_step(
+                await self.controller.context_manager.log_execution_step(
                     mission_id, "TextReranker", f"Rerank Notes for Section {section.section_id}",
                     input_summary=f"Query: {reranker_query[:60]}..., Notes: {len(all_notes)}",
                     output_summary=f"Reranked {len(reranked_notes_subset)} notes.",
@@ -1231,7 +1298,7 @@ Instructions:
 
             except Exception as rerank_e:
                 logger.error(f"  Error during note reranking for section '{section.section_id}': {rerank_e}", exc_info=True)
-                self.controller.context_manager.log_execution_step(
+                await self.controller.context_manager.log_execution_step(
                     mission_id, "TextReranker", f"Rerank Notes for Section {section.section_id}",
                     input_summary=f"Query: {reranker_query[:60]}..., Notes: {len(all_notes)}",
                     status="failure", error_message=str(rerank_e),
@@ -1286,7 +1353,7 @@ Instructions:
                     logger.error(f"  {error_message} for section {section.section_id}.")
                 
                 # Log the step
-                self.controller.context_manager.log_execution_step(
+                await self.controller.context_manager.log_execution_step(
                     mission_id=mission_id,
                     agent_name=self.controller.note_assignment_agent.agent_name,
                     action=f"Assign Notes to Section {section.section_id}",
@@ -1302,7 +1369,7 @@ Instructions:
                 )
             except Exception as assign_e:
                 logger.error(f"  Error during note assignment for section '{section.section_id}': {assign_e}", exc_info=True)
-                self.controller.context_manager.log_execution_step(
+                await self.controller.context_manager.log_execution_step(
                     mission_id=mission_id,
                     agent_name=self.controller.note_assignment_agent.agent_name,
                     action=f"Assign Notes to Section {section.section_id}",
@@ -1322,7 +1389,7 @@ Instructions:
         result = FullNoteAssignments(assignments=all_assignments)
         
         # Log the final step
-        self.controller.context_manager.log_execution_step(
+        await self.controller.context_manager.log_execution_step(
             mission_id=mission_id,
             agent_name="AgentController",
             action="Complete Note Assignment Phase",

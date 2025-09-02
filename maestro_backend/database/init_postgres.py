@@ -165,6 +165,43 @@ def verify_database_setup():
         logger.error(f"Database verification failed: {str(e)}")
         return False
 
+def run_sql_migrations():
+    """Run SQL migration files for existing databases"""
+    try:
+        import glob
+        import os
+        
+        # Get the init-db directory path
+        init_db_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'init-db')
+        
+        if os.path.exists(init_db_dir):
+            # Get all SQL files sorted by name
+            sql_files = sorted(glob.glob(os.path.join(init_db_dir, '*.sql')))
+            
+            for sql_file in sql_files:
+                filename = os.path.basename(sql_file)
+                # Skip the main schema files, only run migration files
+                # Run migration files that start with 03- or higher numbers
+                if any(filename.startswith(f'{num:02d}-') for num in range(3, 100)):
+                    logger.info(f"Running migration: {filename}")
+                    try:
+                        with open(sql_file, 'r') as f:
+                            sql_content = f.read()
+                        
+                        with engine.connect() as conn:
+                            # Execute the migration SQL
+                            conn.execute(text(sql_content))
+                            conn.commit()
+                            logger.info(f"✅ Migration {filename} completed")
+                    except Exception as e:
+                        # Log but don't fail - migration might already be applied
+                        logger.warning(f"Migration {filename} skipped or already applied: {str(e)}")
+        
+        logger.info("SQL migrations check completed")
+        
+    except Exception as e:
+        logger.error(f"Error running SQL migrations: {str(e)}")
+
 def main():
     """Main initialization function"""
     logger.info("Starting PostgreSQL database initialization...")
@@ -184,6 +221,9 @@ def main():
     
     # Create tables
     create_tables()
+    
+    # Run SQL migrations for existing databases
+    run_sql_migrations()
     
     # Create default admin
     create_default_admin()

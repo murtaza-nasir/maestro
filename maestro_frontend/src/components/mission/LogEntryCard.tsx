@@ -2,7 +2,7 @@ import React from 'react';
 import { ChevronRight, ChevronDown } from 'lucide-react';
 import type { ExecutionLogEntry } from './AgentActivityLog';
 import { ActionParser } from './ActionParser';
-import { formatActivityLogTime } from '../../utils/timezone';
+import { formatChatMessageTime } from '../../utils/timezone';
 import { getAgentIcon, getAgentColorClass } from './agentIcons';
 
 interface LogEntryCardProps {
@@ -68,9 +68,9 @@ export const LogEntryCard: React.FC<LogEntryCardProps> = ({
                 //   timestamp: log.timestamp,
                 //   timestampType: typeof log.timestamp,
                 //   isDate: log.timestamp instanceof Date,
-                //   formatted: formatActivityLogTime(log.timestamp)
+                //   formatted: formatChatMessageTime(log.timestamp)
                 // });
-                return formatActivityLogTime(log.timestamp);
+                return formatChatMessageTime(log.timestamp);
               })()}
             </span>
             {(() => {

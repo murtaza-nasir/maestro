@@ -71,7 +71,7 @@ docker compose -f docker-compose.cpu.yml down
 docker compose logs -f maestro-backend
 
 # Wait for this message:
-# "INFO:     Application startup complete."
+# "INFO:     MAESTRO Backend Started Successfully!."
 ```
 
 ---

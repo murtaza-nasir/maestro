@@ -43,6 +43,14 @@ interface Mission {
     total_tokens: number
     tool_usage: Record<string, number>
   }
+  tool_selection?: {
+    web_search: boolean
+    local_rag: boolean
+  }
+  document_group_id?: string
+  document_group_name?: string
+  use_web_search?: boolean
+  use_local_rag?: boolean
   createdAt: Date
   updatedAt: Date
 }
@@ -52,7 +60,7 @@ interface MissionState {
   activeMission: Mission | null
   missionLogs: { [missionId: string]: Log[] };
   missionContexts: { [missionId: string]: MissionContext };
-  activeTab: 'plan' | 'notes' | 'draft' | 'agents'
+  activeTab: 'plan' | 'notes' | 'draft' | 'agents' | 'settings'
   isLoaded: boolean
   createMission: (request: string, options?: { useWebSearch?: boolean; documentGroupId?: string; chatId?: string }) => Promise<Mission>
   startMission: (missionId: string) => Promise<void>
@@ -68,7 +76,7 @@ interface MissionState {
   updateMissionReport: (missionId: string, report: string) => void
   updateMissionStats: (missionId: string, stats: Mission['stats']) => void
   setActiveMission: (missionId: string) => void
-  setActiveTab: (tab: 'plan' | 'notes' | 'draft' | 'agents') => void
+  setActiveTab: (tab: 'plan' | 'notes' | 'draft' | 'agents' | 'settings') => void
   fetchMissionStatus: (missionId: string) => Promise<void>
   fetchMissionPlan: (missionId: string) => Promise<void>
   fetchMissionReport: (missionId: string) => Promise<void>
@@ -598,7 +606,7 @@ export const useMissionStore = create<MissionState>((set, get) => ({
   fetchMissionStatus: async (missionId: string) => {
     try {
       const response = await apiClient.get(`/api/missions/${missionId}/status`)
-      const { status, updated_at } = response.data
+      const { status, updated_at, tool_selection, document_group_id } = response.data
       
       set((state) => {
         const updatedMissions = state.missions.map((mission) =>
@@ -606,7 +614,9 @@ export const useMissionStore = create<MissionState>((set, get) => ({
             ? { 
                 ...mission, 
                 status: status,
-                updatedAt: new Date(updated_at)
+                updatedAt: new Date(updated_at),
+                tool_selection: tool_selection,
+                document_group_id: document_group_id
               }
             : mission
         )
@@ -628,6 +638,7 @@ export const useMissionStore = create<MissionState>((set, get) => ({
       })
     } catch (error) {
       console.error('Failed to fetch mission status:', error)
+      // Don't let this error block the UI - just log it
     }
   },
 
@@ -730,17 +741,49 @@ export const useMissionStore = create<MissionState>((set, get) => ({
         return
       }
 
-      // If mission doesn't exist in DB, fetch it from the backend
-      const response = await apiClient.get(`/api/missions/${missionId}/status`)
-      const { status, updated_at } = response.data
+      // If mission doesn't exist in DB, fetch complete mission info from the backend
+      const response = await apiClient.get(`/api/missions/${missionId}/info`)
+      const { 
+        status, 
+        updated_at, 
+        created_at, 
+        tool_selection, 
+        document_group_id, 
+        document_group_name,
+        use_web_search,
+        use_local_rag,
+        user_request 
+      } = response.data
 
-      // Create a basic mission object
+      // Fetch document group name if we have an ID but no name
+      let finalDocumentGroupName = document_group_name
+      if (document_group_id && !document_group_name) {
+        try {
+          const groups = await apiClient.get('/api/document-groups/')
+          const group = groups.data.find((g: any) => g.id === document_group_id)
+          if (group) {
+            finalDocumentGroupName = group.name
+          }
+        } catch (error) {
+          console.error('Failed to fetch document group name:', error)
+        }
+      }
+
+      // Create a complete mission object with all necessary data
       const mission: Mission = {
         id: missionId,
-        request: 'Loading...', // We'll need to fetch this separately if needed
+        request: user_request || 'Loading...',
         status: status,
-        createdAt: new Date(updated_at),
+        createdAt: new Date(created_at || updated_at),
         updatedAt: new Date(updated_at),
+        tool_selection: tool_selection || { 
+          web_search: use_web_search !== undefined ? use_web_search : true, 
+          local_rag: use_local_rag !== undefined ? use_local_rag : false 
+        },
+        document_group_id: document_group_id,
+        document_group_name: finalDocumentGroupName,
+        use_web_search: use_web_search,
+        use_local_rag: use_local_rag,
       }
 
       // Save to IndexedDB and add to store
@@ -755,6 +798,18 @@ export const useMissionStore = create<MissionState>((set, get) => ({
       // Data will be loaded on-demand when user navigates to specific tabs
     } catch (error) {
       console.error('Failed to ensure mission in store:', error)
+      // Create a fallback mission object to prevent UI from breaking
+      const fallbackMission: Mission = {
+        id: missionId,
+        request: 'Failed to load mission data',
+        status: 'failed',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+      set((state) => ({
+        missions: [fallbackMission, ...state.missions.filter(m => m.id !== missionId)],
+        activeMission: fallbackMission,
+      }))
     }
   },
 

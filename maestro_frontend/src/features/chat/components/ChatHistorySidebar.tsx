@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useChatStore } from '../store'
+import { useMissionStore } from '../../mission/store'
 import { useViewStore } from '../../../stores/viewStore'
 import { useScrollPosition } from '../../../hooks/useScrollPosition'
 import { Button } from '../../../components/ui/button'
@@ -12,7 +13,9 @@ import {
   MessageSquare,
   Trash2,
   Edit2,
+  Loader2,
 } from 'lucide-react'
+import { useDebounce } from '../../../hooks/useDebounce'
 
 interface ChatHistorySidebarProps {}
 
@@ -26,8 +29,12 @@ export const ChatHistorySidebar: React.FC<ChatHistorySidebarProps> = React.memo(
   
   const { 
     chats, 
-    activeChat, 
+    activeChat,
+    isLoading,
+    hasMore,
     loadChats,
+    loadMoreChats,
+    searchChats,
     createChat, 
     setActiveChat, 
     updateChatTitle, 
@@ -35,9 +42,14 @@ export const ChatHistorySidebar: React.FC<ChatHistorySidebarProps> = React.memo(
     clearError
   } = useChatStore()
   
+  const { missions } = useMissionStore()
   const { setView } = useViewStore()
   const navigate = useNavigate()
   const location = useLocation()
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  
+  // Debounce search query for server-side search
+  const debouncedSearchQuery = useDebounce(searchQuery, 300)
 
   // Use scroll position hook to preserve scroll position during chat switching
   const { containerRef, saveScrollPosition } = useScrollPosition({
@@ -45,22 +57,32 @@ export const ChatHistorySidebar: React.FC<ChatHistorySidebarProps> = React.memo(
     dependencies: [activeChat?.id]
   })
 
-  // Load chats on component mount
+  // Load initial chats on component mount
   useEffect(() => {
-    loadChats()
-  }, [loadChats])
+    loadChats(1, '')
+  }, [])
+
+  // Handle search with debouncing
+  useEffect(() => {
+    if (debouncedSearchQuery !== undefined) {
+      searchChats(debouncedSearchQuery)
+    }
+  }, [debouncedSearchQuery, searchChats])
 
   // Clear error when component unmounts
   useEffect(() => {
     return () => clearError()
   }, [clearError])
 
-  const filteredChats = chats.filter(chat =>
-    chat.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    chat.messages.some(msg => 
-      msg.content.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-  )
+  // Handle scroll to load more
+  const handleScroll = useCallback(() => {
+    if (!scrollContainerRef.current || isLoading || !hasMore) return
+    
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current
+    if (scrollTop + clientHeight >= scrollHeight - 100) {
+      loadMoreChats()
+    }
+  }, [isLoading, hasMore, loadMoreChats])
 
   const handleNewChat = useCallback(async () => {
     try {
@@ -195,8 +217,15 @@ export const ChatHistorySidebar: React.FC<ChatHistorySidebarProps> = React.memo(
       </div>
 
       {/* Chat List */}
-      <div ref={containerRef} className="flex-1 overflow-y-auto p-4">
-        {filteredChats.length === 0 ? (
+      <div 
+        ref={(el) => {
+          containerRef.current = el
+          scrollContainerRef.current = el
+        }}
+        className="flex-1 overflow-y-auto p-4"
+        onScroll={handleScroll}
+      >
+        {(!Array.isArray(chats) || chats.length === 0) && !isLoading ? (
           <div className="text-center py-8">
             <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <p className="text-muted-foreground text-sm">
@@ -215,8 +244,13 @@ export const ChatHistorySidebar: React.FC<ChatHistorySidebarProps> = React.memo(
           </div>
         ) : (
           <div className="space-y-1">
-            {filteredChats.map((chat) => {
+            {Array.isArray(chats) && chats.map((chat) => {
               const isActive = activeChat?.id === chat.id
+              
+              // Check if this chat has a running mission
+              const missionStatus = chat.missionId 
+                ? missions.find(m => m.id === chat.missionId)?.status 
+                : null
               
               if (editingChatId === chat.id) {
                 return (
@@ -255,6 +289,14 @@ export const ChatHistorySidebar: React.FC<ChatHistorySidebarProps> = React.memo(
                 }
               ]
               
+              // Create status indicator for running missions
+              const statusIndicator = missionStatus === 'running' ? (
+                <div className="relative flex items-center justify-center">
+                  <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                  <div className="absolute inset-0 w-2 h-2 bg-red-500 rounded-full animate-ping opacity-75" />
+                </div>
+              ) : null
+              
               return (
                 <ListItem
                   key={chat.id}
@@ -262,12 +304,34 @@ export const ChatHistorySidebar: React.FC<ChatHistorySidebarProps> = React.memo(
                   onClick={() => handleChatSelect(chat.id)}
                   icon={<MessageSquare className="h-4 w-4" />}
                   title={chat.title}
-                  timestamp={formatRelativeTime(chat.updatedAt)}
+                  timestamp={formatRelativeTime(chat.createdAt)}
                   actions={actions}
                   showActionsPermanently={true}
+                  statusIndicator={statusIndicator}
                 />
               )
             })}
+            
+            {/* Loading indicator when fetching more */}
+            {isLoading && chats.length > 0 && (
+              <div className="flex justify-center py-3">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              </div>
+            )}
+            
+            {/* Load more indicator */}
+            {hasMore && !isLoading && (
+              <div className="text-center py-2">
+                <p className="text-xs text-muted-foreground">Scroll to load more</p>
+              </div>
+            )}
+          </div>
+        )}
+        
+        {/* Initial loading state */}
+        {isLoading && chats.length === 0 && (
+          <div className="flex justify-center items-center h-full">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         )}
       </div>

@@ -20,6 +20,7 @@ from services.chat_title_service import ChatTitleService
 from ai_researcher.agentic_layer.controller.writing_controller import WritingController
 from ai_researcher.agentic_layer.agents.simplified_writing_agent import SimplifiedWritingAgent
 from ai_researcher.user_context import set_current_user
+from ai_researcher.dynamic_config import get_writing_mode_doc_results, get_writing_mode_web_results
 
 router = APIRouter(prefix="/api/writing", tags=["writing"])
 
@@ -839,16 +840,45 @@ async def enhanced_writing_chat_stream(
     writing_session = draft.writing_session
     session_id = writing_session.id
     
-    # Save initial user message immediately
-    user_message = models.Message(
-        id=str(uuid.uuid4()),
-        chat_id=draft.writing_session.chat_id,
-        role="user",
-        content=request.message,
-        created_at=datetime.utcnow()
-    )
-    db.add(user_message)
-    db.commit()
+    # Check if this is a regeneration by looking for an existing user message with the same content
+    # that's recent (within last 10 messages) to avoid false positives
+    recent_messages = db.query(models.Message).filter(
+        models.Message.chat_id == draft.writing_session.chat_id
+    ).order_by(models.Message.created_at.desc()).limit(10).all()
+    
+    existing_user_message = None
+    for msg in recent_messages:
+        if msg.role == "user" and msg.content == request.message:
+            existing_user_message = msg
+            break
+    
+    if existing_user_message:
+        # This is a regeneration - reuse the existing user message
+        user_message = existing_user_message
+        logger.info(f"Detected regeneration - reusing existing user message {existing_user_message.id} for chat {draft.writing_session.chat_id}")
+        
+        # Clean up any orphaned assistant messages after this user message
+        orphaned_messages = db.query(models.Message).filter(
+            models.Message.chat_id == draft.writing_session.chat_id,
+            models.Message.created_at > existing_user_message.created_at
+        ).all()
+        
+        if orphaned_messages:
+            logger.info(f"Cleaning up {len(orphaned_messages)} orphaned messages for regeneration")
+            for msg in orphaned_messages:
+                db.delete(msg)
+            db.commit()
+    else:
+        # New message - save it
+        user_message = models.Message(
+            id=str(uuid.uuid4()),
+            chat_id=draft.writing_session.chat_id,
+            role="user",
+            content=request.message,
+            created_at=datetime.utcnow()
+        )
+        db.add(user_message)
+        db.commit()
     
     # Don't send any immediate updates - let the agent handle all status updates
     
@@ -918,12 +948,14 @@ async def process_writing_chat_in_background(
         writing_controller = await WritingController.get_instance(current_user)
         agent = SimplifiedWritingAgent(model_dispatcher=writing_controller.model_dispatcher)
         
-        # Get chat history
+        # Get chat history (excluding the message we just added)
         chat_history = db.query(models.Message).filter(
-            models.Message.chat_id == chat_id
+            models.Message.chat_id == chat_id,
+            models.Message.id != user_message_id
         ).order_by(models.Message.created_at.asc()).all()
         
-        chat_history_str = "\n".join([f"{msg.role}: {msg.content}" for msg in chat_history])
+        # Convert to list of dictionaries for the agent
+        chat_history_messages = [{"role": msg.role, "content": msg.content} for msg in chat_history]
         
         # Prepare context
         custom_system_prompt = None
@@ -942,8 +974,19 @@ async def process_writing_chat_in_background(
             default_iterations = user_research_params.get("writing_search_max_iterations", 1)
             default_queries = user_research_params.get("writing_search_max_queries", 3)
         
+        # Fetch document group name if document_group_id is provided
+        document_group_name = None
+        if document_group_id:
+            document_group = db.query(models.DocumentGroup).filter(
+                models.DocumentGroup.id == document_group_id,
+                models.DocumentGroup.user_id == current_user.id
+            ).first()
+            if document_group:
+                document_group_name = document_group.name
+        
         context_info = {
             "document_group_id": document_group_id,
+            "document_group_name": document_group_name,
             "use_web_search": use_web_search,
             "operation_mode": request.operation_mode or "balanced",
             "user_profile": {
@@ -957,7 +1000,8 @@ async def process_writing_chat_in_background(
                 "deep_search": request.deep_search or False,
                 "max_iterations": request.max_search_iterations or default_iterations,
                 "max_decomposed_queries": request.max_decomposed_queries or default_queries,
-                "max_results": user_search_settings.get("max_results", 5)
+                "max_results": get_writing_mode_web_results(),  # Use writing mode web results setting
+                "max_doc_results": get_writing_mode_doc_results()  # Use writing mode doc results setting
             }
         }
         
@@ -972,8 +1016,13 @@ async def process_writing_chat_in_background(
                     "router_decision": "planning",
                     "searching_web": "searching",
                     "searching_documents": "searching",
+                    "assessing_relevance": "evaluating",
+                    "fetching_content": "retrieving",
                     "generating_response": "writing",
-                    "finalizing": "finalizing"
+                    "generating": "writing",
+                    "finalizing": "finalizing",
+                    "complete": "complete",
+                    "error": "error"
                 }
                 
                 mapped_status = status_map.get(status, status)
@@ -990,7 +1039,7 @@ async def process_writing_chat_in_background(
         result = await agent.run(
             prompt=request.message,
             draft_content=draft.content,
-            chat_history=chat_history_str,
+            chat_history=chat_history_messages,
             context_info=context_info,
             status_callback=status_callback
         )
@@ -1040,261 +1089,6 @@ async def process_writing_chat_in_background(
     finally:
         db.close()
 
-# Keep original endpoint for backward compatibility but mark as deprecated
-@router.post("/enhanced-chat", response_model=schemas.WritingAgentResponse, deprecated=True)
-async def enhanced_writing_chat(
-    request: schemas.EnhancedWritingChatRequest,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user_from_cookie)
-):
-    """
-    Enhanced chat endpoint for the writing view with document group and web search support.
-    """
-    # Verify that the draft exists and the user has access to it.
-    draft = db.query(models.Draft).join(
-        models.WritingSession, models.Draft.writing_session_id == models.WritingSession.id
-    ).join(
-        models.Chat, models.WritingSession.chat_id == models.Chat.id
-    ).filter(
-        models.Draft.id == request.draft_id,
-        models.Chat.user_id == current_user.id
-    ).first()
-
-    if not draft:
-        raise HTTPException(status_code=404, detail="Draft not found or access denied")
-
-    # Get the writing session to access settings
-    writing_session = draft.writing_session
-
-    # Log the incoming request values for debugging
-    logger.info(f"Enhanced chat request - document_group_id: {request.document_group_id}, use_web_search: {request.use_web_search}")
-    logger.info(f"Writing session defaults - document_group_id: {writing_session.document_group_id}, use_web_search: {writing_session.use_web_search}")
-    
-    # Determine document group to use
-    # If explicitly set to empty string or "none", use None (no document group)
-    # If not provided (None), use session default
-    # Otherwise use the provided value
-    document_group_id = request.document_group_id
-    if document_group_id == "" or document_group_id == "none":
-        document_group_id = None
-    elif document_group_id is None:
-        document_group_id = writing_session.document_group_id
-
-    # Determine web search setting
-    # If explicitly provided (True or False), use that value
-    # If not provided (None), use session default
-    use_web_search = request.use_web_search
-    if use_web_search is None:
-        use_web_search = writing_session.use_web_search
-    # Otherwise use the provided value (could be False)
-    
-    logger.info(f"Final values - document_group_id: {document_group_id}, use_web_search: {use_web_search}")
-
-    # Verify document group access if specified
-    if document_group_id:
-        doc_group = db.query(models.DocumentGroup).filter(
-            models.DocumentGroup.id == document_group_id,
-            models.DocumentGroup.user_id == current_user.id
-        ).first()
-        
-        if not doc_group:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Document group not found or access denied"
-            )
-
-    # CRITICAL: Set the user context so ModelDispatcher can access user settings
-    set_current_user(current_user)
-    
-    # Get the user-specific WritingController
-    writing_controller = await WritingController.get_instance(current_user)
-
-    # Initialize the simplified agent with the user-specific model dispatcher
-    agent = SimplifiedWritingAgent(model_dispatcher=writing_controller.model_dispatcher)
-
-    # Get chat history
-    chat_history = db.query(models.Message).filter(
-        models.Message.chat_id == draft.writing_session.chat_id
-    ).order_by(models.Message.created_at.asc()).all()
-
-    chat_history_str = "\n".join([f"{msg.role}: {msg.content}" for msg in chat_history])
-
-    # Get custom system prompt from user settings
-    custom_system_prompt = None
-    if current_user.settings and isinstance(current_user.settings, dict):
-        writing_settings = current_user.settings.get("writing_settings", {})
-        if isinstance(writing_settings, dict):
-            custom_system_prompt = writing_settings.get("custom_system_prompt")
-
-    # Get default search settings from user profile if not provided
-    user_research_params = current_user.settings.get("research_parameters", {}) if current_user.settings else {}
-    user_search_settings = current_user.settings.get("search", {}) if current_user.settings else {}
-    
-    # Determine defaults based on deep search mode
-    if request.deep_search:
-        default_iterations = user_research_params.get("writing_deep_search_iterations", 3)
-        default_queries = user_research_params.get("writing_deep_search_queries", 5)
-    else:
-        default_iterations = user_research_params.get("writing_search_max_iterations", 1)
-        default_queries = user_research_params.get("writing_search_max_queries", 3)
-    
-    # Prepare context for the agent based on selected tools
-    context_info = {
-        "document_group_id": document_group_id,
-        "use_web_search": use_web_search,
-        "operation_mode": request.operation_mode or "balanced",
-        "user_profile": {
-            "full_name": current_user.full_name,
-            "location": current_user.location,
-            "job_title": current_user.job_title,
-        },
-        "session_id": writing_session.id,  # Add session_id for stats tracking
-        "custom_system_prompt": custom_system_prompt,  # Pass custom system prompt to agent
-        "search_config": {  # Add search configuration
-            "deep_search": request.deep_search or False,
-            "max_iterations": request.max_search_iterations or default_iterations,
-            "max_decomposed_queries": request.max_decomposed_queries or default_queries,
-            "max_results": user_search_settings.get("max_results", 5)  # Use user's search settings
-        }
-    }
-
-    # Create status update callback for WebSocket updates
-    async def status_update_callback(status: str, details: str = ""):
-        """Send status updates via WebSocket if available"""
-        try:
-            from api.websockets import send_agent_status_update, send_streaming_chunk_update
-            session_id = writing_session.id
-            
-            # Handle different status types
-            if status == "streaming_chunk":
-                # Send streaming content chunk
-                await send_streaming_chunk_update(session_id, details)
-            else:
-                # Send regular status update
-                await send_agent_status_update(session_id, status, details)
-        except Exception as e:
-            logger.warning(f"Failed to send status update: {e}")
-
-    # Run the agent with enhanced context and status updates
-    result = await agent.run(
-        prompt=request.message,
-        draft_content=draft.content,
-        chat_history=chat_history_str,
-        context_info=context_info,
-        status_callback=status_update_callback
-    )
-
-    # Check if this is a regeneration by looking for an existing user message with the same content
-    # We'll look for the most recent user message with this exact content
-    existing_user_message = db.query(models.Message).filter(
-        models.Message.chat_id == draft.writing_session.chat_id,
-        models.Message.role == "user",
-        models.Message.content == request.message
-    ).order_by(models.Message.created_at.desc()).first()
-
-    # Only save user message if it doesn't already exist (i.e., this is not a regeneration)
-    if not existing_user_message:
-        user_message = models.Message(
-            id=str(uuid.uuid4()),
-            chat_id=draft.writing_session.chat_id,
-            role="user",
-            content=request.message,
-            created_at=datetime.utcnow()
-        )
-        db.add(user_message)
-        logger.info(f"Created new user message for chat {draft.writing_session.chat_id}")
-    else:
-        logger.info(f"Detected regeneration - reusing existing user message {existing_user_message.id} for chat {draft.writing_session.chat_id}")
-        
-        # For regeneration, ensure we clean up any orphaned assistant messages
-        # that might not have been properly deleted by the frontend call
-        orphaned_assistant_messages = db.query(models.Message).filter(
-            models.Message.chat_id == draft.writing_session.chat_id,
-            models.Message.role == "assistant",
-            models.Message.created_at > existing_user_message.created_at
-        ).all()
-        
-        if orphaned_assistant_messages:
-            logger.info(f"Cleaning up {len(orphaned_assistant_messages)} orphaned assistant messages for regeneration")
-            for msg in orphaned_assistant_messages:
-                db.delete(msg)
-
-    # Always save the new agent response (whether new message or regeneration)
-    agent_response_msg = models.Message(
-        id=str(uuid.uuid4()),
-        chat_id=draft.writing_session.chat_id,
-        role="assistant",
-        content=result["chat_response"],
-        sources=result.get("sources", []),  # Save sources to database
-        created_at=datetime.utcnow()
-    )
-    db.add(agent_response_msg)
-
-    db.commit()
-
-    # Generate intelligent chat title after successful AI response (similar to research chat)
-    updated_title = None
-    try:
-        logger.info(f"Attempting to generate intelligent title for writing chat {draft.writing_session.chat_id}")
-        title_service = ChatTitleService(writing_controller.model_dispatcher)
-        
-        # Create a writing-focused title generation prompt
-        title_updated = await title_service.update_title_if_needed(
-            db=db,
-            chat_id=draft.writing_session.chat_id,
-            user_id=current_user.id,
-            user_message=request.message,
-            ai_response=result["chat_response"]
-        )
-        
-        if title_updated:
-            logger.info(f"Writing chat title updated successfully for chat {draft.writing_session.chat_id}")
-            # Get the updated title to return to frontend
-            from database import crud
-            updated_chat = crud.get_chat(db, draft.writing_session.chat_id, current_user.id)
-            if updated_chat:
-                updated_title = updated_chat.title
-                
-                # Send WebSocket notification about title update
-                try:
-                    from api.websockets import send_chat_title_update
-                    session_id = writing_session.id
-                    await send_chat_title_update(session_id, draft.writing_session.chat_id, updated_title)
-                    logger.info(f"Sent chat title update via WebSocket for chat {draft.writing_session.chat_id}")
-                except Exception as ws_error:
-                    logger.warning(f"Failed to send chat title update via WebSocket: {ws_error}")
-        else:
-            logger.info(f"Writing chat title did not need updating for chat {draft.writing_session.chat_id}")
-            
-    except Exception as title_error:
-        # Don't let title generation errors affect the main chat response
-        logger.warning(f"Failed to update writing chat title for {draft.writing_session.chat_id}: {title_error}", exc_info=True)
-
-    # Build context usage response
-    context_used = schemas.ContextUsage(
-        document_group=bool(document_group_id),
-        search_results=use_web_search,
-        conversation_history=True,
-        full_document=True
-    )
-
-    # Send final status update to ensure WebSocket clears loading state
-    try:
-        from api.websockets import send_agent_status_update
-        await send_agent_status_update(writing_session.id, "idle", "")
-        logger.info(f"Sent final idle status for session {writing_session.id}")
-    except Exception as ws_error:
-        logger.warning(f"Failed to send final status update: {ws_error}")
-    
-    return schemas.WritingAgentResponse(
-        message=result["chat_response"],
-        sources=result.get("sources", []),  # Include sources from the agent
-        operations=[],
-        context_used=context_used,
-        revision_steps_executed=schemas.RevisionStepsExecuted(),
-        error=None,
-        updated_title=updated_title  # Include the updated title if it was changed
-    )
 
 @router.put("/sessions/{session_id}/settings", response_model=schemas.WritingSession)
 async def update_session_settings(

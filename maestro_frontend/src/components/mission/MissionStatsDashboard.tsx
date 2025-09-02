@@ -104,7 +104,7 @@ export const MissionStatsDashboard: React.FC<MissionStatsDashboardProps> = ({
   };
 
   return (
-    <div className="h-full flex flex-col space-y-2 text-xs">
+    <div className="flex flex-col space-y-2 text-xs">
       {/* Overview Cards - More compact grid */}
       <div className="grid grid-cols-4 gap-2">
         <Card className="min-h-0">
@@ -157,7 +157,7 @@ export const MissionStatsDashboard: React.FC<MissionStatsDashboardProps> = ({
       </div>
 
       {/* Agent Activity Breakdown - More compact */}
-      <Card className="flex-1 min-h-0">
+      <Card className="min-h-0">
         <CardHeader className="pb-1">
           <CardTitle className="text-xs flex items-center">
             <Users className="h-3 w-3 mr-1" />
@@ -189,7 +189,7 @@ export const MissionStatsDashboard: React.FC<MissionStatsDashboardProps> = ({
       </Card>
 
       {/* Phase Breakdown - More compact */}
-      <Card className="flex-1 min-h-0">
+      <Card className="min-h-0">
         <CardHeader className="pb-1">
           <CardTitle className="text-xs flex items-center">
             <TrendingUp className="h-3 w-3 mr-1" />

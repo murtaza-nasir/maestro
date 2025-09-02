@@ -89,7 +89,7 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
         </TabsContent>
         
         <TabsContent value="stats" className="flex-1 mt-2 overflow-hidden">
-          <div className="overflow-auto">
+          <div className="h-full overflow-auto">
             <MissionStatsDashboard 
               logs={memoizedLogs}
               missionStatus={activeMission?.status}

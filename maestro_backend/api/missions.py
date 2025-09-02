@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Response, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Response, Query, Body
+from pydantic import BaseModel, Field
 import pypandoc
 import io
 from typing import Dict, Optional, List, Any
@@ -19,13 +19,15 @@ from api.schemas import (
 from api.utils import process_execution_log_entry_for_frontend
 from auth.dependencies import get_current_user_from_cookie
 from database.database import SessionLocal, get_db
-from database import crud
+from database.async_database import get_async_db_session
+from database import crud, async_crud, models
 from database.models import User
-from ai_researcher.agentic_layer.context_manager import ContextManager, set_main_event_loop
+from ai_researcher.agentic_layer.async_context_manager import AsyncContextManager, set_main_event_loop
 from ai_researcher.agentic_layer.schemas.notes import Note
 from ai_researcher.agentic_layer.agent_controller import AgentController
 from ai_researcher import config
 from ai_researcher.agentic_layer.controller.core_controller import MaybeSemaphore
+from services.websocket_manager import websocket_manager
 import json
 from ai_researcher.agentic_layer.model_dispatcher import ModelDispatcher
 from ai_researcher.agentic_layer.tool_registry import ToolRegistry
@@ -291,16 +293,17 @@ async def transform_note_for_frontend(note) -> dict:
     return transformed
 
 # Global instances - these will be initialized when the app starts
-context_manager: Optional[ContextManager] = None
+context_manager: Optional[AsyncContextManager] = None
 agent_controller: Optional[AgentController] = None
 
-def initialize_ai_components():
+async def initialize_ai_components():
     """Initialize the AI research components."""
     global context_manager, agent_controller
     
     try:
         # Initialize core components
-        context_manager = ContextManager(db_session_factory=SessionLocal)
+        context_manager = AsyncContextManager()
+        await context_manager.async_init()  # Initialize async
         # Initialize ModelDispatcher with empty user settings for global instance
         # Individual missions will create their own dispatchers with user-specific settings
         model_dispatcher = ModelDispatcher({})
@@ -333,7 +336,7 @@ def initialize_ai_components():
         logger.error(f"Failed to initialize AI components: {e}", exc_info=True)
         return False
 
-def get_context_manager() -> ContextManager:
+def get_context_manager() -> AsyncContextManager:
     """Dependency to get the context manager instance."""
     if context_manager is None:
         raise HTTPException(
@@ -373,10 +376,21 @@ def get_user_specific_agent_controller(
     
     # Create a per-chat semaphore to allow concurrent chats
     # Each chat gets its own semaphore, allowing multiple chats to process simultaneously
+    # Use the USER's max_concurrent_requests setting from their profile
+    from ai_researcher.dynamic_config import get_max_concurrent_requests
+    from ai_researcher.user_context import set_current_user
+    
+    # Set the current user context so dynamic config can retrieve their settings
+    set_current_user(current_user)
+    
+    # Get the user's max concurrent requests setting (not the global config default)
+    user_max_concurrent = get_max_concurrent_requests()
+    
     chat_semaphore = None
-    if config.MAX_CONCURRENT_REQUESTS > 0:
-        # Create a per-chat semaphore - each chat can make its own concurrent requests
-        chat_semaphore = asyncio.Semaphore(config.MAX_CONCURRENT_REQUESTS)
+    if user_max_concurrent > 0:
+        # Create a per-chat semaphore using the user's setting
+        chat_semaphore = asyncio.Semaphore(user_max_concurrent)
+        logger.info(f"Created chat semaphore with user '{current_user.username}' max_concurrent_requests: {user_max_concurrent}")
     
     user_model_dispatcher = ModelDispatcher(
         user_settings=user_settings,
@@ -394,10 +408,12 @@ def get_user_specific_agent_controller(
         reranker=agent_controller.reranker
     )
     
-    # Override the semaphore with our per-chat semaphore
-    # This ensures each chat has its own concurrency limit
-    user_agent_controller.semaphore = chat_semaphore
-    user_agent_controller.maybe_semaphore = MaybeSemaphore(chat_semaphore)
+    # IMPORTANT: Disable the controller-level semaphore to allow true per-mission concurrency
+    # Mission-specific semaphores in AsyncContextManager handle concurrency per mission
+    # This allows multiple missions to run truly concurrently without blocking each other
+    # The ModelDispatcher already has the chat_semaphore for rate limiting API calls
+    user_agent_controller.semaphore = None
+    user_agent_controller.maybe_semaphore = MaybeSemaphore(None)
     
     return user_agent_controller
 
@@ -409,7 +425,7 @@ from ai_researcher.settings_optimizer import determine_research_parameters as _d
 async def create_mission(
     mission_data: dict,
     current_user: User = Depends(get_current_user_from_cookie),
-    context_mgr: ContextManager = Depends(get_context_manager),
+    context_mgr: AsyncContextManager = Depends(get_context_manager),
     controller: AgentController = Depends(get_agent_controller),
     db: Session = Depends(get_db)
 ):
@@ -428,18 +444,107 @@ async def create_mission(
         if not use_web_search and not use_local_rag:
             raise HTTPException(status_code=422, detail="At least one information source must be enabled.")
 
-        mission_context = context_mgr.start_mission(user_request, chat_id)
-        mission_id = mission_context.mission_id
-
-        # Handle research parameter settings
+        # Capture all user settings
         user_settings = current_user.settings or {}
         research_params = user_settings.get("research_parameters", {})
+        
+        # Capture model configuration
+        ai_settings = user_settings.get("ai_endpoints", {})
+        model_config = {
+            "fast_provider": ai_settings.get("fast_llm_provider"),
+            "fast_model": ai_settings.get("fast_llm_model"),
+            "mid_provider": ai_settings.get("mid_llm_provider"),
+            "mid_model": ai_settings.get("mid_llm_model"),
+            "intelligent_provider": ai_settings.get("intelligent_llm_provider"),
+            "intelligent_model": ai_settings.get("intelligent_llm_model"),
+            "verifier_provider": ai_settings.get("verifier_llm_provider"),
+            "verifier_model": ai_settings.get("verifier_llm_model"),
+        }
+        
+        # Capture search settings
+        search_settings = user_settings.get("search", {})
+        web_fetch_settings = user_settings.get("web_fetch", {})
+        
+        # Get document group name if ID is provided
+        document_group_name = None
+        if document_group_id:
+            async_db = await get_async_db_session()
+            try:
+                doc_group = await async_crud.get_document_group(async_db, document_group_id=document_group_id, user_id=current_user.id)
+                if doc_group:
+                    document_group_name = doc_group.name
+            finally:
+                await async_db.close()
+        
+        # Create mission with all settings
+        mission_context = await context_mgr.start_mission(
+            user_request=user_request,
+            chat_id=chat_id,
+            document_group_id=document_group_id,
+            document_group_name=document_group_name,
+            use_web_search=use_web_search,
+            llm_config=model_config,
+            research_params=research_params
+        )
+        mission_id = mission_context.mission_id
+        
+        # Store comprehensive mission metadata including all settings
+        comprehensive_settings = {
+            # Tool selection
+            "use_web_search": use_web_search,
+            "use_local_rag": use_local_rag,
+            "document_group_id": document_group_id,
+            "document_group_name": document_group_name,
+            
+            # Model configuration at mission creation
+            "model_config": model_config,
+            
+            # Research parameters at mission creation
+            "research_params": research_params,
+            
+            # Search and web fetch settings
+            "search_provider": search_settings.get("provider"),
+            "web_fetch_settings": web_fetch_settings,
+            
+            # Store the complete user settings for reference
+            "all_user_settings": user_settings,
+            
+            # Timestamp for when settings were captured
+            "settings_captured_at": datetime.utcnow().isoformat()
+        }
+        
+        # Store all metadata in one update to avoid conflicts
+        all_metadata = {
+            "comprehensive_settings": comprehensive_settings,
+            "tool_selection": {"web_search": use_web_search, "local_rag": use_local_rag},
+            "document_group_id": document_group_id,
+            "document_group_name": document_group_name,
+            "use_web_search": use_web_search,
+            "use_local_rag": use_local_rag
+        }
+        
+        # Update mission metadata with all settings at once
+        await context_mgr.update_mission_metadata(mission_id, all_metadata)
+        
+        # Keep backward compatibility
+        all_settings = {
+            "search_provider": search_settings.get("provider"),
+            "web_fetch": web_fetch_settings,
+            "document_group_id": document_group_id,
+            "document_group_name": document_group_name,
+            "use_web_search": use_web_search
+        }
+        mission_context.mission_settings = all_settings
         
         final_mission_settings_dict = None
 
         if research_params.get("auto_optimize_params"):
             logger.info(f"Auto-optimizing research parameters for mission {mission_id}.")
-            chat_history = crud.get_chat_messages(db, chat_id=chat_id, user_id=current_user.id)
+            async_db = await get_async_db_session()
+            try:
+                chat_history = await async_crud.get_chat_messages(async_db, chat_id=chat_id, user_id=current_user.id)
+            finally:
+                await async_db.close()
             final_mission_settings_dict = await _determine_research_parameters(chat_history, controller)
             if not final_mission_settings_dict:
                 logger.warning(f"AI parameter optimization failed for mission {mission_id}. Proceeding without mission-specific settings.")
@@ -451,7 +556,7 @@ async def create_mission(
             # Validate with Pydantic model before storing
             try:
                 validated_settings = MissionSettings(**final_mission_settings_dict)
-                context_mgr.update_mission_metadata(
+                await context_mgr.update_mission_metadata(
                     mission_id, 
                     {"mission_settings": validated_settings.model_dump(exclude_none=True)}
                 )
@@ -463,7 +568,7 @@ async def create_mission(
                     f"**Mission-Specific Overrides (AI-Generated or Manual):**\n```json\n{json.dumps(final_mission_settings_dict, indent=2)}\n```\n\n"
                     f"**Effective Settings for this Mission:**\n```json\n{json.dumps(validated_settings.model_dump(), indent=2)}\n```"
                 )
-                context_mgr.log_execution_step(
+                await context_mgr.log_execution_step(
                     mission_id=mission_id,
                     agent_name="Configuration",
                     action="Applying Research Parameters",
@@ -474,12 +579,7 @@ async def create_mission(
             except Exception as pydantic_error:
                 logger.error(f"Failed to validate/store/log mission settings for {mission_id}: {pydantic_error}", exc_info=True)
 
-        # Store source configuration
-        source_config = {
-            "tool_selection": {"web_search": use_web_search, "local_rag": use_local_rag},
-            "document_group_id": document_group_id
-        }
-        context_mgr.update_mission_metadata(mission_id, source_config)
+        # Source configuration already stored in comprehensive metadata above
         
         logger.info(f"Created new mission {mission_id} for user {current_user.username} in chat {chat_id}")
         
@@ -497,29 +597,35 @@ async def create_mission(
 async def get_mission_status(
     mission_id: str,
     current_user: User = Depends(get_current_user_from_cookie),
-    context_mgr: ContextManager = Depends(get_context_manager)
+    context_mgr: AsyncContextManager = Depends(get_context_manager)
 ):
     """Get the current status of a mission."""
     try:
         mission_context = context_mgr.get_mission_context(mission_id)
         if not mission_context:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=404,
                 detail="Mission not found"
             )
+        
+        # Include tool_selection in the status response
+        tool_selection = mission_context.metadata.get("tool_selection") if mission_context.metadata else None
+        document_group_id = mission_context.metadata.get("document_group_id") if mission_context.metadata else None
         
         return MissionStatus(
             mission_id=mission_id,
             status=mission_context.status,
             updated_at=mission_context.updated_at,
-            error_info=mission_context.error_info
+            error_info=mission_context.error_info,
+            tool_selection=tool_selection,
+            document_group_id=document_group_id
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to get mission status: {e}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=500,
             detail="Failed to get mission status"
         )
 
@@ -527,14 +633,14 @@ async def get_mission_status(
 async def get_mission_stats(
     mission_id: str,
     current_user: User = Depends(get_current_user_from_cookie),
-    context_mgr: ContextManager = Depends(get_context_manager)
+    context_mgr: AsyncContextManager = Depends(get_context_manager)
 ):
     """Get mission statistics including cost and token usage."""
     try:
         mission_context = context_mgr.get_mission_context(mission_id)
         if not mission_context:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=404,
                 detail="Mission not found"
             )
         
@@ -553,7 +659,7 @@ async def get_mission_stats(
     except Exception as e:
         logger.error(f"Failed to get mission stats: {e}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=500,
             detail="Failed to get mission stats"
         )
 
@@ -561,14 +667,14 @@ async def get_mission_stats(
 async def get_mission_plan(
     mission_id: str,
     current_user: User = Depends(get_current_user_from_cookie),
-    context_mgr: ContextManager = Depends(get_context_manager)
+    context_mgr: AsyncContextManager = Depends(get_context_manager)
 ):
     """Get the research plan for a mission."""
     try:
         mission_context = context_mgr.get_mission_context(mission_id)
         if not mission_context:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=404,
                 detail="Mission not found"
             )
         
@@ -586,7 +692,7 @@ async def get_mission_plan(
     except Exception as e:
         logger.error(f"Failed to get mission plan: {e}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=500,
             detail="Failed to get mission plan"
         )
 
@@ -596,14 +702,14 @@ async def get_mission_notes(
     limit: int = 50,
     offset: int = 0,
     current_user: User = Depends(get_current_user_from_cookie),
-    context_mgr: ContextManager = Depends(get_context_manager)
+    context_mgr: AsyncContextManager = Depends(get_context_manager)
 ):
     """Get notes for a given mission with pagination, transformed for frontend consumption."""
     try:
         mission_context = context_mgr.get_mission_context(mission_id)
         if not mission_context:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=404,
                 detail="Mission not found"
             )
         
@@ -651,7 +757,7 @@ async def get_mission_notes(
     except Exception as e:
         logger.error(f"Failed to get mission notes: {e}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=500,
             detail="Failed to get mission notes"
         )
 
@@ -662,34 +768,38 @@ async def get_mission_logs(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(1000, ge=1, le=10000, description="Number of records to return"),
     current_user: User = Depends(get_current_user_from_cookie),
-    context_mgr: ContextManager = Depends(get_context_manager),
+    context_mgr: AsyncContextManager = Depends(get_context_manager),
     db: Session = Depends(get_db)
 ):
     """Get all execution logs for a given mission from the database."""
     try:
         # Check if the mission exists and belongs to the current user
-        mission = crud.get_mission(db, mission_id, current_user.id)
-        if not mission:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Mission not found"
+        async_db = await get_async_db_session()
+        try:
+            mission = await async_crud.get_mission(async_db, mission_id, current_user.id)
+            if not mission:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Mission not found"
+                )
+            
+            # Import document service for filename mapping
+            from services.document_service import document_service
+            
+            # Get logs from database only - these are the source of truth
+            # Live updates come through WebSocket, not through this endpoint
+            db_logs = await async_crud.get_mission_execution_logs(
+                async_db, 
+                mission_id, 
+                current_user.id,
+                skip=skip,
+                limit=limit
             )
-        
-        # Import document service for filename mapping
-        from services.document_service import document_service
-        
-        # Get logs from database only - these are the source of truth
-        # Live updates come through WebSocket, not through this endpoint
-        db_logs = crud.get_mission_execution_logs(
-            db, 
-            mission_id, 
-            current_user.id,
-            skip=skip,
-            limit=limit
-        )
-        
-        # Get total count for pagination info
-        total_logs_count = crud.get_mission_execution_logs_count(db, mission_id, current_user.id)
+            
+            # Get total count for pagination info
+            total_logs_count = await async_crud.get_mission_execution_logs_count(async_db, mission_id, current_user.id)
+        finally:
+            await async_db.close()
         
         logger.info(f"Retrieved {len(db_logs)} logs from DB for mission {mission_id} (skip={skip}, limit={limit}, total={total_logs_count})")
         
@@ -739,7 +849,7 @@ async def get_mission_logs(
     except Exception as e:
         logger.error(f"Failed to get mission logs: {e}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=500,
             detail="Failed to get mission logs"
         )
 
@@ -747,7 +857,7 @@ async def get_mission_logs(
 async def get_mission_draft(
     mission_id: str,
     current_user: User = Depends(get_current_user_from_cookie),
-    context_mgr: ContextManager = Depends(get_context_manager)
+    context_mgr: AsyncContextManager = Depends(get_context_manager)
 ):
     """Get the current draft of the report for a mission."""
     try:
@@ -756,7 +866,7 @@ async def get_mission_draft(
     except Exception as e:
         logger.error(f"Failed to get mission draft: {e}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=500,
             detail="Failed to get mission draft"
         )
 
@@ -764,14 +874,14 @@ async def get_mission_draft(
 async def get_mission_report(
     mission_id: str,
     current_user: User = Depends(get_current_user_from_cookie),
-    context_mgr: ContextManager = Depends(get_context_manager)
+    context_mgr: AsyncContextManager = Depends(get_context_manager)
 ):
     """Get the final research report for a completed mission."""
     try:
         mission_context = context_mgr.get_mission_context(mission_id)
         if not mission_context:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=404,
                 detail="Mission not found"
             )
         
@@ -784,8 +894,67 @@ async def get_mission_report(
     except Exception as e:
         logger.error(f"Failed to get mission report: {e}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=500,
             detail="Failed to get mission report"
+        )
+
+@router.put("/missions/{mission_id}/report")
+async def update_mission_report(
+    mission_id: str,
+    report_content: str = Body(..., embed=True),
+    current_user: User = Depends(get_current_user_from_cookie),
+    context_mgr: AsyncContextManager = Depends(get_context_manager),
+    db: Session = Depends(get_db)
+):
+    """Update the mission report content without updating chat timestamp."""
+    try:
+        # Get mission context
+        mission_context = context_mgr.get_mission_context(mission_id)
+        if not mission_context:
+            raise HTTPException(
+                status_code=404,
+                detail="Mission not found"
+            )
+        
+        # Verify user owns the mission
+        async_db = await get_async_db_session()
+        try:
+            mission = await async_crud.get_mission(async_db, mission_id, current_user.id)
+            if not mission:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Mission not found or access denied"
+                )
+        finally:
+            await async_db.close()
+        
+        # Update the final report in context
+        mission_context.final_report = report_content
+        
+        # Store the updated context in database WITHOUT updating chat timestamp
+        async_db = await get_async_db_session()
+        try:
+            # Update only the mission_context field in the missions table WITHOUT updating timestamp
+            await async_crud.update_mission_context_no_timestamp(
+                async_db, 
+                mission_id=mission_id, 
+                mission_context=mission_context.model_dump(mode='json')
+            )
+            logger.info(f"Updated report content for mission {mission_id} without updating chat timestamp")
+        finally:
+            await async_db.close()
+        
+        return MissionReport(
+            mission_id=mission_id,
+            final_report=report_content
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update mission report: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update mission report"
         )
 
 @router.post("/missions/{mission_id}/resume")
@@ -799,16 +968,33 @@ async def resume_mission_execution(
     try:
         mission_context = controller.context_manager.get_mission_context(mission_id)
         if not mission_context:
+            logger.error(f"Mission {mission_id} not found in context manager")
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=404,
                 detail="Mission not found"
             )
+        
+        logger.info(f"Attempting to resume mission {mission_id} with status: {mission_context.status}")
 
-        if mission_context.status != "stopped":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Mission cannot be resumed. Current status: {mission_context.status}"
-            )
+        # Allow resuming from multiple states (including running which might have been paused)
+        resumable_statuses = ["stopped", "paused", "failed"]
+        if mission_context.status not in resumable_statuses:
+            if mission_context.status == "completed":
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Mission is already completed. Cannot resume a completed mission."
+                )
+            elif mission_context.status == "running":
+                # Mission might appear as running but actually be paused - check if there are active tasks
+                logger.warning(f"Mission {mission_id} status is 'running' but resume was requested. Allowing resume.")
+                # Don't raise error, allow resume to proceed
+            elif mission_context.status == "planning":
+                logger.info(f"Mission {mission_id} is in planning phase. Continuing from planning.")
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Mission cannot be resumed. Current status: {mission_context.status}"
+                )
 
         # Create a queue and callback function for WebSocket updates
         log_queue = queue.Queue()
@@ -900,6 +1086,9 @@ async def resume_mission_execution(
             except Exception as e:
                 logger.error(f"Error in websocket_update_callback for mission {mission_id}: {e}")
 
+        # Update status to indicate resuming
+        await controller.context_manager.update_mission_status(mission_id, "running")
+        
         # Resume mission execution in a separate thread from the pool
         loop = asyncio.get_event_loop()
         thread_pool: ThreadPoolExecutor = request.app.state.thread_pool
@@ -915,13 +1104,14 @@ async def resume_mission_execution(
 
         loop.run_in_executor(thread_pool, run_mission_in_thread)
         
+        logger.info(f"Mission {mission_id} resume initiated successfully")
         return {"message": "Mission execution resumed", "mission_id": mission_id}
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to resume mission execution: {e}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=500,
             detail="Failed to resume mission execution"
         )
 
@@ -937,11 +1127,11 @@ async def stop_mission_execution(
         mission_context = controller.context_manager.get_mission_context(mission_id)
         if not mission_context:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=404,
                 detail="Mission not found"
             )
 
-        controller.stop_mission(mission_id)
+        await controller.stop_mission(mission_id)
         
         return {"message": "Mission execution stopped", "mission_id": mission_id}
     except HTTPException:
@@ -949,196 +1139,1045 @@ async def stop_mission_execution(
     except Exception as e:
         logger.error(f"Failed to stop mission execution: {e}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=500,
             detail="Failed to stop mission execution"
         )
+
+
+@router.post("/missions/{mission_id}/resume-round/{round_num}")
+async def resume_from_round(
+    mission_id: str,
+    round_num: int,
+    request: Request,
+    current_user: User = Depends(get_current_user_from_cookie),
+    controller: AgentController = Depends(get_user_specific_agent_controller),
+    db: Session = Depends(get_db)
+):
+    """Resume mission from a specific research round."""
+    try:
+        # First, try to get mission context from memory
+        mission_context = controller.context_manager.get_mission_context(mission_id)
+        
+        # If not in memory, load from database
+        if not mission_context:
+            logger.info(f"Mission {mission_id} not in memory, loading from database")
+            
+            # Get mission from database
+            async_db = await get_async_db_session()
+            try:
+                db_mission = await async_crud.get_mission(async_db, mission_id, user_id=current_user.id)
+                if not db_mission:
+                    raise HTTPException(
+                        status_code=404,
+                        detail="Mission not found in database"
+                    )
+                
+                # Restore mission context from database
+                if db_mission.mission_context:
+                    from ai_researcher.agentic_layer.async_context_manager import MissionContext
+                    # Parse the stored mission context
+                    mission_context = MissionContext(**db_mission.mission_context)
+                    # Add it to the context manager
+                    controller.context_manager._missions[mission_id] = mission_context
+                    logger.info(f"Successfully restored mission {mission_id} from database")
+                else:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Mission context is empty in database"
+                    )
+            finally:
+                await async_db.close()
+        
+        # Verify mission context now exists
+        if not mission_context:
+            raise HTTPException(
+                status_code=404,
+                detail="Failed to load mission context"
+            )
+        
+        # Validate round number
+        if round_num < 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Round number must be 1 or greater"
+            )
+        
+        # Log the mission context for debugging
+        if mission_context and mission_context.plan:
+            logger.info(f"Mission {mission_id} has plan with {len(mission_context.plan.report_outline)} sections")
+            for section in mission_context.plan.report_outline[:3]:  # Log first 3 sections
+                logger.info(f"  Section: {section.section_id} - {section.title} (strategy: {getattr(section, 'research_strategy', 'unknown')})")
+        
+        # Use global websocket_manager imported at the top
+        
+        # Create log queue and update callback
+        log_queue = queue.Queue()
+        
+        def websocket_update_callback(log_queue_arg, entry, mission_id_arg=None, custom_event_type=None):
+            """Callback to send updates via WebSocket."""
+            try:
+                # Import send_logs_update function locally to avoid circular imports
+                from api.websockets import send_logs_update
+                
+                if isinstance(entry, dict) and entry.get("type") == "agent_feedback":
+                    # Handle agent feedback messages
+                    pass
+                elif hasattr(entry, 'agent_name') and hasattr(entry, 'action'):
+                    # This is an ExecutionLogEntry object, transform it for frontend
+                    log_entry_dict = {
+                        "log_id": getattr(entry, 'log_id', None),
+                        "timestamp": entry.timestamp.isoformat() if hasattr(entry.timestamp, 'isoformat') else str(entry.timestamp),
+                        "agent_name": entry.agent_name,
+                        "message": entry.action,
+                        "action": entry.action,
+                        "input_summary": getattr(entry, 'input_summary', None),
+                        "output_summary": getattr(entry, 'output_summary', None),
+                        "status": getattr(entry, 'status', 'success'),
+                        "error_message": getattr(entry, 'error_message', None),
+                        "full_input": getattr(entry, 'full_input', None),
+                        "full_output": getattr(entry, 'full_output', None),
+                        "model_details": getattr(entry, 'model_details', None),
+                        "tool_calls": getattr(entry, 'tool_calls', None),
+                        "file_interactions": getattr(entry, 'file_interactions', None)
+                    }
+                    
+                    # Send update via WebSocket - use create_task since we're already in an event loop
+                    asyncio.create_task(send_logs_update(mission_id, [log_entry_dict]))
+            except Exception as e:
+                logger.error(f"Error in websocket update callback: {e}")
+        
+        # Update mission status to running before resuming
+        await controller.context_manager.update_mission_status(mission_id, "running")
+        
+        # Execute resume in background
+        loop = asyncio.get_event_loop()
+        thread_pool = request.app.state.thread_pool
+        
+        def run_resume_in_thread():
+            """Resume mission in thread with user context."""
+            set_current_user(current_user)
+            asyncio.run(controller.resume_from_round(
+                mission_id,
+                round_num,
+                log_queue=log_queue,
+                update_callback=websocket_update_callback
+            ))
+        
+        loop.run_in_executor(thread_pool, run_resume_in_thread)
+        
+        # Send immediate WebSocket update about status change
+        from services.websocket_manager import websocket_manager
+        await websocket_manager.send_to_mission(
+            mission_id,
+            {
+                "type": "mission_status_update",
+                "mission_id": mission_id,
+                "status": "running",
+                "message": f"Resuming from round {round_num}"
+            }
+        )
+        
+        logger.info(f"Mission {mission_id} resume from round {round_num} initiated")
+        return {
+            "message": f"Mission resuming from round {round_num}", 
+            "mission_id": mission_id,
+            "status": "running"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to resume mission from round: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to resume mission from round"
+        )
+
+
+class ReviseOutlineRequest(BaseModel):
+    """Request body for outline revision."""
+    feedback: str = Field(..., min_length=1, description="User feedback for outline revision")
+    round_num: int = Field(..., ge=1, description="Round number to resume from")
+
+
+class UnifiedResumeRequest(BaseModel):
+    """Request body for unified resume/revise endpoint."""
+    round_num: int = Field(..., ge=1, description="Round number to resume from")
+    feedback: Optional[str] = Field(None, description="Optional user feedback for outline revision")
+
+
+@router.post("/missions/{mission_id}/revise-outline")
+async def revise_and_resume(
+    mission_id: str,
+    revision_request: ReviseOutlineRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user_from_cookie),
+    controller: AgentController = Depends(get_user_specific_agent_controller)
+):
+    """Revise mission outline based on user feedback and resume from specified round."""
+    try:
+        # Validate mission exists and user has access
+        mission_context = controller.context_manager.get_mission_context(mission_id)
+        if not mission_context:
+            raise HTTPException(
+                status_code=404,
+                detail="Mission not found"
+            )
+        
+        # Check if mission has an outline
+        if not mission_context.plan or not mission_context.plan.report_outline:
+            raise HTTPException(
+                status_code=400,
+                detail="Mission has no outline to revise"
+            )
+        
+        # Use global websocket_manager imported at the top
+        
+        # Create log queue and update callback
+        log_queue = queue.Queue()
+        
+        def websocket_update_callback(log_queue_arg, entry, mission_id_arg=None, custom_event_type=None):
+            """Callback to send updates via WebSocket."""
+            try:
+                # Import send_logs_update function locally to avoid circular imports
+                from api.websockets import send_logs_update
+                
+                if isinstance(entry, dict) and entry.get("type") == "agent_feedback":
+                    # Handle agent feedback messages
+                    pass
+                elif hasattr(entry, 'agent_name') and hasattr(entry, 'action'):
+                    # This is an ExecutionLogEntry object, transform it for frontend
+                    log_entry_dict = {
+                        "log_id": getattr(entry, 'log_id', None),
+                        "timestamp": entry.timestamp.isoformat() if hasattr(entry.timestamp, 'isoformat') else str(entry.timestamp),
+                        "agent_name": entry.agent_name,
+                        "message": entry.action,
+                        "action": entry.action,
+                        "input_summary": getattr(entry, 'input_summary', None),
+                        "output_summary": getattr(entry, 'output_summary', None),
+                        "status": getattr(entry, 'status', 'success'),
+                        "error_message": getattr(entry, 'error_message', None),
+                        "full_input": getattr(entry, 'full_input', None),
+                        "full_output": getattr(entry, 'full_output', None),
+                        "model_details": getattr(entry, 'model_details', None),
+                        "tool_calls": getattr(entry, 'tool_calls', None),
+                        "file_interactions": getattr(entry, 'file_interactions', None)
+                    }
+                    
+                    # Send update via WebSocket - use create_task since we're already in an event loop
+                    asyncio.create_task(send_logs_update(mission_id, [log_entry_dict]))
+            except Exception as e:
+                logger.error(f"Error in websocket update callback: {e}")
+        
+        # Update mission status to running before resuming
+        await controller.context_manager.update_mission_status(mission_id, "running")
+        
+        # Execute revision and resume in background
+        loop = asyncio.get_event_loop()
+        thread_pool = request.app.state.thread_pool
+        
+        def run_revise_in_thread():
+            """Revise outline and resume in thread with user context."""
+            set_current_user(current_user)
+            asyncio.run(controller.revise_outline_and_resume(
+                mission_id,
+                revision_request.round_num,
+                revision_request.feedback,
+                log_queue=log_queue,
+                update_callback=websocket_update_callback
+            ))
+        
+        loop.run_in_executor(thread_pool, run_revise_in_thread)
+        
+        logger.info(f"Mission {mission_id} outline revision and resume initiated")
+        return {
+            "message": "Outline revision and resume initiated",
+            "mission_id": mission_id,
+            "round_num": revision_request.round_num
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to revise outline and resume: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to revise outline and resume"
+        )
+
+
+@router.get("/missions/{mission_id}/outline-history")
+async def get_outline_history(
+    mission_id: str,
+    current_user: User = Depends(get_current_user_from_cookie),
+    controller: AgentController = Depends(get_user_specific_agent_controller)
+):
+    """Get the history of outlines for each successful research round."""
+    try:
+        # Get mission context
+        mission_context = controller.context_manager.get_mission_context(mission_id)
+        if not mission_context:
+            raise HTTPException(
+                status_code=404,
+                detail="Mission not found"
+            )
+        
+        # Get execution logs from database
+        from database.async_database import get_async_db_session
+        async_db = await get_async_db_session()
+        try:
+            logs = await async_crud.get_mission_execution_logs(
+                async_db, 
+                mission_id, 
+                current_user.id,
+                skip=0, 
+                limit=1000
+            )
+        finally:
+            await async_db.close()
+        
+        # Extract outlines from planning steps and revisions in each round
+        outline_history = []
+        current_round = 0
+        round_started = False
+        last_round_completed = 0
+        
+        for log in logs:
+            # Access attributes directly from the MissionExecutionLog model
+            agent_name = log.agent_name or ""
+            action = log.action or ""
+            log_status = log.status or ""
+            full_output = log.full_output
+            
+            # Track when a new research round starts
+            if ("ResearchManager" in agent_name or "AgentController" in agent_name) and "Starting Research Round" in action:
+                import re
+                match = re.search(r'Round (\d+)', action)
+                if match:
+                    current_round = int(match.group(1))
+                    round_started = True
+            
+            # Track when a research round completes
+            elif ("ResearchManager" in agent_name or "AgentController" in agent_name) and "Completed Research Round" in action:
+                import re
+                match = re.search(r'Round (\d+)', action)
+                if match:
+                    last_round_completed = int(match.group(1))
+            
+            # Capture initial plan generation and batch outlines
+            if (agent_name == "PlanningAgent" and 
+                ("Generate Plan" in action or "Generate Preliminary Outline" in action) and 
+                log_status == "success" and 
+                full_output):
+                
+                # Extract outline from full_output
+                outline_data = full_output
+                if isinstance(outline_data, dict) and 'report_outline' in outline_data:
+                    # Extract batch number if present
+                    import re
+                    batch_match = re.search(r'Batch (\d+)', action)
+                    batch_num = int(batch_match.group(1)) if batch_match else 0
+                    
+                    outline_history.append({
+                        "round": batch_num,  # Use batch number as round
+                        "timestamp": log.created_at.isoformat() if hasattr(log.created_at, 'isoformat') else str(log.created_at),
+                        "outline": outline_data['report_outline'],
+                        "mission_goal": outline_data.get('mission_goal'),
+                        "action": action  # Keep original action name
+                    })
+            
+            # Capture batch revisions
+            elif (agent_name == "PlanningAgent" and 
+                  "Revise Outline (Batch" in action and 
+                  log_status == "success" and 
+                  full_output):
+                
+                # Extract outline from full_output  
+                outline_data = full_output
+                if isinstance(outline_data, dict) and 'report_outline' in outline_data:
+                    # Extract batch number
+                    import re
+                    batch_match = re.search(r'Batch (\d+)', action)
+                    batch_num = int(batch_match.group(1)) if batch_match else 0
+                    
+                    outline_history.append({
+                        "round": batch_num,  # Use batch number as round
+                        "timestamp": log.created_at.isoformat() if hasattr(log.created_at, 'isoformat') else str(log.created_at),
+                        "outline": outline_data['report_outline'],
+                        "mission_goal": outline_data.get('mission_goal'),
+                        "action": action  # Keep original action name
+                    })
+            
+            # Capture finalized outline
+            elif (agent_name == "AgentController" and 
+                  "Finalize Preliminary Outline" in action and 
+                  log_status == "success" and 
+                  full_output):
+                
+                # Extract outline from full_output
+                outline_data = full_output
+                if isinstance(outline_data, dict) and 'report_outline' in outline_data:
+                    outline_history.append({
+                        "round": 99,  # Final outline gets a high round number
+                        "timestamp": log.created_at.isoformat() if hasattr(log.created_at, 'isoformat') else str(log.created_at),
+                        "outline": outline_data['report_outline'],
+                        "mission_goal": outline_data.get('mission_goal'),
+                        "action": "Finalized Outline"
+                    })
+            
+            # Capture Inter-Pass revisions and other revisions
+            elif ((agent_name in ["PlanningAgent", "ReflectionAgent", "AgentController"]) and 
+                  ("Revise Outline" in action and "Batch" not in action) and 
+                  log_status == "success" and 
+                  full_output):
+                
+                # Extract outline from full_output
+                outline_data = full_output
+                if isinstance(outline_data, dict) and 'report_outline' in outline_data:
+                    # Determine which round this outline is for
+                    round_for_outline = current_round
+                    if "Inter-Round" in action or "Inter-Pass" in action:
+                        # Inter-round/pass revisions create the outline for the next round
+                        # Use a special round number for final revision
+                        if last_round_completed > 0 and current_round == last_round_completed:
+                            round_for_outline = 98  # Special number for final revised outline
+                        else:
+                            round_for_outline = current_round + 1 if current_round > 0 else 1
+                    
+                    # Create appropriate action description
+                    action_desc = "Initial Plan"
+                    if "Inter-Round" in action or "Inter-Pass" in action:
+                        if round_for_outline == 98:
+                            action_desc = f"Final Revised Outline (After Research)"
+                        else:
+                            action_desc = f"Revised after Round {current_round}"
+                    elif "Store Revised Plan" in action:
+                        action_desc = f"Stored Revised Plan (Round {current_round})"
+                    elif current_round > 0:
+                        action_desc = f"Revised for Round {round_for_outline}"
+                    
+                    outline_history.append({
+                        "round": round_for_outline,
+                        "timestamp": log.created_at.isoformat() if hasattr(log.created_at, 'isoformat') else str(log.created_at),
+                        "outline": outline_data['report_outline'],
+                        "mission_goal": outline_data.get('mission_goal'),
+                        "action": action_desc
+                    })
+        
+        # Add the current outline from mission_context as the final outline
+        if mission_context.plan and mission_context.plan.report_outline:
+            # Get the last logged timestamp or use mission updated time
+            last_timestamp = outline_history[-1]['timestamp'] if outline_history else str(mission_context.created_at)
+            # Use mission's updated_at if available, otherwise use a timestamp slightly after the last log
+            if hasattr(mission_context, 'updated_at') and mission_context.updated_at:
+                current_timestamp = mission_context.updated_at.isoformat() if hasattr(mission_context.updated_at, 'isoformat') else str(mission_context.updated_at)
+            else:
+                # Add 1 second to the last timestamp to ensure it's the most recent
+                from datetime import datetime, timedelta
+                if outline_history:
+                    last_dt = datetime.fromisoformat(last_timestamp.replace('+00:00', ''))
+                    current_timestamp = (last_dt + timedelta(seconds=1)).isoformat()
+                else:
+                    current_timestamp = str(mission_context.created_at)
+            
+            # Add as final outline
+            current_outline_data = {
+                "round": 999,  # Special high number for sorting
+                "timestamp": current_timestamp,
+                "outline": [section.model_dump() for section in mission_context.plan.report_outline],
+                "mission_goal": mission_context.plan.mission_goal if hasattr(mission_context.plan, 'mission_goal') else None,
+                "action": "Final Outline",
+                "is_current": True  # Mark this as the current/final outline
+            }
+            outline_history.append(current_outline_data)
+        
+        # Sort outline history by timestamp first
+        outline_history.sort(key=lambda x: x['timestamp'])
+        
+        # Deduplicate based on content
+        unique_outlines = []
+        seen_content = {}  # Map content hash to the item
+        
+        for item in outline_history:
+            # Create a content hash based on outline structure
+            outline = item.get('outline', [])
+            content_key = (
+                len(outline),
+                tuple((section.get('title', section.get('section_id', '')), 
+                       len(section.get('subsections', [])) if isinstance(section, dict) else 0) 
+                      for section in outline)
+            )
+            
+            # Check if this is the current outline from database
+            is_current = item.get('is_current', False)
+            
+            if content_key not in seen_content:
+                # First time seeing this content - keep it
+                seen_content[content_key] = item
+                unique_outlines.append(item)
+            elif is_current:
+                # This is the current outline from database
+                # Update the existing entry if it's not already marked as final
+                existing = seen_content[content_key]
+                if existing.get('round', 0) < 999:
+                    # Replace with the current outline entry
+                    unique_outlines = [item if o == existing else o for o in unique_outlines]
+                    seen_content[content_key] = item
+            # else: skip duplicates
+        
+        # Clean up and renumber rounds for display
+        final_history = []
+        round_counter = 1
+        
+        for item in sorted(unique_outlines, key=lambda x: x['timestamp']):
+            # Skip "Finalize Preliminary Outline" entries as they're usually duplicates
+            if "Finalize" in item.get('action', '') and not item.get('is_current', False):
+                continue
+                
+            # Assign clean round numbers
+            if item.get('is_current', False) or item['round'] == 999:
+                # This is the final/current outline
+                item['round'] = 999
+                item['action'] = 'Final Outline'
+            elif item['round'] in [0, 1] or "Batch 1" in item.get('action', ''):
+                item['round'] = 1
+                item['action'] = 'Round 1 Outline'
+            elif item['round'] == 2 or "Batch 2" in item.get('action', ''):
+                item['round'] = 2
+                item['action'] = 'Round 2 Outline'
+            elif item['round'] == 98 or "Inter-Pass" in item.get('action', '') or "Inter-Round" in item.get('action', ''):
+                # This is a revised outline after research
+                item['round'] = round_counter + 1
+                item['action'] = f'Round {round_counter + 1} Outline (Revised)'
+                round_counter += 1
+            else:
+                item['round'] = round_counter
+                item['action'] = f'Round {round_counter} Outline'
+                round_counter += 1
+            
+            final_history.append(item)
+        
+        # Sort by round number for final output
+        final_history.sort(key=lambda x: x['round'])
+        unique_history = final_history
+        
+        return {
+            "mission_id": mission_id,
+            "outline_history": unique_history,
+            "current_outline": mission_context.plan.model_dump() if mission_context.plan else None
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get outline history: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to get outline history"
+        )
+
+
+@router.post("/missions/{mission_id}/unified-resume")
+async def unified_resume(
+    mission_id: str,
+    resume_request: UnifiedResumeRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user_from_cookie),
+    controller: AgentController = Depends(get_user_specific_agent_controller),
+    db: Session = Depends(get_db)
+):
+    """Unified endpoint for resume/revise - handles both with optional feedback."""
+    try:
+        # Validate mission exists
+        mission_context = controller.context_manager.get_mission_context(mission_id)
+        if not mission_context:
+            # Try to load from database
+            chat = crud.get_chat(db, mission_id)
+            if not chat or chat.user_id != current_user.id:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Mission not found or access denied"
+                )
+            # Load mission context from database
+            await controller.context_manager.load_mission_from_database(mission_id)
+            mission_context = controller.context_manager.get_mission_context(mission_id)
+            if not mission_context:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Failed to load mission context"
+                )
+        
+        # Create log queue and update callback
+        log_queue = queue.Queue()
+        
+        def websocket_update_callback(log_queue_arg, entry, mission_id_arg=None, custom_event_type=None):
+            """Callback to send updates via WebSocket."""
+            try:
+                from api.websockets import send_logs_update
+                
+                if isinstance(entry, dict) and entry.get("type") == "agent_feedback":
+                    pass
+                elif hasattr(entry, 'agent_name') and hasattr(entry, 'action'):
+                    log_entry_dict = {
+                        "log_id": getattr(entry, 'log_id', None),
+                        "timestamp": entry.timestamp.isoformat() if hasattr(entry.timestamp, 'isoformat') else str(entry.timestamp),
+                        "agent_name": entry.agent_name,
+                        "message": entry.action,
+                        "action": entry.action,
+                        "input_summary": getattr(entry, 'input_summary', None),
+                        "output_summary": getattr(entry, 'output_summary', None),
+                        "status": getattr(entry, 'status', 'success'),
+                        "error_message": getattr(entry, 'error_message', None),
+                        "full_input": getattr(entry, 'full_input', None),
+                        "full_output": getattr(entry, 'full_output', None),
+                        "model_details": getattr(entry, 'model_details', None),
+                        "tool_calls": getattr(entry, 'tool_calls', None),
+                        "file_interactions": getattr(entry, 'file_interactions', None)
+                    }
+                    asyncio.create_task(send_logs_update(mission_id, [log_entry_dict]))
+            except Exception as e:
+                logger.error(f"Error in websocket update callback: {e}")
+        
+        # Send truncation notification to frontend
+        from api.websockets import send_mission_update
+        await send_mission_update(mission_id, {
+            "type": "truncate_data",
+            "round_num": resume_request.round_num,
+            "message": f"Clearing logs and notes after round {resume_request.round_num - 1}"
+        })
+        
+        # Update mission status to running
+        await controller.context_manager.update_mission_status(mission_id, "running")
+        
+        # Execute in background
+        loop = asyncio.get_event_loop()
+        thread_pool = request.app.state.thread_pool
+        
+        if resume_request.feedback:
+            # With feedback - revise outline and resume
+            def run_revise_in_thread():
+                """Revise outline and resume in thread with user context."""
+                set_current_user(current_user)
+                asyncio.run(controller.revise_outline_and_resume(
+                    mission_id,
+                    resume_request.round_num,
+                    resume_request.feedback,
+                    log_queue=log_queue,
+                    update_callback=websocket_update_callback
+                ))
+            
+            loop.run_in_executor(thread_pool, run_revise_in_thread)
+            
+            logger.info(f"Mission {mission_id} outline revision and resume initiated")
+            return {
+                "message": "Outline revision and resume initiated",
+                "mission_id": mission_id,
+                "round_num": resume_request.round_num,
+                "has_feedback": True
+            }
+        else:
+            # Without feedback - just resume from round
+            def run_resume_in_thread():
+                """Resume mission in thread with user context."""
+                set_current_user(current_user)
+                asyncio.run(controller.resume_from_round(
+                    mission_id,
+                    resume_request.round_num,
+                    log_queue=log_queue,
+                    update_callback=websocket_update_callback
+                ))
+            
+            loop.run_in_executor(thread_pool, run_resume_in_thread)
+            
+            logger.info(f"Mission {mission_id} resuming from round {resume_request.round_num}")
+            return {
+                "message": f"Mission resuming from round {resume_request.round_num}",
+                "mission_id": mission_id,
+                "round_num": resume_request.round_num,
+                "has_feedback": False
+            }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to execute unified resume: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to execute unified resume"
+        )
+
 
 @router.post("/missions/{mission_id}/start")
 async def start_mission_execution(
     mission_id: str,
     request: Request,
     current_user: User = Depends(get_current_user_from_cookie),
-    context_mgr: ContextManager = Depends(get_context_manager),
+    context_mgr: AsyncContextManager = Depends(get_context_manager),
     controller: AgentController = Depends(get_user_specific_agent_controller),
     db: Session = Depends(get_db)
 ):
     """
     Start or resume the execution of a mission.
     This endpoint is the single point of entry for initiating research.
+    IMPORTANT: This now returns immediately and runs all heavy operations in background.
     """
     try:
         mission_context = context_mgr.get_mission_context(mission_id)
         if not mission_context:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mission not found")
+            raise HTTPException(status_code=404, detail="Mission not found")
+        
+        # IMPORTANT: Capture user's current settings at the time of starting the research
+        # This ensures we use the most recent settings, not what was stored at mission creation
+        logger.info(f"Capturing current user settings for mission {mission_id} at research start time")
+        
+        # Get user's current research parameters
+        async_db = await get_async_db_session()
+        try:
+            user_settings = await async_crud.get_user_settings(async_db, current_user.id)
+        finally:
+            await async_db.close()
+        current_research_params = None
+        if user_settings:
+            # user_settings is already a dict from get_user_settings
+            settings_dict = json.loads(user_settings) if isinstance(user_settings, str) else user_settings
+            research_settings = settings_dict.get("research", {})
+            
+            # Extract research parameters from user's current settings
+            current_research_params = {
+                "initial_research_max_depth": research_settings.get("initial_research_max_depth"),
+                "initial_research_max_questions": research_settings.get("initial_research_max_questions"),
+                "structured_research_rounds": research_settings.get("structured_research_rounds"),
+                "writing_passes": research_settings.get("writing_passes"),
+                "initial_exploration_doc_results": research_settings.get("initial_exploration_doc_results"),
+                "initial_exploration_web_results": research_settings.get("initial_exploration_web_results"),
+                "main_research_doc_results": research_settings.get("main_research_doc_results"),
+                "main_research_web_results": research_settings.get("main_research_web_results"),
+                "thought_pad_context_limit": research_settings.get("thought_pad_context_limit"),
+                "max_notes_for_assignment_reranking": research_settings.get("max_notes_for_assignment_reranking"),
+                "max_concurrent_requests": research_settings.get("max_concurrent_requests"),
+                "skip_final_replanning": research_settings.get("skip_final_replanning"),
+                "max_research_cycles_per_section": research_settings.get("max_research_cycles_per_section"),
+                "max_total_iterations": research_settings.get("max_total_iterations"),
+                "max_total_depth": research_settings.get("max_total_depth"),
+                "min_notes_per_section_assignment": research_settings.get("min_notes_per_section_assignment"),
+                "max_notes_per_section_assignment": research_settings.get("max_notes_per_section_assignment"),
+                "max_planning_context_chars": research_settings.get("max_planning_context_chars"),
+                "writing_previous_content_preview_chars": research_settings.get("writing_previous_content_preview_chars"),
+                "max_suggestions_per_batch": research_settings.get("max_suggestions_per_batch"),
+            }
+            
+            # Remove None values
+            current_research_params = {k: v for k, v in current_research_params.items() if v is not None}
+            
+            logger.info(f"Captured {len(current_research_params)} research parameters from user settings at start time")
+        
+        # Update mission with current settings if they exist
+        if current_research_params:
+            # Get existing metadata
+            existing_metadata = mission_context.metadata or {}
+            
+            # Update research_params with current settings
+            existing_metadata["research_params"] = current_research_params
+            existing_metadata["settings_captured_at_start"] = True
+            existing_metadata["start_time_capture"] = datetime.now().isoformat()
+            
+            # Update comprehensive_settings if it exists
+            if "comprehensive_settings" in existing_metadata:
+                existing_metadata["comprehensive_settings"]["research_params"] = current_research_params
+                existing_metadata["comprehensive_settings"]["settings_captured_at_start"] = True
+                existing_metadata["comprehensive_settings"]["start_time_capture"] = datetime.now().isoformat()
+            
+            # Store the updated metadata
+            await context_mgr.update_mission_metadata(mission_id, existing_metadata)
+            logger.info(f"Updated mission {mission_id} with current research settings captured at start time")
 
         # Allow starting from 'pending' or 'stopped' states
         if mission_context.status not in ["pending", "stopped", "planning"]:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=400,
                 detail=f"Mission cannot be started. Current status: {mission_context.status}"
             )
 
-        # --- Self-Sufficiency Check ---
-        # If final_questions are not set, generate them now. This makes the start button reliable.
-        if not mission_context.metadata.get("final_questions"):
-            logger.info(f"Final questions not found for mission {mission_id}. Generating them now...")
-            
-            # Generate questions using the planning agent
-            plan_response, _, _ = await controller.planning_agent.run(
-                user_request=mission_context.user_request,
-                mission_id=mission_id
-            )
-            
-            if plan_response and plan_response.report_outline:
-                questions = [section.title for section in plan_response.report_outline if section.title]
-                if not questions: # Fallback if titles are empty
-                    questions = [f"What are the key aspects of {mission_context.user_request}?"]
-                
-                # Store the generated questions as the final questions
-                context_mgr.update_mission_metadata(mission_id, {"final_questions": questions})
-                logger.info(f"Generated and stored {len(questions)} questions for mission {mission_id}.")
-            else:
-                # If question generation fails, create a default set to ensure the mission can proceed
-                logger.warning(f"Failed to generate questions for mission {mission_id}. Using default questions.")
-                default_questions = [
-                    f"What is {mission_context.user_request}?",
-                    f"What are the key components or aspects of {mission_context.user_request}?",
-                    f"What is the significance or impact of {mission_context.user_request}?"
-                ]
-                context_mgr.update_mission_metadata(mission_id, {"final_questions": default_questions})
-        
-        # Set default tool selection if not present
-        if not mission_context.metadata.get("tool_selection"):
-            context_mgr.update_mission_metadata(mission_id, {"tool_selection": {"local_rag": True, "web_search": True}})
-
-        # Apply auto-optimization logic with comprehensive logging
-        try:
-            # Get chat_id from mission metadata
-            chat_id = mission_context.metadata.get("chat_id") if mission_context.metadata else None
-            if not chat_id:
-                logger.warning(f"No chat_id found in mission metadata for mission {mission_id}. Skipping auto-optimization.")
-                return {"message": "Mission execution started", "mission_id": mission_id}
-            
-            chat_history = crud.get_chat_messages(db, chat_id=chat_id, user_id=current_user.id)
-            
-            # Use the shared auto-optimization function for consistent behavior and logging
-            from ai_researcher.settings_optimizer import apply_auto_optimization
-            await apply_auto_optimization(
-                mission_id=mission_id,
-                current_user=current_user,
-                context_mgr=context_mgr,
-                controller=controller,
-                chat_history=chat_history
-            )
-            
-        except Exception as e:
-            logger.warning(f"Failed to apply auto-optimization for mission {mission_id}: {e}", exc_info=True)
-
-        # Create a queue and callback function for WebSocket updates
-        log_queue = queue.Queue()
-        
-        def websocket_update_callback(
-            q: queue.Queue,
-            update_data: Any
-        ):
-            """Callback to send updates via WebSocket."""
-            try:
-                # Import send_logs_update function locally to avoid circular imports
-                from api.websockets import send_logs_update
-                
-                if isinstance(update_data, dict) and update_data.get("type") == "agent_feedback":
-                    # Handle agent feedback messages (these are already formatted correctly)
-                    # These are sent directly via WebSocket without queue processing
-                    pass
-                elif hasattr(update_data, 'agent_name') and hasattr(update_data, 'action'):
-                    # This is an ExecutionLogEntry object, transform it for frontend
-                    log_entry_dict = {
-                        "log_id": getattr(update_data, 'log_id', None),  # Include the unique log ID
-                        "timestamp": update_data.timestamp.isoformat() if hasattr(update_data.timestamp, 'isoformat') else str(update_data.timestamp),
-                        "agent_name": update_data.agent_name,
-                        "message": update_data.action,  # Add message field for frontend compatibility
-                        "action": update_data.action,
-                        "input_summary": getattr(update_data, 'input_summary', None),
-                        "output_summary": getattr(update_data, 'output_summary', None),
-                        "status": getattr(update_data, 'status', 'success'),
-                        "error_message": getattr(update_data, 'error_message', None),
-                        "full_input": getattr(update_data, 'full_input', None),
-                        "full_output": getattr(update_data, 'full_output', None),
-                        "model_details": getattr(update_data, 'model_details', None),
-                        "tool_calls": getattr(update_data, 'tool_calls', None),
-                        "file_interactions": getattr(update_data, 'file_interactions', None)
-                    }
-                    
-                    # Process the log entry to clean tool calls and replace document codes
-                    try:
-                        import asyncio
-                        # Create a new event loop if needed for the async processing
-                        try:
-                            loop = asyncio.get_event_loop()
-                        except RuntimeError:
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
-                        
-                        # Process the log entry asynchronously
-                        if loop.is_running():
-                            # If loop is already running, we can't use run_until_complete
-                            # So we'll just clean the tool calls and input summary synchronously for now
-                            from api.utils import clean_tool_call_arguments, clean_input_summary_for_display
-                            if log_entry_dict.get('tool_calls'):
-                                log_entry_dict['tool_calls'] = clean_tool_call_arguments(log_entry_dict['tool_calls'])
-                            if log_entry_dict.get('input_summary'):
-                                log_entry_dict['input_summary'] = clean_input_summary_for_display(log_entry_dict['input_summary'])
-                        else:
-                            # If loop is not running, we can process fully
-                            processed_entry = loop.run_until_complete(
-                                process_execution_log_entry_for_frontend(log_entry_dict)
-                            )
-                            log_entry_dict = processed_entry
-                    except Exception as process_error:
-                        logger.warning(f"Failed to process log entry for frontend: {process_error}")
-                        # Fall back to basic tool call cleaning
-                        from api.utils import clean_tool_call_arguments
-                        if log_entry_dict.get('tool_calls'):
-                            log_entry_dict['tool_calls'] = clean_tool_call_arguments(log_entry_dict['tool_calls'])
-                    
-                    # Send the log entry via WebSocket
-                    import asyncio
-                    try:
-                        # Create a new event loop if needed
-                        try:
-                            loop = asyncio.get_event_loop()
-                        except RuntimeError:
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
-                        
-                        # Run the async function in the event loop
-                        if loop.is_running():
-                            # If loop is already running, create a task
-                            loop.create_task(send_logs_update(mission_id, [log_entry_dict]))
-                        else:
-                            # If loop is not running, run until complete
-                            loop.run_until_complete(send_logs_update(mission_id, [log_entry_dict]))
-                    except Exception as ws_error:
-                        logger.error(f"Failed to send log update via WebSocket for mission {mission_id}: {ws_error}")
-            except Exception as e:
-                logger.error(f"Error in websocket_update_callback for mission {mission_id}: {e}")
-
-        # Start mission execution in a separate thread from the pool
-        loop = asyncio.get_event_loop()
+        # Get thread pool and event loop for background execution
         thread_pool: ThreadPoolExecutor = request.app.state.thread_pool
-
-        def run_mission_in_thread():
-            """Sets user context and runs the mission."""
-            set_current_user(current_user)
-            asyncio.run(controller.run_mission(
-                mission_id,
-                log_queue=log_queue,
-                update_callback=websocket_update_callback
-            ))
-
-        loop.run_in_executor(thread_pool, run_mission_in_thread)
+        loop = asyncio.get_event_loop()
         
-        logger.info(f"Started mission execution for {mission_id} in a background thread")
+        # Define the background task that handles ALL preparation and execution
+        async def prepare_and_run_mission():
+            """Background task to prepare mission (planning + optimization) and start execution."""
+            try:
+                # Update status to indicate we're preparing
+                await context_mgr.update_mission_metadata(mission_id, {"status": "planning"})
+                
+                # --- Self-Sufficiency Check ---
+                # Check for questions from the chat interaction in all possible metadata fields
+                # Priority order: final_questions > refined_questions > initial_questions > questions
+                existing_questions = (
+                    mission_context.metadata.get("final_questions") or 
+                    mission_context.metadata.get("refined_questions") or 
+                    mission_context.metadata.get("initial_questions") or
+                    mission_context.metadata.get("questions")
+                )
+                
+                # Log what we found
+                if existing_questions:
+                    logger.info(f"Found {len(existing_questions)} existing questions in metadata for mission {mission_id}")
+                    # Log which field contained the questions for debugging
+                    for field in ["final_questions", "refined_questions", "initial_questions", "questions"]:
+                        if mission_context.metadata.get(field):
+                            logger.info(f"Questions found in metadata field: {field}")
+                            break
+                else:
+                    logger.info(f"No questions found in any metadata field for mission {mission_id}")
+                
+                if not existing_questions:
+                    # DO NOT use plan outline as questions - that's for structured research, not initial questions
+                    # Only generate new questions if we truly don't have any
+                    logger.info(f"No questions found for mission {mission_id}. Will need to generate them...")
+                    
+                    # Log to frontend that we're generating questions
+                    await context_mgr.log_execution_step(
+                        mission_id=mission_id,
+                        agent_name="PlanningAgent",
+                        action="Generating Research Questions",
+                        output_summary="Creating initial research questions based on your request...",
+                        status="running"
+                    )
+                    
+                    # Generate questions using the planning agent
+                    plan_response, _, _ = await controller.planning_agent.run(
+                        user_request=mission_context.user_request,
+                        mission_id=mission_id
+                    )
+                    
+                    if plan_response and plan_response.report_outline:
+                        questions = [section.title for section in plan_response.report_outline if section.title]
+                        if not questions: # Fallback if titles are empty
+                            questions = [f"What are the key aspects of {mission_context.user_request}?"]
+                        
+                        # Store the generated questions as the final questions
+                        await context_mgr.update_mission_metadata(mission_id, {"final_questions": questions})
+                        logger.info(f"Generated and stored {len(questions)} questions for mission {mission_id}.")
+                        
+                        # Log success to frontend
+                        await context_mgr.log_execution_step(
+                            mission_id=mission_id,
+                            agent_name="PlanningAgent",
+                            action="Questions Generated",
+                            output_summary=f"Generated {len(questions)} research questions successfully.",
+                            status="success"
+                        )
+                    else:
+                        # If question generation fails, create a default set to ensure the mission can proceed
+                        logger.warning(f"Failed to generate questions for mission {mission_id}. Using default questions.")
+                        default_questions = [
+                            f"What is {mission_context.user_request}?",
+                            f"What are the key components or aspects of {mission_context.user_request}?",
+                            f"What is the significance or impact of {mission_context.user_request}?"
+                        ]
+                        await context_mgr.update_mission_metadata(mission_id, {"final_questions": default_questions})
+                        
+                        # Log warning to frontend
+                        await context_mgr.log_execution_step(
+                            mission_id=mission_id,
+                            agent_name="PlanningAgent",
+                            action="Using Default Questions",
+                            output_summary="Using default research questions due to generation failure.",
+                            status="warning"
+                        )
+                else:
+                    # If we have questions from chat interaction, make sure they're stored as final_questions
+                    if not mission_context.metadata.get("final_questions"):
+                        await context_mgr.update_mission_metadata(mission_id, {"final_questions": existing_questions})
+                        logger.info(f"Copied existing questions to final_questions field for mission {mission_id}")
+                    logger.info(f"Using existing {len(existing_questions)} questions for mission {mission_id}:")
+                    for i, q in enumerate(existing_questions, 1):
+                        logger.info(f"  Question {i}: {q}")
+                
+                # Tool selection should already be set during mission creation
+                # Log if it's missing for debugging purposes
+                if not mission_context.metadata.get("tool_selection"):
+                    logger.warning(f"Tool selection not found in mission {mission_id} metadata. This should not happen.")
+                    # Use conservative defaults - no web search to avoid unintended behavior
+                    await context_mgr.update_mission_metadata(mission_id, {"tool_selection": {"local_rag": True, "web_search": False}})
+
+                # Apply auto-optimization logic with comprehensive logging
+                try:
+                    # Get chat_id from mission metadata
+                    chat_id = mission_context.metadata.get("chat_id") if mission_context.metadata else None
+                    if chat_id:
+                        async_db = await get_async_db_session()
+                        try:
+                            chat_history = await async_crud.get_chat_messages(async_db, chat_id=chat_id, user_id=current_user.id)
+                        finally:
+                            await async_db.close()
+                        
+                        # Log that we're optimizing
+                        await context_mgr.log_execution_step(
+                            mission_id=mission_id,
+                            agent_name="Configuration",
+                            action="Optimizing Research Parameters",
+                            output_summary="Analyzing your request to optimize research parameters...",
+                            status="running"
+                        )
+                        
+                        # Use the shared auto-optimization function for consistent behavior and logging
+                        from ai_researcher.settings_optimizer import apply_auto_optimization
+                        await apply_auto_optimization(
+                            mission_id=mission_id,
+                            current_user=current_user,
+                            context_mgr=context_mgr,
+                            controller=controller,
+                            chat_history=chat_history
+                        )
+                        
+                        # Log optimization complete
+                        await context_mgr.log_execution_step(
+                            mission_id=mission_id,
+                            agent_name="Configuration",
+                            action="Optimization Complete",
+                            output_summary="Research parameters optimized successfully.",
+                            status="success"
+                        )
+                    else:
+                        logger.warning(f"No chat_id found in mission metadata for mission {mission_id}. Skipping auto-optimization.")
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to apply auto-optimization for mission {mission_id}: {e}", exc_info=True)
+                    # Log warning but continue
+                    await context_mgr.log_execution_step(
+                        mission_id=mission_id,
+                        agent_name="Configuration",
+                        action="Optimization Skipped",
+                        output_summary="Using default parameters due to optimization failure.",
+                        status="warning"
+                    )
+
+                # Now start the actual mission execution
+                # Create a queue and callback function for WebSocket updates
+                log_queue = queue.Queue()
+                
+                def websocket_update_callback(
+                    q: queue.Queue,
+                    update_data: Any
+                ):
+                    """Callback to send updates via WebSocket."""
+                    try:
+                        # Import send_logs_update function locally to avoid circular imports
+                        from api.websockets import send_logs_update
+                        
+                        if isinstance(update_data, dict) and update_data.get("type") == "agent_feedback":
+                            # Handle agent feedback messages (these are already formatted correctly)
+                            # These are sent directly via WebSocket without queue processing
+                            pass
+                        elif hasattr(update_data, 'agent_name') and hasattr(update_data, 'action'):
+                            # This is an ExecutionLogEntry object, transform it for frontend
+                            log_entry_dict = {
+                                "log_id": getattr(update_data, 'log_id', None),  # Include the unique log ID
+                                "timestamp": update_data.timestamp.isoformat() if hasattr(update_data.timestamp, 'isoformat') else str(update_data.timestamp),
+                                "agent_name": update_data.agent_name,
+                                "message": update_data.action,  # Add message field for frontend compatibility
+                                "action": update_data.action,
+                                "input_summary": getattr(update_data, 'input_summary', None),
+                                "output_summary": getattr(update_data, 'output_summary', None),
+                                "status": getattr(update_data, 'status', 'success'),
+                                "error_message": getattr(update_data, 'error_message', None),
+                                "full_input": getattr(update_data, 'full_input', None),
+                                "full_output": getattr(update_data, 'full_output', None),
+                                "model_details": getattr(update_data, 'model_details', None),
+                                "tool_calls": getattr(update_data, 'tool_calls', None),
+                                "file_interactions": getattr(update_data, 'file_interactions', None)
+                            }
+                            
+                            # Process the log entry to clean tool calls and replace document codes
+                            try:
+                                import asyncio
+                                # Create a new event loop if needed for the async processing
+                                try:
+                                    loop = asyncio.get_event_loop()
+                                except RuntimeError:
+                                    loop = asyncio.new_event_loop()
+                                    asyncio.set_event_loop(loop)
+                                
+                                # Process the log entry asynchronously
+                                if loop.is_running():
+                                    # If loop is already running, we can't use run_until_complete
+                                    # So we'll just clean the tool calls and input summary synchronously for now
+                                    from api.utils import clean_tool_call_arguments, clean_input_summary_for_display
+                                    if log_entry_dict.get('tool_calls'):
+                                        log_entry_dict['tool_calls'] = clean_tool_call_arguments(log_entry_dict['tool_calls'])
+                                    if log_entry_dict.get('input_summary'):
+                                        log_entry_dict['input_summary'] = clean_input_summary_for_display(log_entry_dict['input_summary'])
+                                else:
+                                    # If loop is not running, we can process fully
+                                    processed_entry = loop.run_until_complete(
+                                        process_execution_log_entry_for_frontend(log_entry_dict)
+                                    )
+                                    log_entry_dict = processed_entry
+                            except Exception as process_error:
+                                logger.warning(f"Failed to process log entry for frontend: {process_error}")
+                                # Fall back to basic tool call cleaning
+                                from api.utils import clean_tool_call_arguments
+                                if log_entry_dict.get('tool_calls'):
+                                    log_entry_dict['tool_calls'] = clean_tool_call_arguments(log_entry_dict['tool_calls'])
+                            
+                            # Send the log entry via WebSocket
+                            import asyncio
+                            try:
+                                # Create a new event loop if needed
+                                try:
+                                    loop = asyncio.get_event_loop()
+                                except RuntimeError:
+                                    loop = asyncio.new_event_loop()
+                                    asyncio.set_event_loop(loop)
+                                
+                                # Run the async function in the event loop
+                                if loop.is_running():
+                                    # If loop is already running, create a task
+                                    loop.create_task(send_logs_update(mission_id, [log_entry_dict]))
+                                else:
+                                    # If loop is not running, run until complete
+                                    loop.run_until_complete(send_logs_update(mission_id, [log_entry_dict]))
+                            except Exception as ws_error:
+                                logger.error(f"Failed to send log update via WebSocket for mission {mission_id}: {ws_error}")
+                    except Exception as e:
+                        logger.error(f"Error in websocket_update_callback for mission {mission_id}: {e}")
+                
+                # Run the actual mission
+                logger.info(f"Starting main mission execution for {mission_id}")
+                await controller.run_mission(
+                    mission_id,
+                    log_queue=log_queue,
+                    update_callback=websocket_update_callback
+                )
+                
+            except Exception as e:
+                logger.error(f"Error in mission preparation/execution for {mission_id}: {e}", exc_info=True)
+                # Update mission status to failed
+                await context_mgr.update_mission_metadata(mission_id, {"status": "failed", "error_info": str(e)})
+                # Log error to frontend
+                await context_mgr.log_execution_step(
+                    mission_id=mission_id,
+                    agent_name="System",
+                    action="Mission Failed",
+                    output_summary=f"Mission failed: {str(e)}",
+                    status="failure",
+                    error_message=str(e)
+                )
+        
+        # Start the background task that handles everything
+        def run_background_task():
+            """Wrapper to run async task in thread with user context."""
+            set_current_user(current_user)
+            asyncio.run(prepare_and_run_mission())
+        
+        # Execute in background thread pool
+        loop.run_in_executor(thread_pool, run_background_task)
+        
+        # Update status to indicate we're starting
+        await context_mgr.update_mission_metadata(mission_id, {"status": "planning"})
+        
+        logger.info(f"Mission {mission_id} preparation and execution started in background")
         return {"message": "Mission execution started", "mission_id": mission_id}
         
     except HTTPException:
@@ -1146,7 +2185,7 @@ async def start_mission_execution(
     except Exception as e:
         logger.error(f"Failed to start mission execution for {mission_id}: {e}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=500,
             detail="Failed to start mission execution"
         )
 
@@ -1154,14 +2193,14 @@ async def start_mission_execution(
 async def get_mission_context_data(
     mission_id: str,
     current_user: User = Depends(get_current_user_from_cookie),
-    context_mgr: ContextManager = Depends(get_context_manager)
+    context_mgr: AsyncContextManager = Depends(get_context_manager)
 ):
     """Get the context data for a mission, including goals and scratchpads."""
     try:
         mission_context = context_mgr.get_mission_context(mission_id)
         if not mission_context:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=404,
                 detail="Mission not found"
             )
         
@@ -1176,22 +2215,76 @@ async def get_mission_context_data(
     except Exception as e:
         logger.error(f"Failed to get mission context data: {e}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=500,
             detail="Failed to get mission context data"
+        )
+
+@router.get("/missions/{mission_id}/info")
+async def get_mission_info(
+    mission_id: str,
+    current_user: User = Depends(get_current_user_from_cookie),
+    context_mgr: AsyncContextManager = Depends(get_context_manager)
+):
+    """Get complete mission information including tool_selection and document_group_id."""
+    try:
+        mission_context = context_mgr.get_mission_context(mission_id)
+        if not mission_context:
+            raise HTTPException(
+                status_code=404,
+                detail="Mission not found"
+            )
+        
+        # Extract all relevant metadata
+        metadata = mission_context.metadata or {}
+        tool_selection = metadata.get("tool_selection")
+        document_group_id = metadata.get("document_group_id")
+        document_group_name = metadata.get("document_group_name")
+        use_web_search = metadata.get("use_web_search")
+        use_local_rag = metadata.get("use_local_rag")
+        
+        # Also check comprehensive settings if available
+        comprehensive = metadata.get("comprehensive_settings", {})
+        if comprehensive:
+            # Use comprehensive settings as the source of truth
+            document_group_id = document_group_id or comprehensive.get("document_group_id")
+            document_group_name = document_group_name or comprehensive.get("document_group_name")
+            use_web_search = use_web_search if use_web_search is not None else comprehensive.get("use_web_search")
+            use_local_rag = use_local_rag if use_local_rag is not None else comprehensive.get("use_local_rag")
+        
+        return {
+            "mission_id": mission_id,
+            "status": mission_context.status,
+            "user_request": mission_context.user_request,
+            "created_at": mission_context.created_at,
+            "updated_at": mission_context.updated_at,
+            "tool_selection": tool_selection,
+            "document_group_id": document_group_id,
+            "document_group_name": document_group_name,
+            "use_web_search": use_web_search,
+            "use_local_rag": use_local_rag,
+            "error_info": mission_context.error_info
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get mission info: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to get mission info"
         )
 
 @router.get("/missions/{mission_id}/settings", response_model=MissionSettingsResponse)
 async def get_mission_settings(
     mission_id: str,
     current_user: User = Depends(get_current_user_from_cookie),
-    context_mgr: ContextManager = Depends(get_context_manager)
+    context_mgr: AsyncContextManager = Depends(get_context_manager)
 ):
     """Get the settings for a mission, including effective settings after fallback."""
     try:
         mission_context = context_mgr.get_mission_context(mission_id)
         if not mission_context:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=404,
                 detail="Mission not found"
             )
         
@@ -1235,8 +2328,96 @@ async def get_mission_settings(
     except Exception as e:
         logger.error(f"Failed to get mission settings: {e}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=500,
             detail="Failed to get mission settings"
+        )
+
+@router.get("/missions/{mission_id}/comprehensive-settings")
+async def get_comprehensive_mission_settings(
+    mission_id: str,
+    current_user: User = Depends(get_current_user_from_cookie),
+    context_mgr: AsyncContextManager = Depends(get_context_manager)
+):
+    """Get comprehensive mission settings including all parameters used when creating the mission."""
+    try:
+        mission_context = context_mgr.get_mission_context(mission_id)
+        if not mission_context:
+            raise HTTPException(
+                status_code=404,
+                detail="Mission not found"
+            )
+        
+        # Get comprehensive settings stored at mission creation
+        comprehensive_settings = mission_context.metadata.get("comprehensive_settings") if mission_context.metadata else None
+        
+        # Check if research_params are stored at top level of metadata (from our fix)
+        research_params = mission_context.metadata.get("research_params") if mission_context.metadata else None
+        
+        # If research_params exist at top level, add them to comprehensive_settings
+        if research_params and comprehensive_settings:
+            comprehensive_settings = dict(comprehensive_settings)  # Make a copy
+            comprehensive_settings["research_params"] = research_params
+            comprehensive_settings["settings_captured_at_start"] = mission_context.metadata.get("settings_captured_at_start", False)
+            comprehensive_settings["start_method"] = mission_context.metadata.get("start_method")
+            comprehensive_settings["start_time_capture"] = mission_context.metadata.get("start_time_capture")
+        elif research_params and not comprehensive_settings:
+            # If only research_params exist, create comprehensive_settings with them
+            comprehensive_settings = {
+                "research_params": research_params,
+                "settings_captured_at_start": mission_context.metadata.get("settings_captured_at_start", False),
+                "start_method": mission_context.metadata.get("start_method"),
+                "start_time_capture": mission_context.metadata.get("start_time_capture"),
+                "use_web_search": mission_context.metadata.get("tool_selection", {}).get("web_search", False),
+                "use_local_rag": mission_context.metadata.get("tool_selection", {}).get("local_rag", False),
+                "document_group_id": mission_context.metadata.get("document_group_id")
+            }
+        elif not research_params and not comprehensive_settings:
+            # No settings were captured for this mission
+            # Don't show defaults as that would be misleading - just return empty/minimal info
+            comprehensive_settings = {
+                "settings_not_captured": True,
+                "message": "Settings were not captured for this mission. This feature was added after this mission started.",
+                "use_web_search": mission_context.metadata.get("tool_selection", {}).get("web_search", False) if mission_context.metadata else False,
+                "use_local_rag": mission_context.metadata.get("tool_selection", {}).get("local_rag", False) if mission_context.metadata else False,
+                "document_group_id": mission_context.metadata.get("document_group_id") if mission_context.metadata else None
+            }
+        
+        # Also get mission-specific settings if they exist
+        mission_settings = mission_context.metadata.get("mission_settings") if mission_context.metadata else None
+        
+        # Get tool selection and document group info
+        tool_selection = mission_context.metadata.get("tool_selection") if mission_context.metadata else None
+        document_group_id = mission_context.metadata.get("document_group_id") if mission_context.metadata else None
+        
+        # Get stats from mission context
+        total_cost = mission_context.total_cost if hasattr(mission_context, 'total_cost') else 0
+        total_tokens = {
+            "prompt": mission_context.total_prompt_tokens if hasattr(mission_context, 'total_prompt_tokens') else 0,
+            "completion": mission_context.total_completion_tokens if hasattr(mission_context, 'total_completion_tokens') else 0,
+            "native": mission_context.total_native_prompt_tokens if hasattr(mission_context, 'total_native_prompt_tokens') else 0
+        }
+        total_web_searches = mission_context.total_web_searches if hasattr(mission_context, 'total_web_searches') else 0
+        
+        return {
+            "mission_id": mission_id,
+            "status": mission_context.status,
+            "created_at": mission_context.created_at,
+            "user_request": mission_context.user_request,
+            "comprehensive_settings": comprehensive_settings,
+            "mission_specific_settings": mission_settings,
+            "tool_selection": tool_selection,
+            "document_group_id": document_group_id,
+            "total_cost": total_cost,
+            "total_tokens": total_tokens,
+            "total_web_searches": total_web_searches
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get comprehensive mission settings: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to get comprehensive mission settings"
         )
 
 @router.post("/missions/{mission_id}/settings", response_model=MissionSettingsResponse)
@@ -1244,14 +2425,14 @@ async def update_mission_settings(
     mission_id: str,
     settings_update: MissionSettingsUpdate,
     current_user: User = Depends(get_current_user_from_cookie),
-    context_mgr: ContextManager = Depends(get_context_manager)
+    context_mgr: AsyncContextManager = Depends(get_context_manager)
 ):
     """Update the settings for a mission."""
     try:
         mission_context = context_mgr.get_mission_context(mission_id)
         if not mission_context:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=404,
                 detail="Mission not found"
             )
         
@@ -1259,7 +2440,7 @@ async def update_mission_settings(
         settings_dict = settings_update.settings.model_dump(exclude_none=True)
         
         # Update mission metadata with new settings
-        context_mgr.update_mission_metadata(mission_id, {"mission_settings": settings_dict})
+        await context_mgr.update_mission_metadata(mission_id, {"mission_settings": settings_dict})
         
         logger.info(f"Updated mission settings for {mission_id}: {settings_dict}")
         
@@ -1271,7 +2452,7 @@ async def update_mission_settings(
     except Exception as e:
         logger.error(f"Failed to update mission settings: {e}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=500,
             detail="Failed to update mission settings"
         )
 

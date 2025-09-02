@@ -192,9 +192,11 @@ class ResearchWebSocketService {
     // Handler for status updates
     const statusHandler = (message: any) => {
       if (message.mission_id !== missionId) return
-      if (message.data) {
+      // Backend sends status directly in message.status, not message.data.status
+      if (message.status) {
         const { updateMissionStatus } = useMissionStore.getState()
-        updateMissionStatus(missionId, message.data.status)
+        updateMissionStatus(missionId, message.status)
+        console.log(`Updated mission ${missionId} status to: ${message.status}`)
       }
     }
 
@@ -262,6 +264,32 @@ class ResearchWebSocketService {
       }
     }
 
+    // Handler for truncate data (when resuming from a specific round)
+    const truncateHandler = (message: any) => {
+      if (message.mission_id !== missionId) return
+      if (message.type === 'truncate_data' && message.round_num) {
+        console.log(`Truncating data for mission ${missionId} after round ${message.round_num - 1}`)
+        const { setMissionLogs, setMissionNotes } = useMissionStore.getState()
+        
+        // Clear the log deduplication cache
+        logKeyCache.clear()
+        cacheInitialized = false
+        
+        // Clear logs and notes in the store
+        // The backend will handle the actual truncation, we just clear the frontend state
+        // and let the backend send us the correct data
+        setMissionLogs(missionId, [])
+        setMissionNotes(missionId, [])
+        
+        // Fetch fresh data from backend
+        const { fetchMissionLogs, fetchMissionNotes } = useMissionStore.getState()
+        setTimeout(() => {
+          fetchMissionLogs(missionId)
+          fetchMissionNotes(missionId)
+        }, 1000) // Small delay to let backend complete truncation
+      }
+    }
+
     // Subscribe all handlers
     cleanupFunctions.push(this.subscribe('logs_update', logsHandler))
     cleanupFunctions.push(this.subscribe('status_update', statusHandler))
@@ -271,6 +299,7 @@ class ResearchWebSocketService {
     cleanupFunctions.push(this.subscribe('scratchpad_update', scratchpadHandler))
     cleanupFunctions.push(this.subscribe('thought_pad_update', thoughtPadHandler))
     cleanupFunctions.push(this.subscribe('goal_pad_update', goalPadHandler))
+    cleanupFunctions.push(this.subscribe('mission_update', truncateHandler))
 
     // Store combined cleanup function
     this.missionHandlers.set(missionId, () => {
@@ -408,6 +437,8 @@ export function useResearchWebSocket() {
     onConnect: () => {
       setIsConnected(true)
       setError(null)
+      // Re-establish research WebSocket connection to re-subscribe to missions
+      researchWebSocket.connect().catch(console.error)
     },
     onDisconnect: () => {
       setIsConnected(false)

@@ -10,6 +10,7 @@ from decimal import Decimal, InvalidOperation # <-- Import Decimal for accurate 
 from ai_researcher import config # Use absolute import
 from ai_researcher.dynamic_config import get_model_name
 from ai_researcher.user_context import get_user_settings
+from ai_researcher.global_semaphore import get_global_llm_semaphore
 
 # Configure logging - respect LOG_LEVEL environment variable
 logger = logging.getLogger(__name__)
@@ -62,7 +63,7 @@ class ModelDispatcher:
                     api_key = "dummy-key-for-local-llm"
                     logger.info(f"Using dummy API key for custom provider without authentication")
                 else:
-                    logger.error(f"API key for provider '{provider_name}' is missing. Client cannot be initialized.")
+                    logger.debug(f"API key for provider '{provider_name}' not provided. Client will be initialized when user settings are available.")
                     self.clients[provider_name] = None
                     continue
             
@@ -469,7 +470,26 @@ class ModelDispatcher:
             try:
                 start_time = time.time()
                 # Use the selected ASYNC client instance and await the call
-                response = await client.chat.completions.create(**request_params) # <-- Use await
+                # Apply BOTH user semaphore AND global semaphore to limit concurrent requests
+                # User semaphore limits per-user concurrency, global limits total server load
+                global_semaphore = get_global_llm_semaphore()
+                
+                if self.semaphore and global_semaphore:
+                    # Acquire both semaphores - user limit AND global limit
+                    async with self.semaphore:
+                        async with global_semaphore:
+                            response = await client.chat.completions.create(**request_params)
+                elif self.semaphore:
+                    # Only user semaphore
+                    async with self.semaphore:
+                        response = await client.chat.completions.create(**request_params)
+                elif global_semaphore:
+                    # Only global semaphore
+                    async with global_semaphore:
+                        response = await client.chat.completions.create(**request_params)
+                else:
+                    # No semaphores
+                    response = await client.chat.completions.create(**request_params)
                 end_time = time.time()
                 duration = end_time - start_time
                 logger.info(f"Async LLM call successful using model '{selected_model_name}' in {duration:.2f}s (Attempt {attempt + 1}/{self.max_retries})")
@@ -740,11 +760,28 @@ class ModelDispatcher:
         try:
             start_time = time.time()
             # Use the selected ASYNC client instance and await the streaming call
-            stream = await client.chat.completions.create(**request_params)
+            # For streaming, we acquire semaphores only for the initial request, not for the entire stream
+            global_semaphore = get_global_llm_semaphore()
             
-            logger.info(f"Started streaming LLM call using model '{selected_model_name}'")
+            if self.semaphore and global_semaphore:
+                # Acquire both semaphores for initial connection only
+                async with self.semaphore:
+                    async with global_semaphore:
+                        stream = await client.chat.completions.create(**request_params)
+                logger.info(f"Started streaming LLM call using model '{selected_model_name}' (both semaphores released)")
+            elif self.semaphore:
+                async with self.semaphore:
+                    stream = await client.chat.completions.create(**request_params)
+                logger.info(f"Started streaming LLM call using model '{selected_model_name}' (user semaphore released)")
+            elif global_semaphore:
+                async with global_semaphore:
+                    stream = await client.chat.completions.create(**request_params)
+                logger.info(f"Started streaming LLM call using model '{selected_model_name}' (global semaphore released)")
+            else:
+                stream = await client.chat.completions.create(**request_params)
+                logger.info(f"Started streaming LLM call using model '{selected_model_name}')")
             
-            # Yield each chunk from the stream
+            # Yield each chunk from the stream (semaphore already released)
             async for chunk in stream:
                 yield chunk
                 

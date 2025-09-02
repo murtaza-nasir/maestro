@@ -16,6 +16,11 @@ interface Chat {
   missionId?: string // Associate chat with a mission
   createdAt: Date
   updatedAt: Date
+  settings?: {
+    document_group_id?: string | null
+    use_web_search?: boolean
+    [key: string]: any
+  }
 }
 
 interface ChatState {
@@ -23,13 +28,23 @@ interface ChatState {
   activeChat: Chat | null
   isLoading: boolean
   error: string | null
+  // Pagination state
+  currentPage: number
+  totalPages: number
+  totalChats: number
+  pageSize: number
+  searchQuery: string
+  hasMore: boolean
   
   // Actions
-  loadChats: () => Promise<void>
+  loadChats: (page?: number, search?: string) => Promise<void>
+  loadMoreChats: () => Promise<void>
+  searchChats: (query: string) => Promise<void>
   createChat: (title?: string) => Promise<Chat>
   setActiveChat: (chatId: string) => Promise<void>
   addMessage: (chatId: string, message: Omit<Message, 'id' | 'timestamp'>) => Promise<void>
   updateChatTitle: (chatId: string, title: string) => Promise<void>
+  updateChat: (chatId: string, data: chatApi.UpdateChatRequest) => Promise<void>
   associateMissionWithChat: (chatId: string, missionId: string) => void
   deleteChat: (chatId: string) => Promise<void>
   clearChats: () => void
@@ -66,7 +81,8 @@ const convertApiChatToStoreChat = (apiChat: chatApi.Chat): Chat => {
     }),
     missionId: apiChat.missions.length > 0 ? apiChat.missions[0].id : undefined,
     createdAt: ensureDate(apiChat.created_at),
-    updatedAt: ensureDate(apiChat.updated_at)
+    updatedAt: ensureDate(apiChat.updated_at),
+    settings: apiChat.settings
   }
 }
 
@@ -87,22 +103,62 @@ export const useChatStore = create<ChatState>((set, get) => ({
   activeChat: null,
   isLoading: false,
   error: null,
+  // Pagination state
+  currentPage: 1,
+  totalPages: 0,
+  totalChats: 0,
+  pageSize: 20,
+  searchQuery: '',
+  hasMore: false,
 
   clearError: () => set({ error: null }),
 
-  loadChats: async () => {
+  loadChats: async (page = 1, search = '') => {
     set({ isLoading: true, error: null })
     try {
-      const chatSummaries = await chatApi.getUserChats()
-      const chats = chatSummaries.map(convertApiChatSummaryToStoreChat)
-      set({ chats, isLoading: false })
+      const response = await chatApi.getUserChats(page, 20, search || undefined)
+      
+      // Ensure response.items is an array
+      if (!response || !Array.isArray(response.items)) {
+        console.error('Invalid response from getUserChats:', response)
+        set({ 
+          chats: [],
+          isLoading: false,
+          error: 'Invalid response format from server'
+        })
+        return
+      }
+      
+      const chats = response.items.map(convertApiChatSummaryToStoreChat)
+      
+      set({ 
+        chats: page === 1 ? chats : [...get().chats, ...chats],
+        currentPage: response.page,
+        totalPages: response.total_pages,
+        totalChats: response.total,
+        hasMore: response.page < response.total_pages,
+        searchQuery: search,
+        isLoading: false 
+      })
     } catch (error) {
       console.error('Failed to load chats:', error)
       set({ 
         error: error instanceof Error ? error.message : 'Failed to load chats',
-        isLoading: false 
+        isLoading: false,
+        chats: [] // Ensure chats is always an array
       })
     }
+  },
+
+  loadMoreChats: async () => {
+    const state = get()
+    if (!state.hasMore || state.isLoading) return
+    
+    await state.loadChats(state.currentPage + 1, state.searchQuery)
+  },
+
+  searchChats: async (query: string) => {
+    await get().loadChats(1, query)
   },
 
   createChat: async (title = 'New Chat') => {
@@ -193,7 +249,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             const updatedChat = {
               ...chat,
               messages: [...chat.messages, newMessage],
-              updatedAt: ensureDate(new Date()),
+              // Don't update updatedAt when adding messages - keep original timestamp
             }
             return updatedChat
           }
@@ -226,12 +282,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set((state) => {
         const updatedChats = state.chats.map((chat) =>
           chat.id === chatId 
-            ? { ...chat, title, updatedAt: ensureDate(new Date()) }
+            ? { ...chat, title }  // Don't update timestamp, just the title
             : chat
         )
 
         const activeChat = state.activeChat?.id === chatId
-          ? { ...state.activeChat, title, updatedAt: ensureDate(new Date()) }
+          ? { ...state.activeChat, title }  // Don't update timestamp, just the title
           : state.activeChat
 
         return {
@@ -246,18 +302,66 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
+  updateChat: async (chatId: string, data: chatApi.UpdateChatRequest) => {
+    try {
+      console.log('Store: Updating chat', chatId, 'with data:', data)
+      
+      // Update chat in database
+      const updatedChatFromBackend = await chatApi.updateChat(chatId, data)
+      console.log('Store: Backend returned updated chat:', updatedChatFromBackend)
+      
+      // Convert backend response to store format
+      const convertedChat = convertApiChatToStoreChat(updatedChatFromBackend)
+      console.log('Store: Converted chat:', convertedChat)
+
+      // Update local state with the converted chat from backend
+      set((state: ChatState) => {
+        const updatedChats = state.chats.map((chat: Chat) => {
+          if (chat.id === chatId) {
+            // Use the converted chat from backend but preserve messages if not included
+            const updatedChat = {
+              ...convertedChat,
+              messages: convertedChat.messages.length > 0 ? convertedChat.messages : chat.messages
+            }
+            console.log('Store: Using updated chat:', updatedChat)
+            return updatedChat
+          }
+          return chat
+        })
+
+        // Update activeChat if it's the one being updated
+        const activeChat = state.activeChat?.id === chatId
+          ? updatedChats.find((c: Chat) => c.id === chatId) || null
+          : state.activeChat
+
+        console.log('Store: Updated activeChat:', activeChat)
+
+        return {
+          chats: updatedChats,
+          activeChat,
+        }
+      })
+      
+      console.log('Store: Chat update completed successfully')
+    } catch (error) {
+      console.error('Store: Failed to update chat:', error)
+      set({ error: error instanceof Error ? error.message : 'Failed to update chat' })
+      throw error
+    }
+  },
+
   associateMissionWithChat: (chatId: string, missionId: string) => {
     // This is a local state update - the association is handled by the backend
     // when missions are created through the chat API
-    set((state) => {
-      const updatedChats = state.chats.map((chat) =>
+    set((state: ChatState) => {
+      const updatedChats = state.chats.map((chat: Chat) =>
         chat.id === chatId
-          ? { ...chat, missionId, updatedAt: ensureDate(new Date()) }
+          ? { ...chat, missionId }  // Don't update updatedAt - this is just a local state association
           : chat
       )
 
       const activeChat = state.activeChat?.id === chatId
-        ? updatedChats.find(c => c.id === chatId) || null
+        ? updatedChats.find((c: Chat) => c.id === chatId) || null
         : state.activeChat
 
       return {
@@ -273,8 +377,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await chatApi.deleteChat(chatId)
 
       // Update local state
-      set((state) => {
-        const updatedChats = state.chats.filter((chat) => chat.id !== chatId)
+      set((state: ChatState) => {
+        const updatedChats = state.chats.filter((chat: Chat) => chat.id !== chatId)
         const activeChat = state.activeChat?.id === chatId ? null : state.activeChat
 
         return {

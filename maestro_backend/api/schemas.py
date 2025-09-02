@@ -80,7 +80,6 @@ class SearchSettings(BaseModel):
     jina_api_key: Optional[str] = None
     searxng_base_url: Optional[str] = None
     searxng_categories: Optional[str] = None
-    max_results: Optional[int] = None
     search_depth: Optional[str] = None
     # Jina-specific settings
     jina_read_full_content: Optional[bool] = None
@@ -114,11 +113,20 @@ class ResearchParameters(BaseModel):
     max_research_cycles_per_section: Optional[int] = None
     max_total_iterations: Optional[int] = None
     max_total_depth: Optional[int] = None
+    max_suggestions_per_batch: Optional[int] = None
     min_notes_per_section_assignment: Optional[int] = None
     max_notes_per_section_assignment: Optional[int] = None
     max_planning_context_chars: Optional[int] = None
     writing_previous_content_preview_chars: Optional[int] = None
     research_note_content_limit: Optional[int] = None
+    writing_agent_max_context_chars: Optional[int] = None
+    # Writing mode search parameters
+    writing_search_max_iterations: Optional[int] = None
+    writing_search_max_queries: Optional[int] = None
+    writing_deep_search_iterations: Optional[int] = None
+    writing_deep_search_queries: Optional[int] = None
+    writing_mode_doc_results: Optional[int] = None
+    writing_mode_web_results: Optional[int] = None
 
 class GlobalUserSettings(BaseModel):
     ai_endpoints: Optional[AISettings] = None
@@ -156,10 +164,12 @@ class ChatCreate(ChatBase):
 
 class ChatUpdate(BaseModel):
     title: Optional[str] = None
+    settings: Optional[Dict[str, Any]] = None  # For storing chat-specific settings
 
 class Chat(ChatBase):
     id: str
     user_id: int
+    settings: Optional[Dict[str, Any]] = None
     created_at: datetime
     updated_at: datetime
     messages: List[Message] = []
@@ -182,6 +192,19 @@ class ChatSummary(ChatBase):
 
     class Config:
         from_attributes = True
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
+class PaginatedChatsResponse(BaseModel):
+    """Paginated response for chat lists."""
+    items: List[ChatSummary]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+    class Config:
         json_encoders = {
             datetime: lambda v: v.isoformat()
         }
@@ -226,6 +249,8 @@ class MissionStatus(BaseModel):
     status: str
     updated_at: datetime
     error_info: Optional[str] = None
+    tool_selection: Optional[Dict[str, Any]] = None
+    document_group_id: Optional[str] = None
 
     class Config:
         json_encoders = {
@@ -323,6 +348,7 @@ class MissionSettings(BaseModel):
     max_research_cycles_per_section: Optional[int] = Field(None, description="Max times ResearchAgent is called per section per round")
     max_total_iterations: Optional[int] = Field(None, description="Overall limit for research/reflection iterations")
     max_total_depth: Optional[int] = Field(None, description="Max outline depth allowed after inter-pass revision")
+    max_suggestions_per_batch: Optional[int] = Field(None, description="Max parent sections per batch for reflection suggestions")
     
     # Note Assignment Limits
     min_notes_per_section_assignment: Optional[int] = Field(None, description="Minimum notes assigned to each section")
@@ -332,6 +358,7 @@ class MissionSettings(BaseModel):
     max_planning_context_chars: Optional[int] = Field(None, description="Max characters for notes context passed to PlanningAgent")
     writing_previous_content_preview_chars: Optional[int] = Field(None, description="Max characters for previewing previously written content")
     research_note_content_limit: Optional[int] = Field(None, description="Max characters of source content for note generation")
+    writing_agent_max_context_chars: Optional[int] = Field(None, description="Max total characters for WritingAgent context (notes + previous sections + outline)")
 
 class MissionSettingsResponse(BaseModel):
     mission_id: str
@@ -403,6 +430,21 @@ class DocumentGroupWithCount(DocumentGroupBase):
     updated_at: datetime
     documents: List[Document] = []
     document_count: int
+
+    class Config:
+        from_attributes = True
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
+class DocumentGroupSummary(BaseModel):
+    """Lightweight document group model without document list"""
+    id: str
+    name: str
+    description: Optional[str] = None
+    document_count: int
+    created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True

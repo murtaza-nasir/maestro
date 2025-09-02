@@ -346,7 +346,7 @@ class BaseAgent(ABC):
                         action_text = f"Web Search: {query[:50]}{'...' if len(query) > 50 else ''}"
                         input_text = query[:100] + ("..." if len(query) > 100 else "")
                 
-                context_manager.log_execution_step(
+                await context_manager.log_execution_step(
                     mission_id=self.mission_id,
                     agent_name=self.agent_name, # Logged by the agent calling the tool
                     action=action_text,

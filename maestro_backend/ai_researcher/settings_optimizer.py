@@ -273,7 +273,7 @@ async def apply_auto_optimization(
             try:
                 # Validate with Pydantic model before storing
                 validated_settings = MissionSettings(**final_mission_settings_dict)
-                context_mgr.update_mission_metadata(
+                await context_mgr.update_mission_metadata(
                     mission_id, 
                     {"mission_settings": validated_settings.model_dump(exclude_none=True)}
                 )
@@ -341,7 +341,7 @@ async def apply_auto_optimization(
         log_message = "\n\n".join(log_message_parts)
         
         # Log the settings configuration
-        context_mgr.log_execution_step(
+        await context_mgr.log_execution_step(
             mission_id=mission_id,
             agent_name="Configuration",
             action="Applying Research Parameters",
@@ -358,7 +358,7 @@ async def apply_auto_optimization(
     except Exception as e:
         logger.error(f"Failed to apply auto-optimization for mission {mission_id}: {e}", exc_info=True)
         # Log the failure
-        context_mgr.log_execution_step(
+        await context_mgr.log_execution_step(
             mission_id=mission_id,
             agent_name="Configuration",
             action="Applying Research Parameters",

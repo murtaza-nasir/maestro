@@ -328,18 +328,36 @@ class WebSocketManager:
                 await asyncio.sleep(1)
 
     async def _cleanup_stale_connections(self):
-        """Background task to cleanup stale connections."""
+        """Background task to cleanup stale connections and send heartbeats."""
         while True:
             try:
                 await asyncio.sleep(30)  # Check every 30 seconds
                 
                 current_time = datetime.now()
                 stale_timeout = timedelta(minutes=5)
+                heartbeat_timeout = timedelta(seconds=45)
                 
+                # Send heartbeats to keep connections alive
+                async with self._lock:
+                    for conn_id, conn in list(self._connections.items()):
+                        time_since_ping = current_time - conn.last_ping
+                        if time_since_ping > heartbeat_timeout and conn.is_alive:
+                            try:
+                                await conn.websocket.send_json({
+                                    "type": "heartbeat",
+                                    "timestamp": current_time.isoformat()
+                                })
+                                conn.last_ping = current_time
+                                logger.debug(f"Sent heartbeat to {conn_id}")
+                            except Exception as e:
+                                logger.debug(f"Failed to send heartbeat to {conn_id}: {e}")
+                                conn.is_alive = False
+                
+                # Clean up stale connections
                 async with self._lock:
                     stale_connections = [
                         conn_id for conn_id, conn in self._connections.items()
-                        if current_time - conn.last_ping > stale_timeout
+                        if current_time - conn.last_ping > stale_timeout or not conn.is_alive
                     ]
                 
                 for conn_id in stale_connections:

@@ -207,32 +207,6 @@ export const sendWritingChatMessageStream = async (chatData: WritingChatRequest)
   return response.data;
 };
 
-// Legacy synchronous version (deprecated)
-export const sendWritingChatMessage = async (chatData: WritingChatRequest): Promise<WritingChatResponse> => {
-  // Add timeout to prevent UI blocking when backend is busy with research missions
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
-  
-  try {
-    const response = await apiClient.post('/api/writing/enhanced-chat', chatData, {
-      signal: controller.signal,
-      timeout: 60000 // Also set axios timeout
-    });
-    clearTimeout(timeoutId);
-    return response.data;
-  } catch (error: any) {
-    clearTimeout(timeoutId);
-    
-    // Handle timeout specifically
-    if (error.name === 'AbortError' || error.code === 'ECONNABORTED') {
-      throw new Error('Request timed out. The server may be busy processing research tasks. Please try again in a moment.');
-    }
-    
-    // Re-throw original error
-    throw error;
-  }
-};
-
 // Document Operations API
 export const performDocumentOperation = async (draftId: string, operation: DocumentOperation): Promise<any> => {
   const response = await apiClient.post(`/api/writing/drafts/${draftId}/operations`, operation);

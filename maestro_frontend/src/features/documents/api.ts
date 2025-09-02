@@ -13,6 +13,7 @@ export const getFilterOptions = async (groupId?: string): Promise<{
 };
 
 export const getDocumentGroups = async (): Promise<DocumentGroupWithCount[]> => {
+  // Now returns lightweight summaries without document data
   const response = await apiClient.get('/api/document-groups/');
   return response.data;
 };

@@ -6,7 +6,8 @@ from collections import deque
 
 from ai_researcher import config
 from ai_researcher.config import THOUGHT_PAD_CONTEXT_LIMIT
-from ai_researcher.agentic_layer.context_manager import ContextManager, MissionContext, ExecutionLogEntry
+from ai_researcher.dynamic_config import get_skip_final_replanning
+from ai_researcher.agentic_layer.async_context_manager import AsyncContextManager, MissionContext, ExecutionLogEntry
 from ai_researcher.agentic_layer.model_dispatcher import ModelDispatcher
 from ai_researcher.agentic_layer.tool_registry import ToolRegistry, ToolDefinition
 from ai_researcher.agentic_layer.schemas.planning import SimplifiedPlan, PlanStep, ReportSection, SimplifiedPlanResponse
@@ -71,6 +72,76 @@ class MaybeSemaphore:
             self._semaphore.release()
         return False
 
+
+async def gather_with_status_check(controller, mission_id: str, *coroutines, return_exceptions: bool = False):
+    """
+    Custom gather function that checks mission status before running tasks.
+    If mission is paused/stopped, cancels all pending tasks.
+    
+    Args:
+        controller: The AgentController instance
+        mission_id: The mission ID to check status for
+        *coroutines: The coroutines to gather
+        return_exceptions: Whether to return exceptions or raise them
+    
+    Returns:
+        Results from gathered coroutines
+    """
+    # Check mission status before starting
+    mission_context = controller.context_manager.get_mission_context(mission_id)
+    if mission_context and mission_context.status in ["stopped", "paused"]:
+        logger.info(f"Mission {mission_id} is {mission_context.status}, skipping gather operation")
+        return []
+    
+    # Create tasks and register them as subtasks
+    tasks = []
+    for coro in coroutines:
+        task = asyncio.create_task(coro)
+        controller.add_mission_subtask(mission_id, task)
+        tasks.append(task)
+        
+        # Add a callback to remove the task when it's done
+        task.add_done_callback(lambda t: controller.remove_mission_subtask(mission_id, t))
+    
+    try:
+        # Run the tasks with periodic status checks
+        results = []
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+        
+        # Check if we should cancel pending tasks
+        mission_context = controller.context_manager.get_mission_context(mission_id)
+        if mission_context and mission_context.status in ["stopped", "paused"]:
+            logger.info(f"Mission {mission_id} was {mission_context.status} during gather, cancelling pending tasks")
+            for task in pending:
+                task.cancel()
+            # Wait for cancellation to complete
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+        
+        # Collect results
+        for task in done:
+            try:
+                result = await task
+                results.append(result)
+            except Exception as e:
+                if return_exceptions:
+                    results.append(e)
+                else:
+                    raise
+        
+        # If there are still pending tasks, wait for them
+        if pending and mission_context.status not in ["stopped", "paused"]:
+            pending_results = await asyncio.gather(*pending, return_exceptions=return_exceptions)
+            results.extend(pending_results)
+        
+        return results
+    except Exception as e:
+        # Cancel any remaining tasks on error
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        raise
+
 class AgentController:
     """
     Orchestrates the research process by managing agents, context, and plan execution.
@@ -79,7 +150,7 @@ class AgentController:
     def __init__(
         self,
         model_dispatcher: ModelDispatcher,
-        context_manager: ContextManager,
+        context_manager: AsyncContextManager,
         tool_registry: ToolRegistry,
         retriever: Optional[Retriever],
         reranker: Optional[TextReranker]
@@ -136,9 +207,10 @@ class AgentController:
         self.user_interaction_manager = UserInteractionManager(self)
         self.report_generator = ReportGenerator(self)
 
-        logger.info(f"AgentController initialized with agents, context manager, tool registry.")
-        logger.info(f"  Research Loop Settings: max_research_cycles_per_section={self.max_research_cycles_per_section}")
-        logger.info(f"  Writing Settings: writing_passes={config.WRITING_PASSES}")
+        logger.info("AgentController initialized with agents, context manager, tool registry.")
+        # Settings now loaded from user configuration dynamically
+        logger.debug(f"  Research Loop Settings: max_research_cycles_per_section={self.max_research_cycles_per_section}")
+        logger.debug(f"  Writing Settings: writing_passes={config.WRITING_PASSES}")
         self._register_core_tools()
 
     def _initialize_query_components(self, mission_id: str):
@@ -264,6 +336,439 @@ class AgentController:
             "valid": True,
             "reason": None
         }
+    
+    async def get_outline_at_round_start(self, mission_id: str, round_num: int) -> Optional[List[Any]]:
+        """
+        Retrieve the outline that was active at the start of a specific research round.
+        This searches through execution logs to find the last valid outline before the specified round.
+        
+        Args:
+            mission_id: The mission ID
+            round_num: The round number to resume from (we'll get the outline from round_num - 1)
+            
+        Returns:
+            The outline from the previous round, or None if not found
+        """
+        try:
+            logger.info(f"Retrieving outline for mission {mission_id} at round {round_num}")
+            
+            # Get execution logs from database to find the outline from previous rounds
+            from database.async_database import get_async_db_session
+            from database import async_crud
+            
+            async_db = await get_async_db_session()
+            try:
+                # Get all execution logs for this mission
+                execution_logs = await async_crud.get_mission_execution_logs(
+                    async_db, mission_id, user_id=None, limit=1000
+                )
+                
+                # Look for outline revision or planning logs that contain the full outline
+                # We want the outline from BEFORE the requested round (so round_num - 1)
+                target_round = round_num - 1 if round_num > 1 else 1
+                
+                # Search for logs that contain outline information
+                outline_logs = []
+                for log in execution_logs:
+                    # Check if this log contains an outline (usually from PlanningAgent or outline revision)
+                    if log.agent_name in ["PlanningAgent", "ReflectionManager", "AgentController"]:
+                        if "outline" in log.action.lower() or "plan" in log.action.lower():
+                            # Check if full_output contains outline data
+                            if log.full_output and isinstance(log.full_output, dict):
+                                if "report_outline" in log.full_output:
+                                    outline_logs.append(log)
+                                elif "revised_outline" in log.full_output:
+                                    outline_logs.append(log)
+                                elif "outline" in log.full_output:
+                                    outline_logs.append(log)
+                
+                logger.info(f"Found {len(outline_logs)} logs with outline information")
+                
+                # Find the most recent outline before the target round
+                if outline_logs:
+                    # Sort by timestamp descending to get the most recent first
+                    outline_logs.sort(key=lambda x: x.timestamp, reverse=True)
+                    
+                    for log in outline_logs:
+                        # Extract the outline from the log
+                        outline_data = None
+                        if isinstance(log.full_output, dict):
+                            outline_data = (
+                                log.full_output.get("report_outline") or
+                                log.full_output.get("revised_outline") or
+                                log.full_output.get("outline")
+                            )
+                        
+                        if outline_data:
+                            logger.info(f"Found outline from {log.agent_name} at {log.timestamp}")
+                            
+                            # Parse the outline if it's a string (JSON)
+                            if isinstance(outline_data, str):
+                                import json
+                                try:
+                                    outline_data = json.loads(outline_data)
+                                except:
+                                    pass
+                            
+                            # Convert to ReportSection objects if needed
+                            if isinstance(outline_data, list) and len(outline_data) > 0:
+                                from ai_researcher.agentic_layer.schemas.planning import ReportSection
+                                
+                                # Check if this is a valid outline (not just request_outline)
+                                if len(outline_data) > 1 or (
+                                    len(outline_data) == 1 and 
+                                    outline_data[0].get("section_id") != "request_outline"
+                                ):
+                                    # Convert dict to ReportSection objects
+                                    try:
+                                        outline_sections = [
+                                            ReportSection(**section) if isinstance(section, dict) else section
+                                            for section in outline_data
+                                        ]
+                                        logger.info(f"Successfully retrieved outline with {len(outline_sections)} sections")
+                                        return outline_sections
+                                    except Exception as e:
+                                        logger.warning(f"Failed to parse outline: {e}")
+                                        continue
+                
+                # If no outline found in logs, fall back to current context
+                logger.warning(f"No valid outline found in execution logs for round {target_round}")
+                mission_context = self.context_manager.get_mission_context(mission_id)
+                if mission_context and mission_context.plan:
+                    current_outline = mission_context.plan.report_outline
+                    # Only return if it's a valid outline
+                    if len(current_outline) > 1 or (
+                        len(current_outline) == 1 and 
+                        current_outline[0].section_id != "request_outline"
+                    ):
+                        return current_outline
+                    
+            finally:
+                await async_db.close()
+                
+        except Exception as e:
+            logger.error(f"Error retrieving outline at round {round_num} for mission {mission_id}: {e}")
+        
+        return None
+    
+    async def _truncate_data_after_round(
+        self,
+        mission_id: str,
+        mission_context: MissionContext,
+        round_num: int
+    ):
+        """
+        Truncate logs and notes that were created after the specified round.
+        This ensures a clean state when resuming from a specific point.
+        
+        Args:
+            mission_id: The mission ID
+            mission_context: The mission context
+            round_num: The round number we're resuming from (keep data up to round_num - 1)
+        """
+        try:
+            logger.info(f"Truncating data for mission {mission_id} after round {round_num - 1}")
+            
+            # Find the timestamp of when the specified round started
+            # We need to find logs that indicate the start of the round we're resuming from
+            round_start_timestamp = None
+            
+            # Search through execution logs to find when this round started
+            for log in mission_context.execution_log:
+                # Look for log indicating start of the round
+                if log.agent_name == "ResearchManager" and f"Round {round_num}:" in log.action:
+                    round_start_timestamp = log.timestamp
+                    break
+            
+            if not round_start_timestamp:
+                # If we can't find exact round start, look for section processing in that round
+                for log in mission_context.execution_log:
+                    if log.agent_name == "ResearchAgent" and f"[Round {round_num}]" in log.action:
+                        round_start_timestamp = log.timestamp
+                        break
+            
+            if round_start_timestamp:
+                logger.info(f"Found round {round_num} start at {round_start_timestamp}")
+                
+                # Truncate execution logs after this timestamp
+                original_log_count = len(mission_context.execution_log)
+                mission_context.execution_log = [
+                    log for log in mission_context.execution_log 
+                    if log.timestamp < round_start_timestamp
+                ]
+                truncated_logs = original_log_count - len(mission_context.execution_log)
+                logger.info(f"Truncated {truncated_logs} execution logs")
+                
+                # Truncate notes created after this timestamp
+                original_note_count = len(mission_context.notes)
+                mission_context.notes = [
+                    note for note in mission_context.notes 
+                    if note.created_at < round_start_timestamp
+                ]
+                truncated_notes = original_note_count - len(mission_context.notes)
+                logger.info(f"Truncated {truncated_notes} notes")
+                
+                # Clear any report content that was generated after this round
+                # Keep only sections that were completed before this round
+                if mission_context.report_content:
+                    sections_to_keep = []
+                    for log in mission_context.execution_log:
+                        if "WritingAgent" in log.agent_name and "Completed writing section" in log.action:
+                            # Extract section ID from the action
+                            for section_id in mission_context.report_content.keys():
+                                if section_id in log.action:
+                                    sections_to_keep.append(section_id)
+                    
+                    # Keep only the sections that were completed before the truncation point
+                    new_report_content = {}
+                    for section_id in sections_to_keep:
+                        if section_id in mission_context.report_content:
+                            new_report_content[section_id] = mission_context.report_content[section_id]
+                    
+                    removed_sections = len(mission_context.report_content) - len(new_report_content)
+                    mission_context.report_content = new_report_content
+                    logger.info(f"Removed {removed_sections} report sections")
+                
+                # Clear final report if it exists (will be regenerated)
+                if mission_context.final_report:
+                    mission_context.final_report = None
+                    logger.info("Cleared final report")
+                
+                # Update the mission context in the context manager
+                await self.context_manager.save_mission_context(mission_id)
+                
+                # Also truncate database logs
+                async with get_async_db() as db:
+                    # Get all logs for this mission
+                    db_logs = await crud.get_mission_execution_logs(db, mission_id)
+                    
+                    if db_logs and round_start_timestamp:
+                        # Find logs to delete (those created after round_start_timestamp)
+                        logs_to_delete = [
+                            log for log in db_logs 
+                            if log.timestamp >= round_start_timestamp
+                        ]
+                        
+                        if logs_to_delete:
+                            # Delete the logs from database
+                            for log in logs_to_delete:
+                                await crud.delete_mission_execution_log(db, log.id)
+                            
+                            logger.info(f"Deleted {len(logs_to_delete)} execution logs from database")
+                
+            else:
+                logger.warning(f"Could not find timestamp for round {round_num} start, keeping all data")
+            
+        except Exception as e:
+            logger.error(f"Error truncating data for mission {mission_id}: {e}", exc_info=True)
+            # Don't fail the resume operation if truncation fails
+    
+    async def resume_from_round(
+        self,
+        mission_id: str,
+        round_num: int,
+        log_queue: Optional[queue.Queue] = None,
+        update_callback: Optional[Callable[[queue.Queue, Any], None]] = None
+    ):
+        """
+        Resume mission from the beginning of a specific research round.
+        Sets up the state and then calls run_mission with resume parameters.
+        
+        Args:
+            mission_id: The mission ID
+            round_num: The round number to resume from
+            log_queue: Optional queue for logging
+            update_callback: Optional callback for updates
+        """
+        try:
+            logger.info(f"Resuming mission {mission_id} from round {round_num}")
+            
+            # Stop current execution if running
+            mission_context = self.context_manager.get_mission_context(mission_id)
+            current_status = mission_context.status if mission_context else None
+            if current_status == "running":
+                await self.context_manager.update_mission_status(mission_id, "paused")
+                # Wait a moment for execution to stop
+                await asyncio.sleep(1)
+            
+            # Check if mission context and plan exist
+            if not mission_context:
+                logger.error(f"Mission context not found for mission {mission_id}")
+                await self.context_manager.update_mission_status(mission_id, "failed", "Mission context not found")
+                return False
+            
+            if not mission_context.plan:
+                logger.error(f"Mission plan not found for mission {mission_id}")
+                await self.context_manager.update_mission_status(mission_id, "failed", "Mission plan not found")
+                return False
+            
+            # Truncate logs and notes created after the resume point
+            await self._truncate_data_after_round(mission_id, mission_context, round_num)
+            
+            # Check if we already have a valid outline (e.g., from revision)
+            # Only retrieve from database if the current outline is missing or empty
+            if not mission_context.plan.report_outline:
+                # Get the outline from the previous round (the last valid outline)
+                outline = await self.get_outline_at_round_start(mission_id, round_num)
+                if not outline:
+                    logger.error(f"Could not retrieve a valid outline for round {round_num}")
+                    await self.context_manager.update_mission_status(mission_id, "failed", "Could not retrieve valid outline for resume")
+                    return False
+                
+                # Replace the current (empty) outline with the valid one from previous round
+                logger.info(f"Setting outline from database: {len(outline)} sections")
+                mission_context.plan.report_outline = outline
+            else:
+                # Use the existing outline (which may have been revised)
+                logger.info(f"Using existing outline (potentially revised): {len(mission_context.plan.report_outline)} sections")
+            
+            # Log the outline being used
+            current_outline = mission_context.plan.report_outline
+            logger.info(f"Outline for mission {mission_id}:")
+            for i, section in enumerate(current_outline[:5]):  # Log first 5 sections
+                logger.info(f"  {i+1}. {section.section_id}: {section.title}")
+            
+            # Create resume checkpoint to start from the specified round
+            resume_checkpoint = {
+                'current_round': round_num,
+                'completed_sections': []  # Start fresh from this round
+            }
+            
+            # Store the checkpoint in context for run_mission to use
+            self.context_manager.store_resume_checkpoint(mission_id, resume_checkpoint)
+            
+            logger.info(f"Stored checkpoint and prepared mission state for resume from round {round_num}")
+            
+            # Now call run_mission with resume_from_phase set to "structured_research"
+            # This will make run_mission skip the initial phases and start from the research plan execution
+            await self.run_mission(
+                mission_id=mission_id,
+                log_queue=log_queue,
+                update_callback=update_callback,
+                resume_from_phase="structured_research"
+            )
+            
+            # run_mission handles all the phases including writing and citation processing
+            # No need to duplicate that logic here
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error resuming mission {mission_id} from round {round_num}: {e}", exc_info=True)
+            await self.context_manager.update_mission_status(mission_id, "failed", f"Resume failed: {e}")
+            return False
+    
+    async def revise_outline_and_resume(
+        self,
+        mission_id: str,
+        round_num: int,
+        user_feedback: str,
+        log_queue: Optional[queue.Queue] = None,
+        update_callback: Optional[Callable[[queue.Queue, Any], None]] = None
+    ):
+        """
+        Apply user feedback to revise the outline and resume from a specific round.
+        
+        Args:
+            mission_id: The mission ID
+            round_num: The round number to resume from
+            user_feedback: User's feedback for outline revision
+            log_queue: Optional queue for logging
+            update_callback: Optional callback for updates
+        """
+        try:
+            logger.info(f"Revising outline and resuming mission {mission_id} from round {round_num}")
+            
+            # Stop current execution if running
+            mission_context = self.context_manager.get_mission_context(mission_id)
+            current_status = mission_context.status if mission_context else None
+            if current_status == "running":
+                await self.context_manager.update_mission_status(mission_id, "paused")
+                # Wait a moment for execution to stop
+                await asyncio.sleep(1)
+            
+            await self.context_manager.update_mission_status(mission_id, "revising")
+            
+            # Get current mission context
+            mission_context = self.context_manager.get_mission_context(mission_id)
+            if not mission_context or not mission_context.plan:
+                logger.error(f"Mission context or plan not found for {mission_id}")
+                await self.context_manager.update_mission_status(mission_id, "failed", "Mission context not found")
+                return False
+            
+            # Call PlanningAgent with user feedback to revise the outline
+            current_outline = mission_context.plan.report_outline
+            user_request = mission_context.user_request
+            
+            # Format the outline for display
+            from ai_researcher.agentic_layer.controller.utils import outline_utils
+            formatted_outline = outline_utils.format_outline_for_prompt(current_outline)
+            
+            revision_context = f"""User Feedback for Outline Revision:
+{user_feedback}
+
+Current Outline:
+{chr(10).join(formatted_outline)}
+
+Please revise the outline based on the user's feedback while maintaining the overall mission goal.
+Make sure to address the user's specific concerns and suggestions."""
+            
+            # Get revised outline from PlanningAgent
+            active_goals = self.context_manager.get_active_goals(mission_id)
+            active_thoughts = self.context_manager.get_recent_thoughts(mission_id, limit=5)
+            current_scratchpad = self.context_manager.get_scratchpad(mission_id)
+            
+            async with self.maybe_semaphore:
+                response, model_details, scratchpad_update = await self.planning_agent.run(
+                    user_request=user_request,
+                    revision_context=revision_context,
+                    active_goals=active_goals,
+                    active_thoughts=active_thoughts,
+                    agent_scratchpad=current_scratchpad,
+                    mission_id=mission_id,
+                    log_queue=log_queue,
+                    update_callback=update_callback
+                )
+            
+            if response and response.report_outline:
+                # Validate the revised outline
+                from ai_researcher.agentic_layer.controller.reflection_manager_batched import is_error_outline
+                if is_error_outline(response.report_outline):
+                    logger.error("Revised outline contains error patterns")
+                    await self.context_manager.update_mission_status(mission_id, "failed", "Invalid revised outline")
+                    return False
+                
+                # Update the outline in mission context
+                mission_context.plan.report_outline = response.report_outline
+                
+                # Update scratchpad if provided
+                if scratchpad_update:
+                    await self.context_manager.update_scratchpad(mission_id, scratchpad_update)
+                
+                # Log the revision
+                await self.context_manager.log_execution_step(
+                    mission_id, "AgentController", "Revise Outline from User Feedback",
+                    input_summary=f"User feedback: {user_feedback[:100]}...",
+                    output_summary=f"Revised outline with {len(response.report_outline)} sections",
+                    status="success",
+                    log_queue=log_queue,
+                    update_callback=update_callback
+                )
+                
+                # Truncate logs and notes created after the resume point
+                # Note: This is done inside resume_from_round, not here, to avoid double truncation
+                
+                # Resume from the specified round with the new outline
+                return await self.resume_from_round(mission_id, round_num, log_queue, update_callback)
+            else:
+                logger.error("Failed to get revised outline from PlanningAgent")
+                await self.context_manager.update_mission_status(mission_id, "failed", "Failed to revise outline")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error revising outline for mission {mission_id}: {e}", exc_info=True)
+            await self.context_manager.update_mission_status(mission_id, "failed", str(e))
+            return False
+    
     async def resume_mission(
         self,
         mission_id: str,
@@ -303,7 +808,7 @@ class AgentController:
             else:
                 logger.info(f"Executing mission {mission_id} with new workflow...")
             
-            self.context_manager.update_mission_status(mission_id, "running")
+            await self.context_manager.update_mission_status(mission_id, "running")
 
             # Initialize query components with user-specific models for this mission
             self._initialize_query_components(mission_id)
@@ -318,14 +823,14 @@ class AgentController:
                         status="failure", error_message="Mission context not found."
                     )
                     update_callback(log_queue, error_log)
-                self.context_manager.update_mission_status(mission_id, "failed", "Mission context not found at start.")
+                await self.context_manager.update_mission_status(mission_id, "failed", "Mission context not found at start.")
                 return
             
             user_request = mission_context.user_request
             
             # Step 1: Initial Request Analysis
             if "initial_analysis" not in mission_context.completed_phases:
-                self.context_manager.update_execution_phase(mission_id, "initial_analysis")
+                await self.context_manager.update_execution_phase(mission_id, "initial_analysis")
                 
                 analysis_result = await self.user_interaction_manager.analyze_request_type(
                     mission_id=mission_id,
@@ -336,38 +841,38 @@ class AgentController:
 
                 # Step 2: Goal Pad & Thought Pad Initialization
                 initial_thought_content = f"Starting mission. Core user request: {user_request[:150]}..."
-                self.context_manager.add_thought(mission_id, "AgentController", initial_thought_content)
+                await self.context_manager.add_thought(mission_id, "AgentController", initial_thought_content)
                 logger.info(f"Added initial focus thought to thought_pad for mission {mission_id}.")
 
                 if analysis_result:
                     logger.info(f"Initializing goal pad for mission {mission_id} based on analysis.")
                     try:
                         # Add original request as a goal
-                        self.context_manager.add_goal(mission_id, user_request)
+                        await self.context_manager.add_goal(mission_id, user_request)
                         # Add analysis results as goals
-                        self.context_manager.add_goal(mission_id, f"Request Type is {analysis_result.request_type}")
-                        self.context_manager.add_goal(mission_id, f"Target Tone is {analysis_result.target_tone}")
-                        self.context_manager.add_goal(mission_id, f"Target Audience is {analysis_result.target_audience}")
-                        self.context_manager.add_goal(mission_id, f"Requested Length is {analysis_result.requested_length}")
-                        self.context_manager.add_goal(mission_id, f"Requested Format is {analysis_result.requested_format}")
+                        await self.context_manager.add_goal(mission_id, f"Request Type is {analysis_result.request_type}")
+                        await self.context_manager.add_goal(mission_id, f"Target Tone is {analysis_result.target_tone}")
+                        await self.context_manager.add_goal(mission_id, f"Target Audience is {analysis_result.target_audience}")
+                        await self.context_manager.add_goal(mission_id, f"Requested Length is {analysis_result.requested_length}")
+                        await self.context_manager.add_goal(mission_id, f"Requested Format is {analysis_result.requested_format}")
                         # Add preferred source types as a goal if present
                         if analysis_result.preferred_source_types:
-                            self.context_manager.add_goal(mission_id, f"Preferred Source Types: {analysis_result.preferred_source_types}")
+                            await self.context_manager.add_goal(mission_id, f"Preferred Source Types: {analysis_result.preferred_source_types}")
                             logger.info(f"Added preferred source types '{analysis_result.preferred_source_types}' to goal pad.")
                         logger.info("Added analysis results to goal pad.")
                     except Exception as goal_exc:
                         logger.error(f"Failed to add analysis results to goal pad for mission {mission_id}: {goal_exc}", exc_info=True)
-                        self.context_manager.log_execution_step(
+                        await self.context_manager.log_execution_step(
                             mission_id, "AgentController", "Initialize Goal Pad",
                             status="warning", error_message=f"Failed to add goals: {goal_exc}",
                             log_queue=log_queue, update_callback=update_callback
                         )
                 else:
                     logger.warning(f"Request analysis failed for mission {mission_id}. Proceeding without analysis goals.")
-                    self.context_manager.add_goal(mission_id, user_request)
+                    await self.context_manager.add_goal(mission_id, user_request)
                 
                 # Mark initial analysis as completed
-                self.context_manager.mark_phase_completed(mission_id, "initial_analysis")
+                await self.context_manager.mark_phase_completed(mission_id, "initial_analysis")
             else:
                 logger.info(f"Skipping initial_analysis phase - already completed for mission {mission_id}")
 
@@ -389,7 +894,7 @@ class AgentController:
 
             if not final_questions:
                 logger.error(f"Cannot start research phase: Final questions not found in metadata for mission {mission_id}.")
-                self.context_manager.update_mission_status(mission_id, "failed", "Final questions missing before research phase.")
+                await self.context_manager.update_mission_status(mission_id, "failed", "Final questions missing before research phase.")
                 return
 
             # Check if mission was stopped or paused before starting research
@@ -443,10 +948,10 @@ class AgentController:
 
             if not preliminary_plan:
                 logger.error(f"Failed to generate preliminary outline for mission {mission_id}. Aborting.")
-                self.context_manager.update_mission_status(mission_id, "failed", "Preliminary outline generation failed.")
+                await self.context_manager.update_mission_status(mission_id, "failed", "Preliminary outline generation failed.")
                 return
             else:
-                self.context_manager.store_plan(mission_id, preliminary_plan)
+                await self.context_manager.store_plan(mission_id, preliminary_plan)
                 logger.info(f"Successfully generated and stored preliminary outline for mission {mission_id}.")
 
             # Phase 2b: Execute Research Plan
@@ -456,11 +961,19 @@ class AgentController:
                 logger.info(f"Mission {mission_id} was {mission_context.status} before plan execution. Aborting.")
                 return
 
+            # Get checkpoint data if resuming
+            resume_checkpoint = None
+            if resume_from_phase == "structured_research":
+                resume_checkpoint = self.context_manager.get_resume_checkpoint(mission_id)
+                if resume_checkpoint and resume_checkpoint.get('phase') == 'structured_research':
+                    logger.info(f"Found structured_research checkpoint for mission {mission_id}: {resume_checkpoint}")
+
             plan_execution_success = await self.research_manager.execute_research_plan(
                 mission_id=mission_id,
                 plan=preliminary_plan,
                 log_queue=log_queue,
-                update_callback=update_callback
+                update_callback=update_callback,
+                resume_checkpoint=resume_checkpoint
             )
             
             # Check if mission was stopped or paused during plan execution
@@ -472,16 +985,17 @@ class AgentController:
             if not plan_execution_success:
                 logger.error(f"Research plan execution phase failed for mission {mission_id}. Aborting.")
                 if self.context_manager.get_mission_context(mission_id).status != "failed":
-                    self.context_manager.update_mission_status(mission_id, "failed", "Research plan execution failed.")
+                    await self.context_manager.update_mission_status(mission_id, "failed", "Research plan execution failed.")
                 return
 
             # Phase 3: Prepare Notes for Writing (Conditional based on config)
             active_goals = self.context_manager.get_active_goals(mission_id)
             full_note_assignments: Optional[FullNoteAssignments] = None
 
-            if not config.SKIP_FINAL_REPLANNING:
+            skip_final_replanning = get_skip_final_replanning(mission_id)
+            if not skip_final_replanning:
                 logger.info(f"Running final outline refinement and note reassignment for mission {mission_id}.")
-                self.context_manager.log_execution_step(
+                await self.context_manager.log_execution_step(
                     mission_id=mission_id, agent_name="AgentController", action="Prepare Notes (Standard)",
                     status="success", output_summary="Running final outline refinement and note reassignment.", # Use output_summary
                     log_queue=log_queue, update_callback=update_callback
@@ -495,12 +1009,12 @@ class AgentController:
 
                 if full_note_assignments is None:
                     logger.error(f"Standard note assignment phase failed critically for mission {mission_id}. Aborting.")
-                    self.context_manager.update_mission_status(mission_id, "failed", "Standard note assignment phase failed critically.")
+                    await self.context_manager.update_mission_status(mission_id, "failed", "Standard note assignment phase failed critically.")
                     return
                 elif not full_note_assignments.assignments:
                     logger.warning(f"Standard note assignment phase for mission {mission_id} resulted in empty assignments. Proceeding, but writing phase might be affected.")
                 
-                self.context_manager.log_execution_step(
+                await self.context_manager.log_execution_step(
                     mission_id=mission_id, agent_name="AgentController", action="Prepare Notes (Standard)",
                     status="success", output_summary=f"Completed standard note reassignment. {len(full_note_assignments.assignments)} sections assigned.", # Use output_summary
                     log_queue=log_queue, update_callback=update_callback
@@ -508,7 +1022,7 @@ class AgentController:
 
             else:
                 logger.info(f"Skipping final replanning. Running redundancy reflection for mission {mission_id}.")
-                self.context_manager.log_execution_step(
+                await self.context_manager.log_execution_step(
                     mission_id=mission_id, agent_name="AgentController", action="Prepare Notes (Skip Replanning)",
                     status="success", output_summary="Skipping final replanning. Running redundancy reflection.", # Use output_summary
                     log_queue=log_queue, update_callback=update_callback
@@ -522,7 +1036,7 @@ class AgentController:
                     current_plan = self.context_manager.get_plan(mission_id)
                     if not current_plan:
                          logger.error(f"Cannot create empty assignments: Plan not found for mission {mission_id}.")
-                         self.context_manager.update_mission_status(mission_id, "failed", "Plan not found when skipping replanning.")
+                         await self.context_manager.update_mission_status(mission_id, "failed", "Plan not found when skipping replanning.")
                          return # Abort if plan is missing
                     
                     # Import AssignedNotes here, locally within the method scope
@@ -565,7 +1079,7 @@ class AgentController:
                         current_plan = self.context_manager.get_plan(mission_id)
                         if not current_plan:
                             logger.error(f"Cannot assign filtered notes: Plan not found for mission {mission_id}.")
-                            self.context_manager.update_mission_status(mission_id, "failed", "Plan not found when skipping replanning.")
+                            await self.context_manager.update_mission_status(mission_id, "failed", "Plan not found when skipping replanning.")
                             return # Abort if plan is missing
                         
                         # Import AssignedNotes here, locally within the method scope
@@ -607,15 +1121,15 @@ class AgentController:
 
                     except Exception as reflect_err:
                         logger.error(f"Error during redundancy reflection for mission {mission_id}: {reflect_err}", exc_info=True)
-                        self.context_manager.log_execution_step(
+                        await self.context_manager.log_execution_step(
                             mission_id, "AgentController", "Prepare Notes (Skip Replanning)",
                             status="failure", error_message=f"Redundancy reflection failed: {reflect_err}",
                             log_queue=log_queue, update_callback=update_callback
                         )
-                        self.context_manager.update_mission_status(mission_id, "failed", "Redundancy reflection failed.")
+                        await self.context_manager.update_mission_status(mission_id, "failed", "Redundancy reflection failed.")
                         return # Abort on reflection error
 
-                self.context_manager.log_execution_step(
+                await self.context_manager.log_execution_step(
                     mission_id=mission_id, agent_name="AgentController", action="Prepare Notes (Skip Replanning)",
                     status="success", output_summary=f"Completed redundancy reflection. Prepared notes for writing.", # Use output_summary
                     log_queue=log_queue, update_callback=update_callback
@@ -624,7 +1138,7 @@ class AgentController:
             # Ensure full_note_assignments is not None before proceeding
             if full_note_assignments is None:
                  logger.error(f"Critical error: full_note_assignments is None before writing phase for mission {mission_id}. Aborting.")
-                 self.context_manager.update_mission_status(mission_id, "failed", "Note assignment structure missing before writing phase.")
+                 await self.context_manager.update_mission_status(mission_id, "failed", "Note assignment structure missing before writing phase.")
                  return
 
             # Phase 4: Multi-Pass Writing Phase
@@ -644,7 +1158,7 @@ class AgentController:
             if not writing_success:
                 logger.error(f"Writing phase failed for mission {mission_id}. Aborting.")
                 if self.context_manager.get_mission_context(mission_id).status != "failed":
-                    self.context_manager.update_mission_status(mission_id, "failed", "Writing phase failed.")
+                    await self.context_manager.update_mission_status(mission_id, "failed", "Writing phase failed.")
                 return
 
             # Check if mission was stopped or paused after writing phase
@@ -663,7 +1177,7 @@ class AgentController:
                 )
                 if not title_success:
                     logger.warning(f"Failed to generate report title for mission {mission_id}. Report generation will continue without title.")
-                    self.context_manager.log_execution_step(
+                    await self.context_manager.log_execution_step(
                         mission_id, "AgentController", "Generate Report Title",
                         status="warning", error_message="Title generation failed, proceeding without title.",
                         log_queue=log_queue, update_callback=update_callback
@@ -672,14 +1186,14 @@ class AgentController:
                     logger.info(f"Successfully generated report title for mission {mission_id}.")
             except Exception as title_e:
                 logger.error(f"Error during title generation phase for mission {mission_id}: {title_e}", exc_info=True)
-                self.context_manager.log_execution_step(
+                await self.context_manager.log_execution_step(
                     mission_id, "AgentController", "Generate Report Title",
                     status="warning", error_message=f"Exception during title generation: {title_e}",
                     log_queue=log_queue, update_callback=update_callback
                 )
 
             # Phase 6: Citation Processing
-            citation_success = self.report_generator.process_citations(
+            citation_success = await self.report_generator.process_citations(
                 mission_id, 
                 log_queue, 
                 update_callback
@@ -687,7 +1201,7 @@ class AgentController:
             if not citation_success:
                 logger.error(f"Citation processing failed for mission {mission_id}. Aborting.")
                 if self.context_manager.get_mission_context(mission_id).status != "failed":
-                    self.context_manager.update_mission_status(mission_id, "failed", "Citation processing failed.")
+                    await self.context_manager.update_mission_status(mission_id, "failed", "Citation processing failed.")
                 return
             
             # Check if mission was stopped or paused after citation processing
@@ -705,7 +1219,7 @@ class AgentController:
             logger.info(f"Mission {mission_id} was cancelled")
             mission_context = self.context_manager.get_mission_context(mission_id)
             if mission_context and mission_context.status not in ["stopped", "paused"]:
-                self.context_manager.update_mission_status(mission_id, "stopped", "Mission cancelled by user")
+                await self.context_manager.update_mission_status(mission_id, "stopped", "Mission cancelled by user")
             if update_callback and log_queue:
                 try:
                     cancel_log = ExecutionLogEntry(
@@ -722,7 +1236,7 @@ class AgentController:
             err_msg = f"Critical error during mission execution: {e}"
             logger.error(err_msg, exc_info=True)
             if self.context_manager.get_mission_context(mission_id).status != "failed":
-                self.context_manager.update_mission_status(mission_id, "failed", err_msg)
+                await self.context_manager.update_mission_status(mission_id, "failed", err_msg)
             if update_callback and log_queue:
                 try:
                     error_log = ExecutionLogEntry(
@@ -759,45 +1273,81 @@ class AgentController:
                 del self.mission_subtasks[mission_id]
             logger.debug(f"Removed subtask for mission {mission_id}")
     
-    def stop_mission(self, mission_id: str):
-        """Stops a running mission and cancels all associated tasks."""
-        logger.info(f"Stopping mission {mission_id}...")
+    async def stop_mission(self, mission_id: str):
+        """Pauses a running mission and cancels all associated tasks with proper timeout."""
+        logger.info(f"Pausing mission {mission_id}...")
         
-        # First update the status to prevent new tasks from starting
-        self.context_manager.update_mission_status(mission_id, "stopped")
+        # First update the status to paused to prevent new tasks from starting
+        await self.context_manager.update_mission_status(mission_id, "paused")
         
-        # Cancel the main task if it exists
+        # Store checkpoint for resuming later
+        mission_context = self.context_manager.get_mission_context(mission_id)
+        if mission_context:
+            self.context_manager.store_resume_checkpoint(
+                mission_id, 
+                {
+                    "status": "paused",
+                    "timestamp": asyncio.get_event_loop().time()
+                }
+            )
+        
+        # Collect all tasks to cancel
+        tasks_to_cancel = []
+        
+        # Add main task if it exists
         if mission_id in self.mission_tasks:
             main_task = self.mission_tasks[mission_id]
             if not main_task.done():
-                logger.info(f"Cancelling main task for mission {mission_id}")
-                main_task.cancel()
-            del self.mission_tasks[mission_id]
+                tasks_to_cancel.append(main_task)
         
-        # Cancel all subtasks if they exist
+        # Add all subtasks if they exist
         if mission_id in self.mission_subtasks:
-            subtasks = self.mission_subtasks[mission_id]
-            cancelled_count = 0
-            for task in subtasks:
+            for task in self.mission_subtasks[mission_id]:
                 if not task.done():
-                    task.cancel()
-                    cancelled_count += 1
-            logger.info(f"Cancelled {cancelled_count} subtasks for mission {mission_id}")
+                    tasks_to_cancel.append(task)
+        
+        if tasks_to_cancel:
+            logger.info(f"Attempting to cancel {len(tasks_to_cancel)} tasks for mission {mission_id}")
+            
+            # First, request cancellation for all tasks
+            for task in tasks_to_cancel:
+                task.cancel()
+            
+            # Give tasks 5 seconds to finish gracefully
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*tasks_to_cancel, return_exceptions=True),
+                    timeout=5.0
+                )
+                logger.info(f"All tasks cancelled gracefully for mission {mission_id}")
+            except asyncio.TimeoutError:
+                logger.warning(f"Some tasks did not cancel within 5 seconds for mission {mission_id}, forcing cancellation")
+                # Tasks that didn't finish will remain cancelled
+            
+            # Count how many were actually cancelled vs completed
+            cancelled_count = sum(1 for task in tasks_to_cancel if task.cancelled())
+            completed_count = sum(1 for task in tasks_to_cancel if task.done() and not task.cancelled())
+            logger.info(f"Mission {mission_id}: {cancelled_count} tasks cancelled, {completed_count} completed")
+        
+        # Clean up task registries
+        if mission_id in self.mission_tasks:
+            del self.mission_tasks[mission_id]
+        if mission_id in self.mission_subtasks:
             del self.mission_subtasks[mission_id]
         
-        self.context_manager.log_execution_step(
+        await self.context_manager.log_execution_step(
             mission_id=mission_id,
             agent_name="AgentController",
-            action="Stop Mission",
+            action="Pause Mission",
             status="success"
         )
         logger.info(f"Mission {mission_id} stopped and all tasks cancelled.")
 
-    def pause_mission(self, mission_id: str):
+    async def pause_mission(self, mission_id: str):
         """Pauses a running mission."""
         logger.info(f"Pausing mission {mission_id}...")
-        self.context_manager.update_mission_status(mission_id, "paused")
-        self.context_manager.log_execution_step(
+        await self.context_manager.update_mission_status(mission_id, "paused")
+        await self.context_manager.log_execution_step(
             mission_id=mission_id,
             agent_name="AgentController",
             action="Pause Mission",

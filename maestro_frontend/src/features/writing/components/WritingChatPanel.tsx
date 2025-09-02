@@ -12,7 +12,7 @@ import {
 import { Send, Loader2, Bot, Trash2, Sparkles, Settings, SlidersHorizontal } from 'lucide-react'
 import { CustomSystemPromptModal } from './CustomSystemPromptModal'
 import { WritingSearchSettingsModal } from './WritingSearchSettingsModal'
-// import { apiClient } from '../../../config/api'
+import { apiClient } from '../../../config/api'
 import { useWritingStore } from '../store'
 import { getDocumentGroups } from '../../documents/api'
 import type { DocumentGroup } from '../../documents/types'
@@ -98,7 +98,89 @@ export const WritingChatPanel: React.FC = () => {
       }
     }
     fetchGroups()
-  }, [])
+  }, []) // Only load once on mount
+  
+  // Track if we're loading settings from a chat to prevent saving during load
+  const [isLoadingChatSettings, setIsLoadingChatSettings] = useState(false)
+  
+  // Load saved tool settings when activeChat changes
+  useEffect(() => {
+    if (activeChat) {
+      setIsLoadingChatSettings(true)
+      
+      if (activeChat.settings?.tools) {
+        const tools = activeChat.settings.tools
+        setSelectedGroupId(tools.documentGroupId || null)
+        setSearchSettings({
+          useWebSearch: tools.useWebSearch ?? false,
+          deepSearch: tools.deepSearch ?? false,
+          maxIterations: tools.maxIterations ?? userParams?.writing_search_max_iterations ?? 1,
+          maxQueries: tools.maxQueries ?? userParams?.writing_search_max_queries ?? 3,
+          deepSearchIterations: tools.deepSearchIterations ?? userParams?.writing_deep_search_iterations ?? 3,
+          deepSearchQueries: tools.deepSearchQueries ?? userParams?.writing_deep_search_queries ?? 5,
+        })
+      } else {
+        // No saved settings, use defaults
+        setSelectedGroupId(null)
+        setSearchSettings({
+          useWebSearch: false,
+          deepSearch: false,
+          maxIterations: userParams?.writing_search_max_iterations ?? 1,
+          maxQueries: userParams?.writing_search_max_queries ?? 3,
+          deepSearchIterations: userParams?.writing_deep_search_iterations ?? 3,
+          deepSearchQueries: userParams?.writing_deep_search_queries ?? 5,
+        })
+      }
+      
+      // Allow saving after a short delay
+      setTimeout(() => {
+        setIsLoadingChatSettings(false)
+      }, 100)
+    }
+  }, [activeChat?.id]) // Only trigger when chat ID changes
+  
+  // Save tool settings when they change (but not during initial load)
+  const saveToolSettings = async () => {
+    if (!activeChat || isLoadingChatSettings) return
+    
+    try {
+      const chatSettings = {
+        ...(activeChat.settings || {}),
+        tools: {
+          documentGroupId: selectedGroupId,
+          useWebSearch: searchSettings.useWebSearch,
+          deepSearch: searchSettings.deepSearch,
+          maxIterations: searchSettings.maxIterations,
+          maxQueries: searchSettings.maxQueries,
+          deepSearchIterations: searchSettings.deepSearchIterations,
+          deepSearchQueries: searchSettings.deepSearchQueries,
+        }
+      }
+      
+      // Update chat settings via API
+      await apiClient.put(`/api/chats/${activeChat.id}`, {
+        settings: chatSettings
+      })
+      
+      // Update local state
+      useWritingStore.setState((state) => ({
+        activeChat: { ...activeChat, settings: chatSettings }
+      }))
+    } catch (error) {
+      console.error('Failed to save tool settings:', error)
+    }
+  }
+  
+  // Debounce saving tool settings
+  useEffect(() => {
+    if (!activeChat || isLoadingChatSettings) return
+    
+    const timer = setTimeout(() => {
+      saveToolSettings()
+    }, 500) // Save after 500ms of no changes
+    
+    return () => clearTimeout(timer)
+  }, [selectedGroupId, searchSettings]) // Don't include activeChat.id to avoid saving during chat switch
 
   const handleSendMessage = async () => {
     if (!message.trim() || isLoading) return
@@ -289,7 +371,19 @@ export const WritingChatPanel: React.FC = () => {
                 key={msg.id}
                 message={msg}
                 onRegenerate={() => handleRegenerate(msg.id)}
-                onDelete={() => removeMessage(msg.id)}
+                onDelete={async () => {
+                  try {
+                    await removeMessage(msg.id)
+                  } catch (error) {
+                    console.error('Failed to delete message:', error)
+                    addToast({
+                      type: 'error',
+                      title: 'Delete Failed',
+                      message: 'Failed to delete message. Please try again.',
+                      duration: 5000
+                    })
+                  }
+                }}
                 isRegenerating={isLoading}
               />
             ))

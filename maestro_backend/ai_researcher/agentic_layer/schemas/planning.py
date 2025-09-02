@@ -26,8 +26,6 @@ class ReportSection(BaseModel):
             "section_id",
             "title",
             "description",
-            "depends_on_steps",
-            "associated_note_ids",
             "subsections",
             "research_strategy"
         ]
@@ -35,8 +33,7 @@ class ReportSection(BaseModel):
     """Defines a section in the final report outline."""
     section_id: str = Field(..., description="Unique identifier for the section (e.g., 'introduction', 'lit_review', 'methodology_results', 'conclusion').")
     title: str = Field(..., description="Human-readable title for the report section.")
-    description: str = Field(..., description="Brief description of what this section should cover.")
-    depends_on_steps: List[str] = Field(default_factory=list, description="List of step_ids whose results are needed to write this section.")
+    description: str = Field(..., description="Detailed description of what this section should cover, including specific subtopics and questions to address.")
     associated_note_ids: Optional[List[str]] = Field(default=None, description="List of note IDs from the exploratory phase relevant to this section.") # Added field
     subsections: List['ReportSection'] = Field(default_factory=list, description="List of subsections nested under this section.")
     # --- NEW FIELDS ---
@@ -50,6 +47,92 @@ class ReportSection(BaseModel):
 # Update forward references to allow for recursive subsections
 ReportSection.model_rebuild()
 
+# Simplified schemas for each planning phase
+class SimplifiedSection(BaseModel):
+    """Simplified section for initial outline generation (Phase 1)."""
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra='forbid', json_schema_extra={
+        "required": [
+            "title",
+            "description",
+            "research_strategy",
+            "subsections"
+        ]
+    })
+    title: str = Field(..., description="Human-readable title for the report section.")
+    description: str = Field(..., description="Detailed description of what this section should cover, including specific subtopics and questions to address.")
+    research_strategy: ResearchStrategy = Field(
+        default="research_based",
+        description="Defines how the research/writing for this section should be approached: 'research_based' for sections needing research, 'content_based' for intro/conclusion, 'synthesize_from_subsections' for parent sections."
+    )
+    subsections: List['SimplifiedSection'] = Field(default_factory=list, description="List of subsections nested under this section (max depth of 2).")
+
+# Update forward references
+SimplifiedSection.model_rebuild()
+
+class SectionWithNotes(BaseModel):
+    """Section with note assignments for Phase 2."""
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra='forbid', json_schema_extra={
+        "required": [
+            "title",
+            "description", 
+            "research_strategy",
+            "associated_note_ids",
+            "subsections"
+        ]
+    })
+    title: str = Field(..., description="Human-readable title for the report section.")
+    description: str = Field(..., description="Detailed description of what this section should cover.")
+    research_strategy: ResearchStrategy = Field(..., description="Research strategy for this section.")
+    associated_note_ids: List[str] = Field(default_factory=list, description="List of note IDs from research that are relevant to this section.")
+    subsections: List['SectionWithNotes'] = Field(default_factory=list, description="List of subsections.")
+
+# Update forward references
+SectionWithNotes.model_rebuild()
+
+# Response schemas for each phase
+class Phase1PlanResponse(BaseModel):
+    """Response for Phase 1: Initial Outline Generation."""
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra='forbid')
+    mission_goal: str = Field(..., description="The overall research goal restated clearly.")
+    generated_thought: str = Field(..., description="Your analytical thought about the research task and your planning approach.")
+    report_outline: List[SimplifiedSection] = Field(..., description="The planned structure of the report.")
+
+class Phase2PlanResponse(BaseModel):
+    """Response for Phase 2: Outline with Note Assignment."""
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra='forbid')
+    mission_goal: str = Field(..., description="The overall research goal.")
+    generated_thought: str = Field(..., description="Your thought about how the notes map to the outline.")
+    report_outline: List[SectionWithNotes] = Field(..., description="The outline with notes assigned to sections.")
+
+class Phase3PlanResponse(BaseModel):
+    """Response for Phase 3: Outline Revision."""
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra='forbid')
+    mission_goal: str = Field(..., description="The overall research goal.")
+    generated_thought: str = Field(..., description="Your thought about the revisions made.")
+    report_outline: List[SimplifiedSection] = Field(..., description="The revised outline structure.")
+
+class Phase3aStructuralResponse(BaseModel):
+    """Response for Phase 3a: Structural Modifications Only."""
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra='forbid')
+    mission_goal: str = Field(..., description="The overall research goal.")
+    generated_thought: str = Field(..., description="Summary of structural changes applied.")
+    report_outline: List[SimplifiedSection] = Field(..., description="The structurally modified outline.")
+    modifications_applied: List[str] = Field(default_factory=list, description="List of modification types that were successfully applied.")
+
+class Phase3bSubsectionResponse(BaseModel):
+    """Response for Phase 3b: Subsection Addition with Notes."""
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra='forbid')
+    mission_goal: str = Field(..., description="The overall research goal.")
+    generated_thought: str = Field(..., description="Summary of subsections added and notes assigned.")
+    report_outline: List[SectionWithNotes] = Field(..., description="The outline with new subsections and note assignments.")
+
+class Phase3cNoteRedistributionResponse(BaseModel):
+    """Response for Phase 3c: Final Note Redistribution."""
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra='forbid')
+    mission_goal: str = Field(..., description="The overall research goal.")
+    generated_thought: str = Field(..., description="Summary of note redistribution.")
+    report_outline: List[SectionWithNotes] = Field(..., description="The outline with finalized note assignments.")
+
 class StepParameters(BaseModel):
     """Parameters for different step types."""
     query: Optional[str] = Field(None, description="Search query for document_search or web_search")
@@ -61,18 +144,7 @@ class StepParameters(BaseModel):
     filepath: Optional[str] = Field(None, description="File path for read_full_document")
     url: Optional[str] = Field(None, description="URL for fetch_web_page_content")
     
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra='forbid', json_schema_extra={
-        "required": [
-            "query",
-            "n_results", 
-            "expression",
-            "code",
-            "section_id",
-            "max_results",
-            "filepath",
-            "url"
-        ]
-    })
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra='forbid')
 
 class PlanStep(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra='forbid')  # Enforce additionalProperties: false in schema

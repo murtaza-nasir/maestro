@@ -4,12 +4,12 @@ import { Card, CardContent } from '../../../components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../components/ui/tabs';
 import { Input } from '../../../components/ui/input';
 import { FileText, Save, Download, Eye, Edit3, BookOpen, RefreshCw, Copy, Edit2, Check, X, CheckCheck } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
+import { MathMarkdown } from '../../../components/markdown/MathMarkdown';
 import SimpleMDE from 'react-simplemde-editor';
 import type { Options } from 'easymde';
 import 'easymde/dist/easymde.min.css';
 import './editor.css';
-import { ReferencePanel } from './ReferencePanel';
+// import { ReferencePanel } from './ReferencePanel'; // Not currently used - references are shown inline in chat
 import { useWritingStore } from '../store';
 import { useDebounce } from '../../../hooks/useDebounce';
 import * as writingApi from '../api';
@@ -714,18 +714,20 @@ export const DraftPanel: React.FC = () => {
               )}
             </TabsContent>
 
-            <TabsContent value="preview" className="h-full m-0 p-4 overflow-y-auto">
-              <div className="prose dark:prose-invert max-w-none" style={{ fontSize: '13px', lineHeight: '1.4' }}>
+            <TabsContent value="preview" className="h-full m-0 overflow-hidden">
+              <div className="h-full overflow-y-auto p-4">
                 {currentDraft ? (
-                  <ReactMarkdown
+                  <MathMarkdown
+                    content={localContent}
+                    className="prose dark:prose-invert max-w-none"
                     components={{
-                      // Compact headings
-                      h1: ({node, ...props}) => <h1 {...props} className="text-lg font-bold mb-2 mt-3 first:mt-0" />,
-                      h2: ({node, ...props}) => <h2 {...props} className="text-base font-semibold mb-2 mt-2 first:mt-0" />,
-                      h3: ({node, ...props}) => <h3 {...props} className="text-sm font-medium mb-1 mt-2 first:mt-0" />,
-                      h4: ({node, ...props}) => <h4 {...props} className="text-xs font-medium mb-1 mt-1 first:mt-0" />,
-                      h5: ({node, ...props}) => <h5 {...props} className="text-xs font-medium mb-1 mt-1 first:mt-0" />,
-                      h6: ({node, ...props}) => <h6 {...props} className="text-xs font-medium mb-1 mt-1 first:mt-0" />,
+                      // Compact headings with consistent primary color
+                      h1: ({node, ...props}) => <h1 {...props} className="text-lg font-bold mb-2 mt-3 first:mt-0 text-primary" />,
+                      h2: ({node, ...props}) => <h2 {...props} className="text-base font-semibold mb-2 mt-2 first:mt-0 text-primary" />,
+                      h3: ({node, ...props}) => <h3 {...props} className="text-sm font-medium mb-1 mt-2 first:mt-0 text-primary" />,
+                      h4: ({node, ...props}) => <h4 {...props} className="text-xs font-medium mb-1 mt-1 first:mt-0 text-primary" />,
+                      h5: ({node, ...props}) => <h5 {...props} className="text-xs font-medium mb-1 mt-1 first:mt-0 text-primary" />,
+                      h6: ({node, ...props}) => <h6 {...props} className="text-xs font-medium mb-1 mt-1 first:mt-0 text-primary" />,
                       // Compact paragraphs - match editor font size
                       p: ({node, ...props}) => <p {...props} className="mb-2 last:mb-0" style={{ fontSize: '13px', lineHeight: '1.4' }} />,
                       // Compact lists - match editor font size
@@ -741,7 +743,7 @@ export const DraftPanel: React.FC = () => {
                         
                         if (isInline) {
                           return (
-                            <code {...props} className="px-1 py-0.5 rounded text-xs font-mono bg-muted">
+                            <code {...props} className="inline-block px-1 py-0.5 rounded text-xs font-mono bg-muted">
                               {children}
                             </code>
                           )
@@ -762,7 +764,7 @@ export const DraftPanel: React.FC = () => {
                         </div>
                       ),
                       th: ({node, ...props}) => (
-                        <th {...props} className="border border-border px-2 py-1 bg-muted font-medium text-left text-xs" />
+                        <th {...props} className="border border-border px-2 py-1 bg-muted font-medium text-left text-xs text-foreground" />
                       ),
                       td: ({node, ...props}) => (
                         <td {...props} className="border border-border px-2 py-1 text-xs" />
@@ -770,9 +772,7 @@ export const DraftPanel: React.FC = () => {
                       // Compact horizontal rules
                       hr: ({node, ...props}) => <hr {...props} className="my-2 border-border" />,
                     }}
-                  >
-                    {localContent}
-                  </ReactMarkdown>
+                  />
                 ) : (
                   <div className="h-full flex items-center justify-center text-text-secondary">
                     <p>No draft available for preview</p>
@@ -782,7 +782,10 @@ export const DraftPanel: React.FC = () => {
             </TabsContent>
 
             <TabsContent value="references" className="h-full m-0">
-              <ReferencePanel references={currentDraft?.references || []} />
+              {/* References are now handled inline in chat messages */}
+              <div className="h-full flex items-center justify-center text-text-secondary">
+                <p>References appear inline in chat messages when sources are used</p>
+              </div>
             </TabsContent>
           </div>
         </Tabs>

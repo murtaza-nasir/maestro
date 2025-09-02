@@ -397,7 +397,7 @@ export const MissionSettingsDialog: React.FC<MissionSettingsDialogProps> = ({
                       {renderNumberInput(
                         'max_notes_for_assignment_reranking',
                         'Max Notes',
-                        'Notes for reranking',
+                        'Notes kept after reranking',
                         20,
                         200
                       )}
@@ -406,8 +406,8 @@ export const MissionSettingsDialog: React.FC<MissionSettingsDialogProps> = ({
                       {renderNumberInput(
                         'max_concurrent_requests',
                         'Concurrent Requests',
-                        'Parallel operations',
-                        1,
+                        'Parallel operations (min 10)',
+                        10,
                         20
                       )}
                     </div>

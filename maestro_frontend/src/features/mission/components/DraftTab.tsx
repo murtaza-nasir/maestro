@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { MathMarkdown } from '../../../components/markdown/MathMarkdown'
 import { Card, CardContent } from '../../../components/ui/card'
 import { Button } from '../../../components/ui/button'
 import { useMissionStore } from '../store'
@@ -89,23 +90,29 @@ export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
 
     setIsLoading(true)
     try {
-      // TODO: Implement API call to update report
-      // await api.put(`/api/missions/${missionId}/report`, { report: editedReport })
+      // Save to backend using the new endpoint that doesn't update timestamps
+      // The backend expects the content to be sent as plain text, not JSON
+      await apiClient.put(`/api/missions/${missionId}/report`, JSON.stringify(editedReport), {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
       
+      // Update local store
       updateMissionReport(missionId, editedReport)
       setIsEditing(false)
       
       addToast({
         type: 'success',
         title: 'Draft Updated',
-        message: 'Research draft has been successfully updated.'
+        message: 'Research draft has been successfully saved.'
       })
     } catch (error) {
       console.error('Failed to update report:', error)
       addToast({
         type: 'error',
         title: 'Update Failed',
-        message: 'Failed to update the research draft. Please try again.'
+        message: 'Failed to save the research draft. Please try again.'
       })
     } finally {
       setIsLoading(false)
@@ -316,111 +323,35 @@ export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
     }
   };
 
-  const formatMarkdown = (text: string) => {
-    if (!text) return ''
-
-    // Split text into lines for processing
-    const lines = text.split('\n')
-    const result: string[] = []
-    let inCodeBlock = false
-    let currentParagraph: string[] = []
-
-    const flushParagraph = () => {
-      if (currentParagraph.length > 0) {
-        const paragraphText = currentParagraph.join('<br>')
-        if (paragraphText.trim()) {
-          result.push(`<p class="mb-3 text-sm text-foreground">${paragraphText}</p>`)
-        }
-        currentParagraph = []
-      }
-    }
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i]
-      
-      // Handle code blocks
-      if (line.startsWith('```')) {
-        flushParagraph()
-        if (!inCodeBlock) {
-          inCodeBlock = true
-          result.push('<pre class="bg-secondary p-3 rounded text-sm font-mono mb-4 overflow-x-auto">')
-        } else {
-          inCodeBlock = false
-          result.push('</pre>')
-        }
+  // formatMarkdown function removed - now using ReactMarkdown with KaTeX support
+  /*
+        flushTable()
+        const number = numberedListMatch[1]
+        const listItem = numberedListMatch[2]
+        result.push(`<div class="mb-1 ml-4 text-sm"><span class="font-medium">${number}.</span> ${processInlineFormatting(listItem)}</div>`)
         continue
       }
 
-      if (inCodeBlock) {
-        result.push(line?.replace(/&/g, '&')?.replace(/</g, '<')?.replace(/>/g, '>') || line)
-        continue
-      }
-
-      // Handle headers (including 4th and 5th level headings)
-      if (line.startsWith('##### ')) {
+      // Handle bullet lists
+      if (line.match(/^[\*\-+] /)) {
         flushParagraph()
-        result.push(`<h5 class="text-sm font-medium mb-2 text-muted-foreground">${line.substring(6)}</h5>`)
-        continue
-      }
-      if (line.startsWith('#### ')) {
-        flushParagraph()
-        result.push(`<h4 class="text-sm font-medium mb-2 text-muted-foreground">${line.substring(5)}</h4>`)
-        continue
-      }
-      if (line.startsWith('### ')) {
-        flushParagraph()
-        result.push(`<h3 class="text-base font-medium mb-2 text-foreground">${line.substring(4)}</h3>`)
-        continue
-      }
-      if (line.startsWith('## ')) {
-        flushParagraph()
-        result.push(`<h2 class="text-lg font-semibold mb-3 text-foreground">${line.substring(3)}</h2>`)
-        continue
-      }
-      if (line.startsWith('# ')) {
-        flushParagraph()
-        result.push(`<h1 class="text-xl font-bold mb-4 text-foreground">${line.substring(2)}</h1>`)
-        continue
-      }
-
-      // Handle empty lines
-      if (line.trim() === '') {
-        flushParagraph()
-        continue
-      }
-
-      // Handle list items
-      if (line.match(/^[\*\-] /)) {
-        flushParagraph()
+        flushTable()
         const listItem = line.substring(2)
-        const processedListItem = listItem
-          ?.replace(/&/g, '&')
-          ?.replace(/</g, '<')
-          ?.replace(/>/g, '>')
-          ?.replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold">$1</strong>')
-          ?.replace(/\*(.*?)\*/g, '<em class="italic">$1</em>')
-          ?.replace(/`([^`]+)`/g, '<code class="bg-secondary px-1 py-0.5 rounded text-sm font-mono">$1</code>')
-        result.push(`<div class="mb-1 ml-4 text-sm">• ${processedListItem}</div>`)
+        result.push(`<div class="mb-1 ml-4 text-sm">• ${processInlineFormatting(listItem)}</div>`)
         continue
       }
 
       // Regular text - add to current paragraph
-      let processedLine = line
-        ?.replace(/&/g, '&')
-        ?.replace(/</g, '<')
-        ?.replace(/>/g, '>')
-        ?.replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold">$1</strong>')
-        ?.replace(/\*(.*?)\*/g, '<em class="italic">$1</em>')
-        ?.replace(/`([^`]+)`/g, '<code class="bg-secondary px-1 py-0.5 rounded text-sm font-mono">$1</code>')
-
-      currentParagraph.push(processedLine)
+      currentParagraph.push(processInlineFormatting(line))
     }
 
-    // Flush any remaining paragraph
+    // Flush any remaining content
     flushParagraph()
+    flushTable()
 
     return result.join('\n')
   }
+  */
 
   const getStatusInfo = () => {
     if (!activeMission) return { color: 'gray', text: 'No Mission', description: '' }
@@ -458,9 +389,9 @@ export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
   const statusInfo = getStatusInfo()
 
   return (
-    <div className="h-full flex flex-col max-h-full overflow-hidden space-y-2">
+    <div className="h-full flex flex-col">
       {/* Header with Status and Controls */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between p-2">
         <div className="flex items-center space-x-2">
           <div className="flex items-center space-x-1">
             <FileText className="h-4 w-4 text-primary" />
@@ -586,7 +517,7 @@ export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
       </div>
 
       {/* Draft Content - Card Layout */}
-      <Card className="flex-1 overflow-hidden">
+      <Card className="flex-1 overflow-hidden mx-2 mb-2">
         <CardContent className="p-0 h-full">
           {isEditing ? (
             <div className="h-full flex flex-col p-4 space-y-3">
@@ -626,16 +557,73 @@ export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
           ) : (
             <div className="h-full flex flex-col">
               {getCurrentContent() ? (
-                <div className="flex-1 overflow-hidden">
-                  <div className="h-full overflow-y-auto p-4">
-                    <div 
-                      className="text-foreground"
-                      dangerouslySetInnerHTML={{ 
-                        __html: formatMarkdown(getCurrentContent())
-                      }}
-                    />
+                <div className="flex-1 overflow-y-auto p-4">
+                    <div className="prose prose-sm max-w-none text-foreground" style={{overflowWrap: 'anywhere', wordBreak: 'break-word'}}>
+                      <MathMarkdown
+                        content={getCurrentContent() || ''}
+                        className="prose prose-sm max-w-none"
+                        components={{
+                          a: ({node, ...props}) => (
+                            <a 
+                              {...props} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className="text-primary hover:underline"
+                            />
+                          ),
+                          code: ({node, className, children, ...props}) => {
+                            const match = /language-(\w+)/.exec(className || '')
+                            const isInline = !match && !String(children).includes('\n')
+                            
+                            if (isInline) {
+                              return (
+                                <code 
+                                  {...props}
+                                  className="inline-block bg-secondary px-1 py-0.5 rounded text-xs font-mono"
+                                >
+                                  {children}
+                                </code>
+                              )
+                            }
+                            
+                            return (
+                              <code 
+                                {...props}
+                                className="block bg-secondary p-2 rounded text-sm overflow-x-auto max-w-full font-mono"
+                              >
+                                {children}
+                              </code>
+                            )
+                          },
+                          ul: ({node, ...props}) => <ul {...props} className="my-2 ml-4" />,
+                          ol: ({node, ...props}) => <ol {...props} className="my-2 ml-4" />,
+                          li: ({node, ...props}) => <li {...props} className="my-1" />,
+                          p: ({node, ...props}) => <p {...props} className="my-2" />,
+                          h1: ({node, ...props}) => <h1 {...props} className="text-xl font-bold my-3 text-primary" />,
+                          h2: ({node, ...props}) => <h2 {...props} className="text-lg font-semibold my-2 text-primary" />,
+                          h3: ({node, ...props}) => <h3 {...props} className="text-base font-semibold my-2 text-primary" />,
+                          h4: ({node, ...props}) => <h4 {...props} className="text-sm font-medium my-2 text-primary" />,
+                          h5: ({node, ...props}) => <h5 {...props} className="text-sm font-medium my-2 text-primary" />,
+                          h6: ({node, ...props}) => <h6 {...props} className="text-sm font-medium my-2 text-primary" />,
+                          blockquote: ({node, ...props}) => (
+                            <blockquote 
+                              {...props} 
+                              className="border-l-4 border-primary pl-4 my-2 italic text-muted-foreground"
+                            />
+                          ),
+                          table: ({node, ...props}) => (
+                            <table {...props} className="border-collapse border border-border my-2" />
+                          ),
+                          th: ({node, ...props}) => (
+                            <th {...props} className="border border-border px-2 py-1 bg-muted font-semibold text-foreground" />
+                          ),
+                          td: ({node, ...props}) => (
+                            <td {...props} className="border border-border px-2 py-1" />
+                          ),
+                        }}
+                      />
+                    </div>
                   </div>
-                </div>
               ) : (
                 <div className="flex-1 flex items-center justify-center">
                   <div className="text-center text-muted-foreground">

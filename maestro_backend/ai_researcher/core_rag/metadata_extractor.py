@@ -58,7 +58,7 @@ class MetadataExtractor:
         self.max_text_sample = max_text_sample
 
         if not self.api_key:
-            logger.warning("API key not found in environment variables or passed directly.")
+            logger.debug("API key not provided during initialization. Will be configured from user settings when available.")
             self.client = None
         else:
             try:

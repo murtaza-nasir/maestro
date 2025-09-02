@@ -139,7 +139,7 @@ def get_user_chats_by_type(db: Session, user_id: int, chat_type: str, skip: int 
     """Get chats for a user filtered by chat type, ordered by most recent."""
     return db.query(Chat).filter(
         and_(Chat.user_id == user_id, Chat.chat_type == chat_type)
-    ).order_by(Chat.updated_at.desc()).offset(skip).limit(limit).all()
+    ).order_by(Chat.created_at.desc()).offset(skip).limit(limit).all()
 
 def update_chat_title(db: Session, chat_id: str, user_id: int, title: str) -> Optional[Chat]:
     """Update a chat's title."""
@@ -184,6 +184,40 @@ def update_chat_title(db: Session, chat_id: str, user_id: int, title: str) -> Op
             logger.error(f"Error sending WebSocket chat title update: {e}", exc_info=True)
             # Don't fail the title update if WebSocket fails
             
+    return db_chat
+
+def update_chat_settings(db: Session, chat_id: str, user_id: int, settings: Dict[str, Any]) -> Optional[Chat]:
+    """Update a chat's settings (document group, web search, etc.)."""
+    db_chat = get_chat(db, chat_id, user_id)
+    if db_chat:
+        # Merge new settings with existing ones
+        existing_settings = db_chat.settings or {}
+        merged_settings = {**existing_settings, **settings}
+        
+        logger.info(f"Merging settings for chat {chat_id}")
+        logger.info(f"  Existing: {existing_settings}")
+        logger.info(f"  New: {settings}")
+        logger.info(f"  Merged: {merged_settings}")
+        
+        # Only update if settings actually changed
+        if existing_settings != merged_settings:
+            db_chat.settings = merged_settings
+            db_chat.updated_at = get_current_time()
+            
+            # Also update document_group_id if it's in settings
+            if 'document_group_id' in settings:
+                db_chat.document_group_id = settings.get('document_group_id')
+            
+            logger.info(f"Settings changed, updating chat {chat_id}")
+        else:
+            logger.info(f"Settings unchanged, skipping timestamp update for chat {chat_id}")
+        
+        db.commit()
+        db.refresh(db_chat)
+        
+        logger.info(f"Successfully updated settings for chat {chat_id}: {db_chat.settings}")
+    else:
+        logger.warning(f"Chat {chat_id} not found for user {user_id}")
     return db_chat
 
 def delete_chat(db: Session, chat_id: str, user_id: int) -> bool:

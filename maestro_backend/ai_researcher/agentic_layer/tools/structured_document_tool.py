@@ -180,7 +180,7 @@ class StructuredDocumentTool:
                 # Log successful operation
                 if log_queue and update_callback and agent_controller:
                     try:
-                        agent_controller.context_manager.log_execution_step(
+                        await agent_controller.context_manager.log_execution_step(
                             mission_id=mission_id,
                             agent_name=agent_name or "StructuredDocumentTool",
                             action=f"Document Operation: {operation}",

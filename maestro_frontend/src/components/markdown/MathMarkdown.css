@@ -1,0 +1,33 @@
+/* Isolate KaTeX styles to prevent them from affecting parent containers */
+.math-markdown-container {
+  /* Ensure proper text wrapping */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  /* Contain only paint, not layout - this prevents height calculation issues */
+  contain: paint;
+}
+
+/* Ensure KaTeX display blocks don't overflow horizontally */
+.math-markdown-container .katex-display {
+  max-width: 100%;
+  overflow-x: auto; /* Allow horizontal scroll if formula is too wide */
+  overflow-y: visible !important; /* No vertical scrollbars */
+}
+
+.math-markdown-container .katex {
+  max-width: 100%;
+}
+
+/* Prevent vertical scrollbars on KaTeX elements */
+.math-markdown-container .katex-html {
+  overflow: visible !important;
+}
+
+/* Override any KaTeX default overflow settings for vertical */
+.math-markdown-container .katex-display > .katex {
+  overflow-y: visible !important;
+}
+
+.math-markdown-container .katex-display > .katex > .katex-html {
+  overflow-y: visible !important;
+}

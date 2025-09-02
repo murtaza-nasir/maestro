@@ -16,6 +16,11 @@ export interface Chat {
   updated_at: string
   user_id: number
   document_group_id?: string
+  settings?: {
+    document_group_id?: string | null
+    use_web_search?: boolean
+    [key: string]: any
+  }
 }
 
 export interface ChatSummary {
@@ -26,6 +31,14 @@ export interface ChatSummary {
   user_id: number
   message_count: number
   active_mission_count: number
+}
+
+export interface PaginatedChatsResponse {
+  items: ChatSummary[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
 }
 
 export interface Mission {
@@ -44,7 +57,12 @@ export interface CreateChatRequest {
 }
 
 export interface UpdateChatRequest {
-  title: string
+  title?: string
+  settings?: {
+    document_group_id?: string | null
+    use_web_search?: boolean
+    [key: string]: any
+  }
 }
 
 export interface CreateMessageRequest {
@@ -58,9 +76,17 @@ export const createChat = async (data: CreateChatRequest): Promise<Chat> => {
   return response.data
 }
 
-export const getUserChats = async (skip = 0, limit = 100): Promise<ChatSummary[]> => {
+export const getUserChats = async (
+  page = 1, 
+  pageSize = 20, 
+  search?: string
+): Promise<PaginatedChatsResponse> => {
   const response = await apiClient.get(API_CONFIG.ENDPOINTS.CHATS.LIST, {
-    params: { skip, limit }
+    params: { 
+      page, 
+      page_size: pageSize,
+      ...(search && { search })
+    }
   })
   return response.data
 }

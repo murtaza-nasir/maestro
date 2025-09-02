@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -40,6 +40,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
   const [useWebSearch, setUseWebSearch] = useState<boolean>(true)
   const [showMissionSettings, setShowMissionSettings] = useState(false)
+  const [isLoadingSettings, setIsLoadingSettings] = useState(false)
+  const [hasInitializedSettings, setHasInitializedSettings] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const { addToast } = useToast()
   
@@ -59,6 +61,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
     setActiveChat, 
     addMessage, 
     updateChatTitle,
+    updateChat: updateChatInStore,
     associateMissionWithChat
   } = useChatStore()
 
@@ -72,6 +75,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
   // Determine if the chat should be disabled
   const isChatDisabled = isLoading || 
     (currentMission?.status === 'running') || 
+    (currentMission?.status === 'paused') ||
     (currentMission?.status === 'completed') ||
     (currentMission?.status === 'failed') ||
     (currentMission?.status === 'stopped')
@@ -129,6 +133,148 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
     }
   }, [currentChat?.missionId, panelControls])
 
+  // Load settings from chat or mission when chat changes
+  useEffect(() => {
+    console.log('Loading settings for chat:', currentChat?.id, 'Settings:', currentChat?.settings)
+    setIsLoadingSettings(true)
+    setHasInitializedSettings(false) // Reset initialization flag when chat changes
+    
+    if (currentChat) {
+      // Check if there's an active mission with settings
+      const activeMission = currentChat.missionId ? 
+        missions.find(m => m.id === currentChat.missionId) : null
+      
+      let groupId = null
+      let webSearch = true
+      
+      if (activeMission?.tool_selection) {
+        // Use mission settings if available (takes priority)
+        console.log('Using mission tool_selection:', activeMission.tool_selection)
+        groupId = activeMission.document_group_id || null
+        webSearch = activeMission.tool_selection.web_search ?? true
+      } else {
+        // Fall back to chat settings
+        groupId = currentChat.settings?.document_group_id || null
+        webSearch = currentChat.settings?.use_web_search !== undefined ? currentChat.settings.use_web_search : true
+      }
+      
+      console.log('Setting values - Group:', groupId, 'WebSearch:', webSearch)
+      setSelectedGroupId(groupId)
+      setUseWebSearch(webSearch)
+    } else {
+      // Reset to defaults when no chat is selected
+      console.log('No chat selected, resetting to defaults')
+      setSelectedGroupId(null)
+      setUseWebSearch(true)
+    }
+    
+    // Mark that we've initialized settings for this chat after a delay
+    setTimeout(() => {
+      setIsLoadingSettings(false)
+      setHasInitializedSettings(true)
+      console.log('Settings initialization complete for chat:', currentChat?.id)
+    }, 200)
+  }, [currentChat?.id, currentChat?.missionId]) // Removed missions from dependencies to prevent constant reloads
+
+  // Watch for mission tool_selection changes only for the current mission
+  useEffect(() => {
+    if (currentChat?.missionId) {
+      const activeMission = missions.find(m => m.id === currentChat.missionId)
+      if (activeMission?.tool_selection) {
+        // Only update if settings have actually changed
+        const newGroupId = activeMission.document_group_id || null
+        const newWebSearch = activeMission.tool_selection.web_search ?? true
+        
+        setSelectedGroupId(prevGroupId => {
+          if (prevGroupId !== newGroupId) {
+            console.log('Mission document group changed:', newGroupId)
+            return newGroupId
+          }
+          return prevGroupId
+        })
+        
+        setUseWebSearch(prevWebSearch => {
+          if (prevWebSearch !== newWebSearch) {
+            console.log('Mission web search changed:', newWebSearch)
+            return newWebSearch
+          }
+          return prevWebSearch
+        })
+      }
+    }
+  }, [currentChat?.missionId, missions])
+
+  // Save settings when they change
+  const saveSettings = useCallback(async () => {
+    const currentChatId = chatId || activeChat?.id
+    if (!currentChatId) {
+      console.log('No chatId available, skipping save')
+      return
+    }
+    
+    const settingsToSave = {
+      document_group_id: selectedGroupId,
+      use_web_search: useWebSearch
+    }
+    
+    console.log('Saving settings for chat', currentChatId, ':', settingsToSave)
+    
+    try {
+      await updateChatInStore(currentChatId, {
+        settings: settingsToSave
+      })
+      
+      addToast({
+        type: 'success',
+        title: 'Settings Saved',
+        message: `Document group: ${selectedGroupId || 'None'}, Web search: ${useWebSearch ? 'On' : 'Off'}`,
+        duration: 2000
+      })
+      
+      console.log('Settings saved successfully')
+    } catch (error) {
+      console.error('Failed to save chat settings:', error)
+      addToast({
+        type: 'error',
+        title: 'Failed to Save Settings',
+        message: 'Your settings could not be saved. Please try again.',
+        duration: 5000
+      })
+    }
+  }, [chatId, activeChat?.id, selectedGroupId, useWebSearch, updateChatInStore, addToast])
+
+  // Save settings when selectedGroupId or useWebSearch changes
+  useEffect(() => {
+    // Skip if we're still loading settings or haven't initialized yet
+    if (isLoadingSettings || !hasInitializedSettings) {
+      console.log('Skipping save - loading:', isLoadingSettings, 'initialized:', hasInitializedSettings)
+      return
+    }
+    
+    // Skip if no chat exists
+    const targetChatId = chatId || activeChat?.id
+    if (!targetChatId) {
+      console.log('No chat ID available, skipping save')
+      return
+    }
+    
+    // Skip saving if there's an active mission (settings are controlled by mission)
+    if (currentChat?.missionId) {
+      console.log('Mission is active, skipping save to prevent overwriting mission settings')
+      return
+    }
+    
+    console.log('Settings changed - Group:', selectedGroupId, 'WebSearch:', useWebSearch, 'ChatId:', targetChatId)
+    
+    // Debounce the save operation
+    const timer = setTimeout(() => {
+      console.log('Executing save after debounce')
+      saveSettings()
+    }, 500)
+    
+    return () => clearTimeout(timer)
+  }, [selectedGroupId, useWebSearch, isLoadingSettings, hasInitializedSettings, saveSettings, currentChat?.missionId])
+
   const handleSendMessage = async () => {
     if (!message.trim() || isLoading) return
 
@@ -153,6 +299,14 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
         const newChat = await createChat();
         targetChatId = newChat.id;
         setActiveChat(newChat.id); // Immediately set the new chat as active
+        
+        // Save current settings to the new chat
+        await updateChatInStore(newChat.id, {
+          settings: {
+            document_group_id: selectedGroupId,
+            use_web_search: useWebSearch
+          }
+        })
       } catch (error) {
         console.error('Failed to create chat:', error);
         setIsLoading(false);
@@ -299,13 +453,6 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
           if (missionId) {
             // Associate the new mission with this chat
             associateMissionWithChat(chatId, missionId)
-            
-            addToast({
-              type: 'success',
-              title: 'Research Mission Started',
-              message: 'I\'ve created a new research mission. Check the research panel to monitor progress.',
-              duration: 5000
-            })
 
             // Auto-open the research panel
             if (panelControls?.isRightPanelCollapsed) {
@@ -313,7 +460,24 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
             }
 
             // Generate initial questions for the research topic
-            await generateInitialQuestions(missionId, request || '')
+            const questionsGenerated = await generateInitialQuestions(missionId, request || '')
+            
+            // Show combined toast after questions are generated
+            if (questionsGenerated) {
+              addToast({
+                type: 'success',
+                title: 'Research Mission Started',
+                message: 'I\'ve created a new research mission and generated initial research questions. Check the research panel to review them.',
+                duration: 5000
+              })
+            } else {
+              addToast({
+                type: 'success',
+                title: 'Research Mission Started',
+                message: 'I\'ve created a new research mission. Check the research panel to monitor progress.',
+                duration: 5000
+              })
+            }
           }
           break
           
@@ -348,7 +512,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
     }
   }
 
-  const generateInitialQuestions = async (missionId: string, researchTopic: string) => {
+  const generateInitialQuestions = async (missionId: string, researchTopic: string): Promise<boolean> => {
     try {
       const response = await fetch(buildApiUrl('/api/chat/generate-questions'), {
         method: 'POST',
@@ -366,15 +530,13 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
       if (response.ok) {
         // Questions are generated and stored in the backend
         // The UI will show them through the research tabs
-        addToast({
-          type: 'info',
-          title: 'Questions Generated',
-          message: 'I\'ve generated initial research questions. You can review them in the research panel.',
-          duration: 5000
-        })
+        // Return true to indicate success (toast will be shown by caller)
+        return true
       }
+      return false
     } catch (error) {
       console.error('Error generating questions:', error)
+      return false
     }
   }
 
@@ -662,6 +824,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
                       currentMission?.status === 'completed' ? "Mission completed - Chat disabled" :
                       currentMission?.status === 'failed' ? "Mission failed - Chat disabled" :
                       currentMission?.status === 'stopped' ? "Mission stopped - Chat disabled" :
+                      currentMission?.status === 'paused' ? "Mission paused - Chat disabled" :
                       currentMission?.status === 'running' ? "Mission is running..." :
                       "Type your message or research request..."
                     }

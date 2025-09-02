@@ -19,6 +19,8 @@ export const SourceBubbles: React.FC<SourceBubblesProps> = ({ sources }) => {
     <div className="mt-3 flex flex-wrap gap-2">
       {sources.map((source, index) => {
         const isWebSource = source.type === 'web'
+        // Use the reference_number from backend if available, otherwise use index + 1
+        const referenceNumber = (source as any).reference_number || index + 1
         
         return (
           <div
@@ -31,6 +33,11 @@ export const SourceBubbles: React.FC<SourceBubblesProps> = ({ sources }) => {
             onClick={isWebSource ? () => handleWebSourceClick((source as any).url) : undefined}
             title={source.title}
           >
+            {/* Reference Number */}
+            <span className="font-bold mr-1.5">
+              [{referenceNumber}]
+            </span>
+            
             {/* Icon */}
             <div className="mr-1.5">
               {isWebSource ? (

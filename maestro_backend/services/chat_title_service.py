@@ -129,6 +129,10 @@ Title:"""
                 title = response.choices[0].message.content.strip()
                 
                 # Clean up the title
+                # Remove thinking tags and their content (for models that use thinking tokens)
+                title = re.sub(r'<thinking>.*?</thinking>', '', title, flags=re.DOTALL)
+                title = re.sub(r'<think>.*?</think>', '', title, flags=re.DOTALL)
+                
                 # Clean up common formatting patterns from thinking models
                 title = title.replace('"', '').replace("'", "")
                 

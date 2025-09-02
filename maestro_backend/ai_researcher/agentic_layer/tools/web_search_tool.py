@@ -3,6 +3,7 @@ import logging
 import queue
 import aiohttp
 import asyncio
+import time
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional, Callable
 from datetime import datetime
@@ -10,7 +11,7 @@ from datetime import datetime
 # Import dynamic config to access user-specific provider settings
 from ai_researcher.dynamic_config import (
     get_web_search_provider, get_tavily_api_key, get_linkup_api_key, get_searxng_base_url, get_searxng_categories,
-    get_jina_api_key, get_search_max_results, get_search_depth,
+    get_jina_api_key, get_search_depth,
     get_jina_read_full_content, get_jina_fetch_favicons, get_jina_bypass_cache
 )
 
@@ -55,6 +56,12 @@ class WebSearchTool:
     """
     Tool for performing web searches using the configured provider (Tavily or LinkUp).
     """
+    # Class-level semaphore for rate limiting (max 2 concurrent requests)
+    _rate_limit_semaphore = asyncio.Semaphore(2)
+    # Add delay between requests to avoid rate limits
+    _last_request_time = 0
+    _min_request_interval = 1.0  # Minimum 1 second between requests
+    
     def __init__(self, controller=None):
         # Get provider and API keys from user settings or environment
         self.provider = get_web_search_provider()
@@ -177,9 +184,39 @@ class WebSearchTool:
             
             return {"error": user_friendly_error}
 
-        # Get default values from user settings if not provided
+        # Rate limiting: acquire semaphore to limit concurrent requests
+        async with WebSearchTool._rate_limit_semaphore:
+            # Add delay between requests to avoid rate limits
+            current_time = time.time()
+            time_since_last = current_time - WebSearchTool._last_request_time
+            if time_since_last < WebSearchTool._min_request_interval:
+                await asyncio.sleep(WebSearchTool._min_request_interval - time_since_last)
+            WebSearchTool._last_request_time = time.time()
+        
+            # The rest of the execute method continues inside the semaphore context
+            return await self._execute_search(
+                query, max_results, from_date, to_date, include_domains, 
+                exclude_domains, depth, update_callback, log_queue, mission_id
+            )
+    
+    async def _execute_search(
+        self,
+        query: str,
+        max_results: Optional[int],
+        from_date: Optional[str],
+        to_date: Optional[str],
+        include_domains: Optional[List[str]],
+        exclude_domains: Optional[List[str]],
+        depth: Optional[str],
+        update_callback: Optional[Callable],
+        log_queue: Optional[queue.Queue],
+        mission_id: Optional[str]
+    ) -> Dict[str, Any]:
+        """Internal method that performs the actual search after rate limiting."""
+        # max_results is now required - should be passed from research agent
         if max_results is None:
-            max_results = get_search_max_results(mission_id)
+            logger.warning("max_results not provided to WebSearchTool, defaulting to 5")
+            max_results = 5  # Fallback to a reasonable default
         
         # Validate max_results based on provider
         if self.provider == 'jina':
@@ -227,8 +264,8 @@ class WebSearchTool:
                 if exclude_domains:
                     search_params["exclude_domains"] = exclude_domains
                 
-                # Tavily client's search method (synchronous)
-                response = self.client.search(**search_params)
+                # Tavily client's search method (run in thread to avoid blocking)
+                response = await asyncio.to_thread(self.client.search, **search_params)
                 search_results = response.get('results', [])
                 for result in search_results:
                     formatted_results.append({
@@ -270,8 +307,8 @@ class WebSearchTool:
                 if exclude_domains:
                     search_params["exclude_domains"] = exclude_domains
                 
-                # Linkup client's search method
-                response = self.client.search(**search_params)
+                # Linkup client's search method (run in thread to avoid blocking)
+                response = await asyncio.to_thread(self.client.search, **search_params)
 
                 # Adapt parsing based on actual Linkup response structure
                 if LinkupSearchResults and isinstance(response, LinkupSearchResults): # Check for the specific type

@@ -1,7 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import rehypeRaw from 'rehype-raw'
+import { MathMarkdown } from '../../../components/markdown/MathMarkdown'
 import { Card, CardContent } from '../../../components/ui/card'
 import { Button } from '../../../components/ui/button'
 import { Input } from '../../../components/ui/input'
@@ -66,10 +64,10 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
     
     setIsLoading(true)
     try {
-      const data = await fetchNotesAPI(50, 0)
+      const data = await fetchNotesAPI(100, 0)  // Load first 100 notes
       const newNotes = data.notes || data
       const total = data.total || newNotes.length
-      const hasMore = data.has_more !== undefined ? data.has_more : false
+      const hasMore = data.has_more !== undefined ? data.has_more : total > 100
 
       setNotes(newNotes)
       setMissionNotes(missionId, newNotes)
@@ -90,10 +88,10 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
     setIsLoadingMore(true)
     try {
       const currentLength = notes.length
-      const data = await fetchNotesAPI(50, currentLength)
+      const data = await fetchNotesAPI(100, currentLength)  // Load 100 more notes
       const newNotes = data.notes || data
       const total = data.total || (currentLength + newNotes.length)
-      const hasMore = data.has_more !== undefined ? data.has_more : false
+      const hasMore = data.has_more !== undefined ? data.has_more : total > (currentLength + newNotes.length)
 
       setNotes(prev => {
         const updated = [...prev, ...newNotes]
@@ -115,7 +113,7 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
     
     setIsLoading(true)
     try {
-      const data = await fetchNotesAPI(1000, 0)
+      const data = await fetchNotesAPI(999999, 0)  // Load all available notes
       const allNotes = data.notes || data
       const total = data.total || allNotes.length
 
@@ -261,13 +259,13 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
   }
 
   return (
-    <div className="flex flex-col h-full max-h-full overflow-hidden space-y-2">
+    <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between flex-shrink-0">
+      <div className="flex items-center justify-between flex-shrink-0 px-2 pt-2">
         <div className="flex items-center space-x-2">
           <BookOpen className="h-4 w-4 text-primary" />
           <h3 className="text-base font-semibold text-foreground">Research Notes</h3>
-          <span className="text-xs text-muted-foreground">({filteredNotes.length} notes)</span>
+          <span className="text-xs text-muted-foreground">({totalNotesCount || notes.length} notes)</span>
         </div>
         
         <Button
@@ -282,7 +280,7 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
       </div>
 
       {/* Search and Filters */}
-      <Card className="flex-shrink-0">
+      <Card className="flex-shrink-0 mx-2">
         <CardContent className="p-2">
           <div className="flex flex-col gap-2">
             <div className="flex flex-col sm:flex-row gap-2">
@@ -321,7 +319,7 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
             {(hasMoreNotes || notes.length < totalNotesCount) && (
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>
-                  Showing {notes.length} of {totalNotesCount} notes
+                  {notes.length < totalNotesCount ? `Showing ${notes.length} of ${totalNotesCount} notes` : `${totalNotesCount} notes`}
                 </span>
                 <div className="flex space-x-2">
                   <Button
@@ -350,7 +348,8 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
       </Card>
 
       {/* Notes List */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto space-y-2 min-h-0">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-2 min-h-0">
+        <div className="space-y-2">
         {isLoading ? (
           <Card>
             <CardContent className="p-4 text-center">
@@ -381,7 +380,7 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
                           </span>
                         </div>
                         {note.source && (
-                          <h4 className="font-medium text-foreground text-xs mb-1 break-words overflow-wrap-anywhere">{note.source}</h4>
+                          <h4 className="font-medium text-foreground text-xs mb-1 break-all">{note.source}</h4>
                         )}
                       </div>
                       {note.url && (
@@ -399,17 +398,17 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
 
                   {/* Note Content */}
                   <div className="text-foreground leading-relaxed overflow-hidden">
-                    <div className="prose prose-sm max-w-none text-xs break-words overflow-wrap-anywhere">
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        rehypePlugins={[rehypeRaw]}
+                    <div className="prose prose-sm max-w-none text-xs break-words" style={{overflowWrap: 'anywhere', wordBreak: 'break-word'}}>
+                      <MathMarkdown
+                        content={note.content || ''}
+                        className="prose prose-sm max-w-none text-xs"
                         components={{
                           a: ({node, ...props}) => (
                             <a 
                               {...props} 
                               target="_blank" 
                               rel="noopener noreferrer" 
-                              className="text-primary hover:underline break-all"
+                              className="text-primary hover:underline break-all inline-block max-w-full"
                             />
                           ),
                           code: ({node, ...props}) => {
@@ -417,12 +416,12 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
                             return inline ? (
                               <code 
                                 {...restProps} 
-                                className="bg-secondary px-1 py-0.5 rounded text-xs break-all"
+                                className="inline bg-secondary px-1 py-0.5 rounded text-xs break-all"
                               />
                             ) : (
                               <code 
                                 {...restProps} 
-                                className="block bg-secondary p-2 rounded text-xs break-all overflow-x-auto"
+                                className="block bg-secondary p-2 rounded text-xs break-all overflow-x-auto max-w-full"
                               />
                             );
                           },
@@ -452,9 +451,7 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
                             <td {...props} className="border border-border px-1 py-0.5" />
                           ),
                         }}
-                      >
-                        {note.content || ''}
-                      </ReactMarkdown>
+                      />
                     </div>
                   </div>
 
@@ -493,6 +490,7 @@ export const NotesTab: React.FC<NotesTabProps> = ({ missionId }) => {
             </CardContent>
           </Card>
         )}
+        </div>
       </div>
     </div>
   )

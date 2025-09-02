@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Activity, CheckCircle, AlertCircle, Clock, Pause } from 'lucide-react';
 import type { ExecutionLogEntry } from './AgentActivityLog';
-import { formatActivityLogTime } from '../../utils/timezone';
+import { formatChatMessageTime } from '../../utils/timezone';
 import { getAgentIcon, getAgentColorClass } from './agentIcons';
 
 interface AgentStatusIndicatorProps {
@@ -101,7 +101,7 @@ export const AgentStatusIndicator: React.FC<AgentStatusIndicatorProps> = ({
   const formatTimestamp = (timestamp?: Date) => {
     if (!timestamp) return 'Never';
     try {
-      return formatActivityLogTime(timestamp);
+      return formatChatMessageTime(timestamp);
     } catch {
       return 'Invalid';
     }

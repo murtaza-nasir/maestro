@@ -161,16 +161,9 @@ services:
 
 volumes:
   postgres-data:
-    driver: local
   maestro-data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ./maestro_data
   # Uncomment if using local LLM
   # ollama-data:
-  #   driver: local
 
 networks:
   maestro-network:

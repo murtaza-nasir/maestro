@@ -3,19 +3,19 @@ import { Card, CardContent } from '../../../components/ui/card'
 import { Button } from '../../../components/ui/button'
 import { useMissionStore } from '../store'
 import { useToast } from '../../../components/ui/toast'
-import { Edit3, Save, X, FileText, Target } from 'lucide-react'
+import { FileText, Target, RefreshCw } from 'lucide-react'
 import { apiClient } from '../../../config/api'
+import { UnifiedResumeModal } from './UnifiedResumeModal'
 
 interface PlanTabProps {
   missionId: string
 }
 
 export const PlanTab: React.FC<PlanTabProps> = ({ missionId }) => {
-  const { activeMission, setMissionPlan } = useMissionStore()
+  const { activeMission, setMissionPlan, missionLogs } = useMissionStore()
   const { addToast } = useToast()
-  const [isEditing, setIsEditing] = useState(false)
-  const [editedPlan, setEditedPlan] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [showUnifiedModal, setShowUnifiedModal] = useState(false)
 
   const fetchPlan = useCallback(async () => {
     if (!missionId) return
@@ -38,48 +38,13 @@ export const PlanTab: React.FC<PlanTabProps> = ({ missionId }) => {
 
   // WebSocket updates are now handled by ResearchPanel
 
-  // Update edited plan when mission plan changes
-  useEffect(() => {
-    if (activeMission?.plan && !isEditing) {
-      setEditedPlan(activeMission.plan)
-    }
-  }, [activeMission?.plan, isEditing])
-
-  const handleEdit = () => {
-    setEditedPlan(activeMission?.plan || '')
-    setIsEditing(true)
+  const handleOpenUnifiedModal = () => {
+    setShowUnifiedModal(true)
   }
 
-  const handleSave = async () => {
-    if (!missionId || !editedPlan.trim()) return
-
-    setIsLoading(true)
-    try {
-      await apiClient.put(`/api/missions/${missionId}/plan`, { plan: JSON.parse(editedPlan) })
-      
-      setMissionPlan(missionId, editedPlan)
-      setIsEditing(false)
-      
-      addToast({
-        type: 'success',
-        title: 'Plan Updated',
-        message: 'Research plan has been successfully updated.'
-      })
-    } catch (error) {
-      console.error('Failed to update plan:', error)
-      addToast({
-        type: 'error',
-        title: 'Update Failed',
-        message: 'Failed to update the research plan. Please try again.'
-      })
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleCancel = () => {
-    setEditedPlan(activeMission?.plan || '')
-    setIsEditing(false)
+  const handleModalSuccess = () => {
+    // Refresh the plan if needed
+    fetchPlan()
   }
 
   const formatPlan = (plan: string) => {
@@ -134,9 +99,18 @@ export const PlanTab: React.FC<PlanTabProps> = ({ missionId }) => {
                   <span>{plan.report_outline.length} sections</span>
                   <span>•</span>
                   <span>
-                    {plan.report_outline.reduce((total: number, section: any) => 
-                      total + (section.associated_note_ids?.length || 0), 0
-                    )} total notes
+                    {(() => {
+                      const countNotes = (sections: any[]): number => {
+                        return sections.reduce((total: number, section: any) => {
+                          let sectionTotal = section.associated_note_ids?.length || 0;
+                          if (section.subsections && section.subsections.length > 0) {
+                            sectionTotal += countNotes(section.subsections);
+                          }
+                          return total + sectionTotal;
+                        }, 0);
+                      };
+                      return countNotes(plan.report_outline);
+                    })()} total notes
                   </span>
                 </div>
               </div>
@@ -301,78 +275,61 @@ export const PlanTab: React.FC<PlanTabProps> = ({ missionId }) => {
           </div>
         </div>
         
-        {activeMission?.plan && !isEditing && (
-          <Button
-            onClick={handleEdit}
-            variant="outline"
-            size="sm"
-            className="h-7 px-2 text-xs"
-          >
-            <Edit3 className="h-3 w-3" />
-          </Button>
-        )}
+        <div className="flex items-center space-x-2">
+          {/* Unified Restart/Revise button for all missions with a plan */}
+          {activeMission?.plan && (
+            <Button
+              onClick={handleOpenUnifiedModal}
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              disabled={isLoading}
+              title="Restart or revise research mission"
+            >
+              <RefreshCw className="h-3 w-3 mr-1" />
+              Restart / Revise
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Plan Content */}
       <Card className="flex-1 overflow-hidden">
         <CardContent className="p-0 h-full flex flex-col">
-          {isEditing ? (
-            <div className="h-full flex flex-col p-3 space-y-2">
-              <div className="flex items-center justify-between flex-shrink-0">
-                <h4 className="text-sm font-medium text-foreground">Edit Research Plan</h4>
-                <div className="flex items-center space-x-1">
-                  <Button
-                    onClick={handleCancel}
-                    variant="outline"
-                    size="sm"
-                    className="h-7 px-2 text-xs"
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                  <Button
-                    onClick={handleSave}
-                    disabled={isLoading || !editedPlan.trim()}
-                    size="sm"
-                    className="h-7 px-2 text-xs"
-                  >
-                    <Save className="h-3 w-3" />
-                    {isLoading ? 'Saving...' : 'Save'}
-                  </Button>
+          <div className="h-full flex flex-col">
+            {activeMission?.plan ? (
+              <div className="flex-1 overflow-hidden">
+                <div className="h-full overflow-y-auto p-3">
+                  {renderPlanContent(formatPlan(activeMission.plan))}
                 </div>
               </div>
-              <textarea
-                value={editedPlan}
-                onChange={(e) => setEditedPlan(e.target.value)}
-                className="flex-1 w-full p-2 border border-border rounded text-xs font-mono resize-none focus:ring-2 focus:ring-primary focus:border-transparent min-h-0 bg-background"
-                placeholder="Enter your research plan here..."
-              />
-            </div>
-          ) : (
-            <div className="h-full flex flex-col">
-              {activeMission?.plan ? (
-                <div className="flex-1 overflow-hidden">
-                  <div className="h-full overflow-y-auto p-3">
-                    {renderPlanContent(formatPlan(activeMission.plan))}
-                  </div>
+            ) : (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center text-muted-foreground">
+                  <FileText className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                  <p className="text-sm font-medium mb-1">No Plan Available</p>
+                  <p className="text-xs">
+                    {activeMission?.status === 'pending' 
+                      ? 'The research plan is being generated...'
+                      : 'Start a research mission to see the plan here.'
+                    }
+                  </p>
                 </div>
-              ) : (
-                <div className="flex-1 flex items-center justify-center">
-                  <div className="text-center text-muted-foreground">
-                    <FileText className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-                    <p className="text-sm font-medium mb-1">No Plan Available</p>
-                    <p className="text-xs">
-                      {activeMission?.status === 'pending' 
-                        ? 'The research plan is being generated...'
-                        : 'Start a research mission to see the plan here.'
-                      }
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
+      
+      {/* Unified Resume/Revise Modal */}
+      {showUnifiedModal && (
+        <UnifiedResumeModal
+          isOpen={showUnifiedModal}
+          onClose={() => setShowUnifiedModal(false)}
+          missionId={missionId}
+          onSuccess={handleModalSuccess}
+        />
+      )}
     </div>
   )
 }

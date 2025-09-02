@@ -6,7 +6,7 @@ import queue
 
 from ai_researcher import config
 from ai_researcher.config import THOUGHT_PAD_CONTEXT_LIMIT
-from ai_researcher.agentic_layer.context_manager import ExecutionLogEntry
+from ai_researcher.agentic_layer.async_context_manager import ExecutionLogEntry
 from ai_researcher.agentic_layer.schemas.planning import ReportSection
 from ai_researcher.agentic_layer.schemas.notes import Note
 from ai_researcher.agentic_layer.schemas.writing import WritingReflectionOutput, WritingChangeSuggestion
@@ -71,10 +71,26 @@ class WritingManager:
         else:
             logger.warning(f"No note assignments provided to writing phase for mission {mission_id}. Writing may be incomplete.")
 
-        change_suggestions: List[WritingChangeSuggestion] = []  # Store suggestions between passes
+        # Retrieve any existing writing suggestions (e.g., from a resumed mission)
+        raw_suggestions = self.controller.context_manager.get_writing_suggestions(mission_id)
+        change_suggestions: List[WritingChangeSuggestion] = []
+        if raw_suggestions:
+            # Convert from dict/JSON back to WritingChangeSuggestion objects
+            for suggestion_data in raw_suggestions:
+                if isinstance(suggestion_data, dict):
+                    try:
+                        change_suggestions.append(WritingChangeSuggestion(**suggestion_data))
+                    except Exception as e:
+                        logger.error(f"Failed to parse writing suggestion: {e}")
+                elif isinstance(suggestion_data, WritingChangeSuggestion):
+                    change_suggestions.append(suggestion_data)
+            logger.info(f"Loaded {len(change_suggestions)} existing writing suggestions from context.")
+        else:
+            change_suggestions = []  # Initialize as empty if none exist
 
         for pass_num in range(num_writing_passes):
             logger.info(f"--- Starting Writing Pass {pass_num + 1}/{num_writing_passes} ---")
+            logger.info(f"DEBUG: At start of pass {pass_num}, change_suggestions has {len(change_suggestions)} items")
             mission_context = self.controller.context_manager.get_mission_context(mission_id)  # Refresh context
             current_outline = mission_context.plan.report_outline
             written_content_context: Dict[str, str] = mission_context.report_content.copy()  # Start with existing content if any
@@ -116,16 +132,92 @@ class WritingManager:
                     if sec.section_id != first_section_id and sec.section_id != last_section_id:
                         middle_section_ids.add(sec.section_id)
 
-                # 2. Define writing order list
+                # 2. Define writing order list - IMPROVED ORDER
+                # Write research-based sections FIRST, then synthesis/content-based sections LAST
                 ordered_sections_to_write: List[ReportSection] = []
-                # Add middle sections (already in depth-first order from _get_sections_in_order)
-                ordered_sections_to_write.extend([sec for sec in sections_in_write_order if sec.section_id in middle_section_ids])
-                # Add last section (and its subsections, already handled by depth-first order)
-                if last_section_id:
-                    ordered_sections_to_write.extend([sec for sec in sections_in_write_order if sec.section_id == last_section_id or outline_utils.is_descendant(current_outline, last_section_id, sec.section_id)])
-                # Add first section (if different from last)
-                if first_section_id and first_section_id != last_section_id:
-                    ordered_sections_to_write.extend([sec for sec in sections_in_write_order if sec.section_id == first_section_id or outline_utils.is_descendant(current_outline, first_section_id, sec.section_id)])
+                
+                # First pass: Write all research-based sections (those with notes)
+                research_based_sections = []
+                synthesis_sections = []
+                content_based_sections = []
+                
+                for sec in sections_in_write_order:
+                    strategy = sec.research_strategy
+                    title_lower = sec.title.lower()
+                    
+                    # Check if this section was marked as content-based during research phase
+                    is_marked_content_based = (
+                        hasattr(self.controller.context_manager, '_content_based_sections') and 
+                        sec.section_id in self.controller.context_manager._content_based_sections
+                    )
+                    
+                    # Determine proper category
+                    if strategy == "research_based" and not is_marked_content_based:
+                        # These have research notes and should be written first
+                        research_based_sections.append(sec)
+                    elif strategy == "synthesize_from_subsections" or strategy == "synthesize_from_other_sections":
+                        # These need to see other written content
+                        synthesis_sections.append(sec)
+                    elif (strategy == "content_based" or is_marked_content_based or 
+                          "introduction" in title_lower or "conclusion" in title_lower or 
+                          "discussion" in title_lower or "limitation" in title_lower):
+                        # Content-based sections (intro, conclusion, etc.) need to see everything else
+                        content_based_sections.append(sec)
+                    else:
+                        # Default to research-based if unclear
+                        research_based_sections.append(sec)
+                
+                # Writing order - IMPORTANT: Respect parent-child dependencies
+                # We need to ensure subsections are written before their parent sections
+                final_ordered_sections = []
+                processed_ids = set()
+                
+                # Helper function to check if all subsections have been processed
+                def all_subsections_processed(section):
+                    if not section.subsections:
+                        return True
+                    return all(sub.section_id in processed_ids for sub in section.subsections)
+                
+                # 1. First, write all leaf sections (no subsections) that are research-based
+                for sec in research_based_sections:
+                    if not sec.subsections:
+                        final_ordered_sections.append(sec)
+                        processed_ids.add(sec.section_id)
+                
+                # 2. Then write parent sections whose subsections are complete (research-based)
+                remaining = [s for s in research_based_sections if s.section_id not in processed_ids]
+                while remaining:
+                    made_progress = False
+                    for sec in remaining[:]:
+                        if all_subsections_processed(sec):
+                            final_ordered_sections.append(sec)
+                            processed_ids.add(sec.section_id)
+                            remaining.remove(sec)
+                            made_progress = True
+                    if not made_progress:
+                        # Add remaining sections anyway to avoid infinite loop
+                        final_ordered_sections.extend(remaining)
+                        for s in remaining:
+                            processed_ids.add(s.section_id)
+                        break
+                
+                # 3. Synthesis sections (after their dependencies)
+                for sec in synthesis_sections:
+                    if sec.section_id not in processed_ids:
+                        final_ordered_sections.append(sec)
+                        processed_ids.add(sec.section_id)
+                
+                # 4. Content-based sections last (intro, conclusion, etc.)
+                for sec in content_based_sections:
+                    if sec.section_id not in processed_ids:
+                        final_ordered_sections.append(sec)
+                        processed_ids.add(sec.section_id)
+                
+                ordered_sections_to_write = final_ordered_sections
+                
+                logger.info(f"Writing order: {len(research_based_sections)} research sections, "
+                          f"{len(synthesis_sections)} synthesis sections, "
+                          f"{len(content_based_sections)} content-based sections")
 
                 # Remove duplicates just in case (though logic should prevent it)
                 final_write_order_ids = set()
@@ -169,6 +261,9 @@ class WritingManager:
 
             else:
                 # Subsequent Passes: Revision based on Reflection
+                logger.info(f"Pass {pass_num + 1}: change_suggestions type: {type(change_suggestions)}, length: {len(change_suggestions)}")
+                if change_suggestions:
+                    logger.info(f"First suggestion: {change_suggestions[0] if change_suggestions else 'None'}")
                 logger.info(f"Applying {len(change_suggestions)} suggestions from previous reflection...")
                 if not change_suggestions:
                     logger.info("No changes suggested. Skipping revision pass.")
@@ -208,14 +303,20 @@ class WritingManager:
                             )
                         )
 
-                # Execute revision tasks concurrently using asyncio.gather
+                # Execute revision tasks concurrently using gather_with_status_check
                 if revision_tasks:
                     logger.info(f"Executing {len(revision_tasks)} revision tasks concurrently for Pass {pass_num + 1}...")
+                    # Import the gather function from core_controller
+                    from ai_researcher.agentic_layer.controller.core_controller import gather_with_status_check
                     # The semaphore within _write_section_content will limit actual concurrency
-                    await asyncio.gather(*revision_tasks)
+                    await gather_with_status_check(self.controller, mission_id, *revision_tasks)
                     # Refresh context *after* all concurrent revisions are done
                     written_content_context = self.controller.context_manager.get_mission_context(mission_id).report_content.copy()
                     logger.info(f"Completed concurrent revisions for Pass {pass_num + 1}.")
+                    # Clear suggestions after successful application
+                    change_suggestions = []
+                    await self.controller.context_manager.update_writing_suggestions(mission_id, [])
+                    logger.info("Cleared writing suggestions after successful application.")
                 else:
                     logger.warning(f"No revision tasks scheduled for Pass {pass_num + 1}.")
 
@@ -231,10 +332,26 @@ class WritingManager:
                     mission_id, current_draft_text, pass_num + 1, log_queue, update_callback
                 )
                 if reflection_output:
+                    logger.info(f"DEBUG: reflection_output type: {type(reflection_output)}")
+                    logger.info(f"DEBUG: reflection_output.change_suggestions type: {type(reflection_output.change_suggestions)}")
+                    logger.info(f"DEBUG: reflection_output.change_suggestions length: {len(reflection_output.change_suggestions)}")
+                    
                     change_suggestions = reflection_output.change_suggestions  # Store for next pass
+                    
+                    logger.info(f"DEBUG: After assignment, change_suggestions type: {type(change_suggestions)}, length: {len(change_suggestions)}")
+                    if change_suggestions:
+                        logger.info(f"DEBUG: First suggestion after reflection: {change_suggestions[0]}")
+                    # Save suggestions to context for persistence (in case of resume)
+                    await self.controller.context_manager.update_writing_suggestions(mission_id, change_suggestions)
+                    logger.info(f"Saved {len(change_suggestions)} writing suggestions to context.")
+                    logger.info(f"DEBUG: End of reflection block, change_suggestions has {len(change_suggestions)} items")
                 else:
                     logger.warning(f"Writing reflection failed after pass {pass_num + 1}. Proceeding without revisions.")
                     change_suggestions = []  # Clear suggestions if reflection failed
+                    # Also clear in context
+                    await self.controller.context_manager.update_writing_suggestions(mission_id, [])
+            
+            logger.info(f"DEBUG: End of pass {pass_num}, change_suggestions has {len(change_suggestions)} items before loop continues")
 
         # Refresh context before final synthesis
         written_content_context = self.controller.context_manager.get_mission_context(mission_id).report_content.copy()
@@ -315,6 +432,14 @@ class WritingManager:
             # Determine Context Type based on Strategy
             strategy = section.research_strategy
             section_title_lower = section.title.lower()
+            
+            # Check if this is a content-based section (written without research notes)
+            is_content_based = (
+                strategy == "content_based" or
+                (hasattr(self.controller.context_manager, '_content_based_sections') and 
+                 section.section_id in self.controller.context_manager._content_based_sections)
+            )
+            
             is_synthesis_section = (
                 strategy == "synthesize_from_subsections" or
                 strategy == "synthesize_from_other_sections" or  # Added explicit strategy check
@@ -322,7 +447,13 @@ class WritingManager:
                 "conclusion" in section_title_lower
             )
 
-            if is_synthesis_section:
+            if is_content_based:
+                logger.info(f"  Section '{section.section_id}' is content-based (strategy: {strategy}). Writing with full document context.")
+                notes_for_agent = []  # Content-based sections don't use research notes
+                input_desc += ", Context: Full Written Content"
+                # Content-based sections receive ALL previously written content for proper synthesis
+                # The previous_content_for_agent already contains this, so agent can reference it
+            elif is_synthesis_section:
                 logger.info(f"  Section '{section.section_id}' is a synthesis section. Preparing written content context.")
                 notes_for_agent = []  # Synthesis sections primarily use written content, not notes
                 input_desc += ", Context: Written Content"
@@ -372,7 +503,7 @@ class WritingManager:
 
             # Update scratchpad if the agent provided an update
             if scratchpad_update:
-                self.controller.context_manager.update_scratchpad(mission_id, scratchpad_update)
+                await self.controller.context_manager.update_scratchpad(mission_id, scratchpad_update)
                 logger.info(f"Updated scratchpad after writing/revising section {section.section_id} (Pass {pass_num + 1}).")
 
             log_status = "success"
@@ -385,10 +516,10 @@ class WritingManager:
             # Keep default error content and failure status
 
         # Log the step (using updated input_desc)
-        self.controller.context_manager.log_execution_step(
+        await self.controller.context_manager.log_execution_step(
             mission_id, "WritingAgent", action_name,
             input_summary=input_desc,  # Use the description built based on context type
-            output_summary=f"Generated/Revised content length: {len(section_content)}" if log_status == "success" else error_message,
+            output_summary=f"Generated/Revised content length: {len(section_content)}" if log_status == "success" and section_content else error_message,
             status=log_status, error_message=error_message,
             full_input={'section': section.model_dump(), 'notes_provided_count': len(notes_for_agent), 'revision_suggestions': [s.model_dump() for s in revision_suggestions] if revision_suggestions else None},
             full_output={
@@ -403,7 +534,7 @@ class WritingManager:
         )
 
         # Store the generated/revised (or error) content for this section
-        self.controller.context_manager.store_report_section(mission_id, section.section_id, section_content)
+        await self.controller.context_manager.store_report_section(mission_id, section.section_id, section_content)
 
     async def _synthesize_top_level_sections(
         self,
@@ -510,7 +641,7 @@ class WritingManager:
 
             # Update scratchpad if provided
             if scratchpad_update:
-                self.controller.context_manager.update_scratchpad(mission_id, scratchpad_update)
+                await self.controller.context_manager.update_scratchpad(mission_id, scratchpad_update)
                 logger.info(f"Updated scratchpad after writing reflection (Pass {pass_num}).")
 
             if reflection_output:
@@ -527,7 +658,7 @@ class WritingManager:
             # Keep reflection_output as None
 
         # Log the step
-        self.controller.context_manager.log_execution_step(
+        await self.controller.context_manager.log_execution_step(
             mission_id=mission_id,
             agent_name=self.controller.writing_reflection_agent.agent_name,
             action=f"Reflect on Draft (After Pass {pass_num})",

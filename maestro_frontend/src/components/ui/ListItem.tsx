@@ -36,6 +36,8 @@ interface ListItemProps {
   className?: string
   /** Whether to show actions permanently (not just on hover) */
   showActionsPermanently?: boolean
+  /** Status indicator to show on the right side */
+  statusIndicator?: React.ReactNode
 }
 
 export const ListItem: React.FC<ListItemProps> = ({
@@ -49,7 +51,8 @@ export const ListItem: React.FC<ListItemProps> = ({
   actions = [],
   children,
   className = '',
-  showActionsPermanently = false
+  showActionsPermanently = false,
+  statusIndicator
 }) => {
   return (
     <div
@@ -109,31 +112,40 @@ export const ListItem: React.FC<ListItemProps> = ({
               </span>
             )}
 
-            {/* Actions */}
-            {actions.length > 0 && (
-              <div className={`flex items-center gap-0.5 ml-auto ${
-                showActionsPermanently 
-                  ? 'opacity-100' 
-                  : `opacity-0 group-hover:opacity-100 transition-opacity ${isSelected ? 'opacity-100' : ''}`
-              }`}>
-                {actions.map((action, index) => (
-                  <Button
-                    key={index}
-                    variant="ghost"
-                    size="sm"
-                    className={`h-5 w-5 p-0 ${
-                      action.variant === 'destructive' 
-                        ? 'text-destructive hover:text-destructive/80 hover:bg-destructive/10' 
-                        : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                    } ${action.className || ''}`}
-                    onClick={action.onClick}
-                    title={action.label}
-                  >
-                    {action.icon}
-                  </Button>
-                ))}
-              </div>
-            )}
+            <div className="flex items-center gap-2 ml-auto">
+              {/* Status Indicator */}
+              {statusIndicator && (
+                <div className="flex-shrink-0">
+                  {statusIndicator}
+                </div>
+              )}
+              
+              {/* Actions */}
+              {actions.length > 0 && (
+                <div className={`flex items-center gap-0.5 ${
+                  showActionsPermanently 
+                    ? 'opacity-100' 
+                    : `opacity-0 group-hover:opacity-100 transition-opacity ${isSelected ? 'opacity-100' : ''}`
+                }`}>
+                  {actions.map((action, index) => (
+                    <Button
+                      key={index}
+                      variant="ghost"
+                      size="sm"
+                      className={`h-5 w-5 p-0 ${
+                        action.variant === 'destructive' 
+                          ? 'text-destructive hover:text-destructive/80 hover:bg-destructive/10' 
+                          : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                      } ${action.className || ''}`}
+                      onClick={action.onClick}
+                      title={action.label}
+                    >
+                      {action.icon}
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Additional Content */}

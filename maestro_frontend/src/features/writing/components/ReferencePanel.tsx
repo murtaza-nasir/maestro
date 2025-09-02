@@ -24,7 +24,10 @@ export const ReferencePanel: React.FC<ReferencePanelProps> = ({ references }) =>
   const [citationStyle, setCitationStyle] = useState('apa')
   const [showAddForm, setShowAddForm] = useState(false)
 
-  const filteredReferences = references.filter(ref =>
+  // Ensure references is always an array
+  const safeReferences = Array.isArray(references) ? references : []
+
+  const filteredReferences = safeReferences.filter(ref =>
     ref.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
     ref.authors.some(author => author.toLowerCase().includes(searchTerm.toLowerCase()))
   )

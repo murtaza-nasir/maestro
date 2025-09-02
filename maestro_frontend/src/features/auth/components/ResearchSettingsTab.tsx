@@ -16,33 +16,37 @@ import {
 
 // Default values for research parameters
 const DEFAULT_RESEARCH_PARAMS: ResearchParameters = {
-  initial_research_max_depth: 3,
+  initial_research_max_depth: 2,  // Changed from 3 to 2
   initial_research_max_questions: 15,
-  structured_research_rounds: 2,  // Changed from 3 to 2
-  writing_passes: 2,  // Changed from 4 to 2
+  structured_research_rounds: 2,
+  writing_passes: 2,
   initial_exploration_doc_results: 5,
   initial_exploration_web_results: 3,
   main_research_doc_results: 5,
   main_research_web_results: 5,
-  thought_pad_context_limit: 5,
-  max_notes_for_assignment_reranking: 80,  // Changed from 0 to 80
-  max_concurrent_requests: 10,  // Changed from 80 to 10
-  skip_final_replanning: false,
+  thought_pad_context_limit: 10,
+  max_notes_for_assignment_reranking: 30,  // Changed from 80 to 30
+  max_concurrent_requests: 25,  // Changed from 20 to 25
+  skip_final_replanning: true,
   auto_optimize_params: false,
   // Advanced parameters with defaults
   max_research_cycles_per_section: 2,
   max_total_iterations: 40,
   max_total_depth: 2,
   min_notes_per_section_assignment: 5,
-  max_notes_per_section_assignment: 40,
+  max_notes_per_section_assignment: 20,  // Changed from 40 to 20
+  max_suggestions_per_batch: 10,
   max_planning_context_chars: 250000,
   writing_previous_content_preview_chars: 30000,
   research_note_content_limit: 32000,
+  writing_agent_max_context_chars: 300000,
   // Writing mode search parameters
   writing_search_max_iterations: 1,
   writing_search_max_queries: 3,
   writing_deep_search_iterations: 3,
-  writing_deep_search_queries: 5
+  writing_deep_search_queries: 5,
+  writing_mode_doc_results: 5,
+  writing_mode_web_results: 5
 }
 
 // Preset configurations for different use cases
@@ -55,82 +59,72 @@ const RESEARCH_PRESETS = {
       initial_research_max_questions: 5,
       structured_research_rounds: 1,
       writing_passes: 1,
-      initial_exploration_doc_results: 3,
+      initial_exploration_doc_results: 2,
       initial_exploration_web_results: 2,
       main_research_doc_results: 3,
-      main_research_web_results: 0,
-      thought_pad_context_limit: 3,
-      max_notes_for_assignment_reranking: 30,
-      max_concurrent_requests: 5,
-      skip_final_replanning: true,
-      auto_optimize_params: false,
+      main_research_web_results: 3,
       max_research_cycles_per_section: 1,
       max_total_iterations: 20,
       max_total_depth: 1,
       min_notes_per_section_assignment: 3,
-      max_notes_per_section_assignment: 20,
-      max_planning_context_chars: 150000,
-      writing_previous_content_preview_chars: 20000,
-      research_note_content_limit: 20000
+      max_notes_per_section_assignment: 20
     }
   },
   'balanced': {
     name: 'Balanced Research',
     description: 'Default balanced settings',
-    params: DEFAULT_RESEARCH_PARAMS
+    params: {
+      initial_research_max_depth: 2,
+      initial_research_max_questions: 15,
+      structured_research_rounds: 2,
+      writing_passes: 2,
+      initial_exploration_doc_results: 3,
+      initial_exploration_web_results: 3,
+      main_research_doc_results: 4,
+      main_research_web_results: 4,
+      max_research_cycles_per_section: 2,
+      max_total_iterations: 30,
+      max_total_depth: 2,
+      min_notes_per_section_assignment: 5,
+      max_notes_per_section_assignment: 40
+    }
   },
   'deep': {
     name: 'Deep Analysis',
     description: 'Maximum depth and iterations',
     params: {
-      initial_research_max_depth: 5,
+      initial_research_max_depth: 3,
       initial_research_max_questions: 30,
-      structured_research_rounds: 4,
-      writing_passes: 4,
-      initial_exploration_doc_results: 8,
+      structured_research_rounds: 3,
+      writing_passes: 2,
+      initial_exploration_doc_results: 5,
       initial_exploration_web_results: 5,
-      main_research_doc_results: 10,
+      main_research_doc_results: 5,
       main_research_web_results: 5,
-      thought_pad_context_limit: 10,
-      max_notes_for_assignment_reranking: 150,
-      max_concurrent_requests: 20,
-      skip_final_replanning: false,
-      auto_optimize_params: false,
-      max_research_cycles_per_section: 4,
-      max_total_iterations: 80,
-      max_total_depth: 4,
-      min_notes_per_section_assignment: 10,
-      max_notes_per_section_assignment: 80,
-      max_planning_context_chars: 400000,
-      writing_previous_content_preview_chars: 40000,
-      research_note_content_limit: 40000
+      max_research_cycles_per_section: 2,
+      max_total_iterations: 40,
+      max_total_depth: 3,
+      min_notes_per_section_assignment: 8,  // Changed from 10 to 8
+      max_notes_per_section_assignment: 50
     }
   },
   'academic': {
     name: 'Academic Paper',
     description: 'High doc results, multiple rounds',
     params: {
-      initial_research_max_depth: 4,
+      initial_research_max_depth: 3,
       initial_research_max_questions: 25,
-      structured_research_rounds: 3,
-      writing_passes: 3,
-      initial_exploration_doc_results: 10,
-      initial_exploration_web_results: 2,
-      main_research_doc_results: 15,
-      main_research_web_results: 0,
-      thought_pad_context_limit: 8,
-      max_notes_for_assignment_reranking: 120,
-      max_concurrent_requests: 15,
-      skip_final_replanning: false,
-      auto_optimize_params: false,
-      max_research_cycles_per_section: 3,
-      max_total_iterations: 60,
+      structured_research_rounds: 2,
+      writing_passes: 2,
+      initial_exploration_doc_results: 5,
+      initial_exploration_web_results: 5,
+      main_research_doc_results: 5,
+      main_research_web_results: 5,
+      max_research_cycles_per_section: 2,
+      max_total_iterations: 40,
       max_total_depth: 3,
       min_notes_per_section_assignment: 8,
-      max_notes_per_section_assignment: 60,
-      max_planning_context_chars: 350000,
-      writing_previous_content_preview_chars: 35000,
-      research_note_content_limit: 35000
+      max_notes_per_section_assignment: 40
     }
   },
   'current_events': {
@@ -139,25 +133,17 @@ const RESEARCH_PRESETS = {
     params: {
       initial_research_max_depth: 2,
       initial_research_max_questions: 12,
-      structured_research_rounds: 2,
+      structured_research_rounds: 1,
       writing_passes: 2,
-      initial_exploration_doc_results: 2,
-      initial_exploration_web_results: 8,
-      main_research_doc_results: 2,
-      main_research_web_results: 10,
-      thought_pad_context_limit: 5,
-      max_notes_for_assignment_reranking: 60,
-      max_concurrent_requests: 10,
-      skip_final_replanning: true,
-      auto_optimize_params: false,
+      initial_exploration_doc_results: 3,
+      initial_exploration_web_results: 5,
+      main_research_doc_results: 3,
+      main_research_web_results: 5,
       max_research_cycles_per_section: 2,
       max_total_iterations: 30,
       max_total_depth: 2,
       min_notes_per_section_assignment: 4,
-      max_notes_per_section_assignment: 30,
-      max_planning_context_chars: 200000,
-      writing_previous_content_preview_chars: 25000,
-      research_note_content_limit: 25000
+      max_notes_per_section_assignment: 20
     }
   }
 }
@@ -243,9 +229,31 @@ export const ResearchSettingsTab: React.FC = () => {
     }
     const preset = RESEARCH_PRESETS[presetKey as keyof typeof RESEARCH_PRESETS]
     if (preset) {
-      setDraftSettings({ research_parameters: { ...preset.params } })
+      // Get current settings to preserve content processing limits
+      const currentParams = draftSettings?.research_parameters || DEFAULT_RESEARCH_PARAMS
+      
+      // Apply preset but preserve content processing limits and writing mode settings
+      const newParams: ResearchParameters = {
+        ...currentParams, // Start with current params to preserve all non-preset values
+        // Apply only the specific fields that presets should affect
+        initial_research_max_depth: preset.params.initial_research_max_depth,
+        initial_research_max_questions: preset.params.initial_research_max_questions,
+        structured_research_rounds: preset.params.structured_research_rounds,
+        writing_passes: preset.params.writing_passes,
+        initial_exploration_doc_results: preset.params.initial_exploration_doc_results,
+        initial_exploration_web_results: preset.params.initial_exploration_web_results,
+        main_research_doc_results: preset.params.main_research_doc_results,
+        main_research_web_results: preset.params.main_research_web_results,
+        max_research_cycles_per_section: preset.params.max_research_cycles_per_section,
+        max_total_iterations: preset.params.max_total_iterations,
+        max_total_depth: preset.params.max_total_depth,
+        min_notes_per_section_assignment: preset.params.min_notes_per_section_assignment,
+        max_notes_per_section_assignment: preset.params.max_notes_per_section_assignment
+      }
+      
+      setDraftSettings({ research_parameters: newParams })
     }
-  }, [setDraftSettings])
+  }, [setDraftSettings, draftSettings])
 
   const handleNumberChange = useCallback((field: keyof ResearchParameters, value: string) => {
     const numValue = parseInt(value, 10)
@@ -518,89 +526,6 @@ export const ResearchSettingsTab: React.FC = () => {
               </div>
             </Card>
 
-            {/* Performance & Options */}
-            <Card className="lg:col-span-2 p-3">
-              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <Zap className="h-4 w-4" />
-                Performance & Options
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <ResearchParameterInput
-                  field="thought_pad_context_limit"
-                  disabled={isAutoOptimizeEnabled}
-                  label="Context Limit"
-                  description="Thoughts in context"
-                  value={params.thought_pad_context_limit}
-                  defaultValue={DEFAULT_RESEARCH_PARAMS.thought_pad_context_limit as number}
-                  min={1}
-                  max={50}
-                  onChange={handleNumberChange}
-                  onBlur={handleBlur}
-                  onReset={handleResetParameter}
-                />
-                <ResearchParameterInput
-                  field="max_notes_for_assignment_reranking"
-                  disabled={isAutoOptimizeEnabled}
-                  label="Max Notes"
-                  description="Notes for reranking"
-                  value={params.max_notes_for_assignment_reranking}
-                  defaultValue={DEFAULT_RESEARCH_PARAMS.max_notes_for_assignment_reranking as number}
-                  min={0}
-                  max={200}
-                  onChange={handleNumberChange}
-                  onBlur={handleBlur}
-                  onReset={handleResetParameter}
-                />
-                <ResearchParameterInput
-                  field="max_concurrent_requests"
-                  disabled={isAutoOptimizeEnabled}
-                  label="Concurrent Requests"
-                  description="Parallel operations"
-                  value={params.max_concurrent_requests}
-                  defaultValue={DEFAULT_RESEARCH_PARAMS.max_concurrent_requests as number}
-                  min={1}
-                  max={100}
-                  onChange={handleNumberChange}
-                  onBlur={handleBlur}
-                  onReset={handleResetParameter}
-                />
-              </div>
-              <div className="mt-4 pt-3 border-t">
-                <div className="flex items-center justify-between p-2 bg-muted rounded-lg">
-                  <div className="flex-1">
-                    <Label htmlFor="skip-final-replanning" className="text-sm font-medium flex items-center gap-2">
-                      Skip Final Replanning
-                      <Info className="h-3 w-3 text-muted-foreground" />
-                    </Label>
-                    <p className="text-xs text-muted-foreground">Skip final replanning for faster completion</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs badge-default px-1.5 py-0.5 rounded-md font-mono">
-                      {DEFAULT_RESEARCH_PARAMS.skip_final_replanning ? 'ON' : 'OFF'}
-                    </span>
-                    {params.skip_final_replanning !== DEFAULT_RESEARCH_PARAMS.skip_final_replanning && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-4 w-4 text-interactive"
-                        onClick={() => handleResetParameter('skip_final_replanning')}
-                        disabled={isAutoOptimizeEnabled}
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
-                    )}
-                    <Switch
-                      id="skip-final-replanning"
-                      checked={params.skip_final_replanning}
-                      onCheckedChange={(checked) => handleBooleanChange('skip_final_replanning', checked)}
-                      className={`${params.skip_final_replanning !== DEFAULT_RESEARCH_PARAMS.skip_final_replanning ? 'data-[state=checked]:bg-blue-600' : ''}`}
-                      disabled={isAutoOptimizeEnabled}
-                    />
-                  </div>
-                </div>
-              </div>
-            </Card>
-
             {/* Advanced Research Loop Configuration */}
             <Card className="lg:col-span-2 p-3">
               <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
@@ -686,6 +611,102 @@ export const ResearchSettingsTab: React.FC = () => {
               </div>
             </Card>
 
+            {/* Performance & Options */}
+            <Card className="lg:col-span-2 p-3">
+              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                <Zap className="h-4 w-4" />
+                Performance & Options
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <ResearchParameterInput
+                  field="thought_pad_context_limit"
+                  disabled={isAutoOptimizeEnabled}
+                  label="Context Limit"
+                  description="Thoughts in context"
+                  value={params.thought_pad_context_limit}
+                  defaultValue={DEFAULT_RESEARCH_PARAMS.thought_pad_context_limit as number}
+                  min={1}
+                  max={50}
+                  onChange={handleNumberChange}
+                  onBlur={handleBlur}
+                  onReset={handleResetParameter}
+                />
+                <ResearchParameterInput
+                  field="max_notes_for_assignment_reranking"
+                  disabled={isAutoOptimizeEnabled}
+                  label="Max Notes"
+                  description="Notes kept after reranking"
+                  value={params.max_notes_for_assignment_reranking}
+                  defaultValue={DEFAULT_RESEARCH_PARAMS.max_notes_for_assignment_reranking as number}
+                  min={0}
+                  max={200}
+                  onChange={handleNumberChange}
+                  onBlur={handleBlur}
+                  onReset={handleResetParameter}
+                />
+                <ResearchParameterInput
+                  field="max_concurrent_requests"
+                  disabled={isAutoOptimizeEnabled}
+                  label="Concurrent Requests"
+                  description="Parallel operations (min 10 to prevent deadlocks)"
+                  value={params.max_concurrent_requests}
+                  defaultValue={DEFAULT_RESEARCH_PARAMS.max_concurrent_requests as number}
+                  min={10}
+                  max={100}
+                  onChange={handleNumberChange}
+                  onBlur={handleBlur}
+                  onReset={handleResetParameter}
+                />
+                <ResearchParameterInput
+                  field="max_suggestions_per_batch"
+                  disabled={isAutoOptimizeEnabled}
+                  label="Suggestions Per Batch"
+                  description="Max parent sections per batch (-1 for unlimited)"
+                  value={params.max_suggestions_per_batch ?? DEFAULT_RESEARCH_PARAMS.max_suggestions_per_batch!}
+                  defaultValue={DEFAULT_RESEARCH_PARAMS.max_suggestions_per_batch as number}
+                  min={-1}
+                  max={10}
+                  onChange={handleNumberChange}
+                  onBlur={handleBlur}
+                  onReset={handleResetParameter}
+                />
+              </div>
+              <div className="mt-4 pt-3 border-t">
+                <div className="flex items-center justify-between p-2 bg-muted rounded-lg">
+                  <div className="flex-1">
+                    <Label htmlFor="skip-final-replanning" className="text-sm font-medium flex items-center gap-2">
+                      Skip Final Replanning
+                      <Info className="h-3 w-3 text-muted-foreground" />
+                    </Label>
+                    <p className="text-xs text-muted-foreground">Skip final replanning for faster completion</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs badge-default px-1.5 py-0.5 rounded-md font-mono">
+                      {DEFAULT_RESEARCH_PARAMS.skip_final_replanning ? 'ON' : 'OFF'}
+                    </span>
+                    {params.skip_final_replanning !== DEFAULT_RESEARCH_PARAMS.skip_final_replanning && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-4 w-4 text-interactive"
+                        onClick={() => handleResetParameter('skip_final_replanning')}
+                        disabled={isAutoOptimizeEnabled}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    )}
+                    <Switch
+                      id="skip-final-replanning"
+                      checked={params.skip_final_replanning}
+                      onCheckedChange={(checked) => handleBooleanChange('skip_final_replanning', checked)}
+                      className={`${params.skip_final_replanning !== DEFAULT_RESEARCH_PARAMS.skip_final_replanning ? 'data-[state=checked]:bg-blue-600' : ''}`}
+                      disabled={isAutoOptimizeEnabled}
+                    />
+                  </div>
+                </div>
+              </div>
+            </Card>
+
             {/* Content Processing Limits (Advanced) */}
             <Card className="lg:col-span-2 p-3">
               <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
@@ -693,7 +714,7 @@ export const ResearchSettingsTab: React.FC = () => {
                 Content Processing Limits
                 <span className="text-xs badge-default px-1.5 py-0.5 rounded-md">Advanced</span>
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <ResearchParameterInput
                   field="max_planning_context_chars"
                   disabled={isAutoOptimizeEnabled}
@@ -733,69 +754,128 @@ export const ResearchSettingsTab: React.FC = () => {
                   onBlur={handleBlur}
                   onReset={handleResetParameter}
                 />
+                <ResearchParameterInput
+                  field="writing_agent_max_context_chars"
+                  disabled={isAutoOptimizeEnabled}
+                  label="Writing Agent Context"
+                  description="Max total context for writing"
+                  value={params.writing_agent_max_context_chars ?? DEFAULT_RESEARCH_PARAMS.writing_agent_max_context_chars!}
+                  defaultValue={DEFAULT_RESEARCH_PARAMS.writing_agent_max_context_chars as number}
+                  min={100000}
+                  max={500000}
+                  onChange={handleNumberChange}
+                  onBlur={handleBlur}
+                  onReset={handleResetParameter}
+                />
               </div>
             </Card>
             
             {/* Writing Mode Search Settings */}
-            <Card className="border-muted/50">
+            <Card className="lg:col-span-2 border-muted/50">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base font-medium">Writing Mode Search Settings</CardTitle>
                 <CardDescription className="text-xs">Configure search behavior for Writing mode</CardDescription>
               </CardHeader>
-              <div className="px-6 pb-4 grid grid-cols-2 gap-3">
-                <ResearchParameterInput
-                  field="writing_search_max_iterations"
-                  disabled={isAutoOptimizeEnabled}
-                  label="Regular Search Iterations"
-                  description="Max attempts for regular search"
-                  value={params.writing_search_max_iterations ?? DEFAULT_RESEARCH_PARAMS.writing_search_max_iterations!}
-                  defaultValue={DEFAULT_RESEARCH_PARAMS.writing_search_max_iterations as number}
-                  min={1}
-                  max={5}
-                  onChange={handleNumberChange}
-                  onBlur={handleBlur}
-                  onReset={handleResetParameter}
-                />
-                <ResearchParameterInput
-                  field="writing_search_max_queries"
-                  disabled={isAutoOptimizeEnabled}
-                  label="Regular Search Queries"
-                  description="Max decomposed queries"
-                  value={params.writing_search_max_queries ?? DEFAULT_RESEARCH_PARAMS.writing_search_max_queries!}
-                  defaultValue={DEFAULT_RESEARCH_PARAMS.writing_search_max_queries as number}
-                  min={1}
-                  max={10}
-                  onChange={handleNumberChange}
-                  onBlur={handleBlur}
-                  onReset={handleResetParameter}
-                />
-                <ResearchParameterInput
-                  field="writing_deep_search_iterations"
-                  disabled={isAutoOptimizeEnabled}
-                  label="Deep Search Iterations"
-                  description="Max attempts for deep search"
-                  value={params.writing_deep_search_iterations ?? DEFAULT_RESEARCH_PARAMS.writing_deep_search_iterations!}
-                  defaultValue={DEFAULT_RESEARCH_PARAMS.writing_deep_search_iterations as number}
-                  min={1}
-                  max={10}
-                  onChange={handleNumberChange}
-                  onBlur={handleBlur}
-                  onReset={handleResetParameter}
-                />
-                <ResearchParameterInput
-                  field="writing_deep_search_queries"
-                  disabled={isAutoOptimizeEnabled}
-                  label="Deep Search Queries"
-                  description="Max decomposed queries"
-                  value={params.writing_deep_search_queries ?? DEFAULT_RESEARCH_PARAMS.writing_deep_search_queries!}
-                  defaultValue={DEFAULT_RESEARCH_PARAMS.writing_deep_search_queries as number}
-                  min={1}
-                  max={20}
-                  onChange={handleNumberChange}
-                  onBlur={handleBlur}
-                  onReset={handleResetParameter}
-                />
-              </div>
+              <CardContent className="space-y-4">
+                {/* Iterations Group */}
+                <div>
+                  <h4 className="text-sm font-medium mb-3">Search Iterations</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <ResearchParameterInput
+                      field="writing_search_max_iterations"
+                      disabled={isAutoOptimizeEnabled}
+                      label="Regular Search Iterations"
+                      description="Max attempts for regular search"
+                      value={params.writing_search_max_iterations ?? DEFAULT_RESEARCH_PARAMS.writing_search_max_iterations!}
+                      defaultValue={DEFAULT_RESEARCH_PARAMS.writing_search_max_iterations as number}
+                      min={1}
+                      max={5}
+                      onChange={handleNumberChange}
+                      onBlur={handleBlur}
+                      onReset={handleResetParameter}
+                    />
+                    <ResearchParameterInput
+                      field="writing_deep_search_iterations"
+                      disabled={isAutoOptimizeEnabled}
+                      label="Deep Search Iterations"
+                      description="Max attempts for deep search"
+                      value={params.writing_deep_search_iterations ?? DEFAULT_RESEARCH_PARAMS.writing_deep_search_iterations!}
+                      defaultValue={DEFAULT_RESEARCH_PARAMS.writing_deep_search_iterations as number}
+                      min={1}
+                      max={10}
+                      onChange={handleNumberChange}
+                      onBlur={handleBlur}
+                      onReset={handleResetParameter}
+                    />
+                  </div>
+                </div>
+
+                {/* Queries Group */}
+                <div>
+                  <h4 className="text-sm font-medium mb-3">Search Queries</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <ResearchParameterInput
+                      field="writing_search_max_queries"
+                      disabled={isAutoOptimizeEnabled}
+                      label="Regular Search Queries"
+                      description="Max decomposed queries"
+                      value={params.writing_search_max_queries ?? DEFAULT_RESEARCH_PARAMS.writing_search_max_queries!}
+                      defaultValue={DEFAULT_RESEARCH_PARAMS.writing_search_max_queries as number}
+                      min={1}
+                      max={10}
+                      onChange={handleNumberChange}
+                      onBlur={handleBlur}
+                      onReset={handleResetParameter}
+                    />
+                    <ResearchParameterInput
+                      field="writing_deep_search_queries"
+                      disabled={isAutoOptimizeEnabled}
+                      label="Deep Search Queries"
+                      description="Max decomposed queries"
+                      value={params.writing_deep_search_queries ?? DEFAULT_RESEARCH_PARAMS.writing_deep_search_queries!}
+                      defaultValue={DEFAULT_RESEARCH_PARAMS.writing_deep_search_queries as number}
+                      min={1}
+                      max={20}
+                      onChange={handleNumberChange}
+                      onBlur={handleBlur}
+                      onReset={handleResetParameter}
+                    />
+                  </div>
+                </div>
+
+                {/* Results Group */}
+                <div>
+                  <h4 className="text-sm font-medium mb-3">Search Results</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <ResearchParameterInput
+                      field="writing_mode_doc_results"
+                      disabled={isAutoOptimizeEnabled}
+                      label="Document Results"
+                      description="Documents per search"
+                      value={params.writing_mode_doc_results ?? DEFAULT_RESEARCH_PARAMS.writing_mode_doc_results!}
+                      defaultValue={DEFAULT_RESEARCH_PARAMS.writing_mode_doc_results as number}
+                      min={1}
+                      max={20}
+                      onChange={handleNumberChange}
+                      onBlur={handleBlur}
+                      onReset={handleResetParameter}
+                    />
+                    <ResearchParameterInput
+                      field="writing_mode_web_results"
+                      disabled={isAutoOptimizeEnabled}
+                      label="Web Results"
+                      description="Web results per search"
+                      value={params.writing_mode_web_results ?? DEFAULT_RESEARCH_PARAMS.writing_mode_web_results!}
+                      defaultValue={DEFAULT_RESEARCH_PARAMS.writing_mode_web_results as number}
+                      min={1}
+                      max={20}
+                      onChange={handleNumberChange}
+                      onBlur={handleBlur}
+                      onReset={handleResetParameter}
+                    />
+                  </div>
+                </div>
+              </CardContent>
             </Card>
           </div>
         </CardContent>

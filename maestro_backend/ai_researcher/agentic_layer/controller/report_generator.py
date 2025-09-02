@@ -7,7 +7,7 @@ import json
 import hashlib
 
 from ai_researcher.config import THOUGHT_PAD_CONTEXT_LIMIT
-from ai_researcher.agentic_layer.context_manager import ExecutionLogEntry
+from ai_researcher.agentic_layer.async_context_manager import ExecutionLogEntry
 from ai_researcher.agentic_layer.schemas.planning import ReportSection
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ class ReportGenerator:
 
         if not mission_context or not mission_context.plan or not mission_context.report_content:
             logger.error(f"Cannot generate title: Mission context, plan, or report content missing for {mission_id}.")
-            self.controller.context_manager.log_execution_step(
+            await self.controller.context_manager.log_execution_step(
                 mission_id, "AgentController", "Generate Report Title",
                 status="failure", error_message="Prerequisites missing (context, plan, or content).",
                 log_queue=log_queue, update_callback=update_callback
@@ -157,7 +157,7 @@ CRITICAL: Do NOT include formatting like "**Title:**", "Title:", markdown, or an
                 
                 if generated_title:
                     # Store the title in metadata
-                    self.controller.context_manager.update_mission_metadata(mission_id, {"report_title": generated_title})
+                    await self.controller.context_manager.update_mission_metadata(mission_id, {"report_title": generated_title})
                     log_status = "success"
                     error_message = None
                     logger.info(f"Generated report title: '{generated_title}'")
@@ -176,7 +176,7 @@ CRITICAL: Do NOT include formatting like "**Title:**", "Title:", markdown, or an
             # Keep generated_title as None
 
         # Log the outcome
-        self.controller.context_manager.log_execution_step(
+        await self.controller.context_manager.log_execution_step(
             mission_id, "AgentController", "Generate Report Title",
             input_summary=f"Query: {user_request[:50]}..., First/Last section snippets provided.",
             output_summary=f"Generated Title: '{generated_title}'" if log_status == "success" else f"Failed: {error_message}",
@@ -225,7 +225,7 @@ CRITICAL: Do NOT include formatting like "**Title:**", "Title:", markdown, or an
             
         return doc_id
     
-    def process_citations(
+    async def process_citations(
         self,
         mission_id: str,
         log_queue: Optional[queue.Queue] = None,
@@ -233,7 +233,7 @@ CRITICAL: Do NOT include formatting like "**Title:**", "Title:", markdown, or an
     ) -> bool:
         """Processes citation placeholders and generates the reference list."""
         logger.info(f"Processing citations for mission {mission_id}...")
-        self.controller.context_manager.log_execution_step(
+        await self.controller.context_manager.log_execution_step(
             mission_id, "AgentController", "Process Citations",
             input_summary="Starting citation processing.", status="success",
             log_queue=log_queue, update_callback=update_callback
@@ -241,7 +241,7 @@ CRITICAL: Do NOT include formatting like "**Title:**", "Title:", markdown, or an
         mission_context = self.controller.context_manager.get_mission_context(mission_id)
         if not mission_context or not mission_context.plan or not mission_context.report_content:
             logger.error(f"Cannot process citations: Mission context, plan, or report content missing for {mission_id}.")
-            self.controller.context_manager.log_execution_step(
+            await self.controller.context_manager.log_execution_step(
                 mission_id, "AgentController", "Process Citations",
                 input_summary="Checking prerequisites", status="failure",
                 error_message="Mission context, plan, or report content missing.",
@@ -271,13 +271,33 @@ CRITICAL: Do NOT include formatting like "**Title:**", "Title:", markdown, or an
         # Initial call to the recursive function
         build_draft_recursive(mission_context.plan.report_outline)
 
-        # Regex to find placeholders like [id1] or [id1, id2, id3] or [note_id1] or [UUID]
+        # Clean up any escaped brackets and underscores in the text that LLMs might produce
+        # Handle various escaping patterns
+        full_draft = full_draft.replace('\\[', '[').replace('\\]', ']')
+        full_draft = full_draft.replace('\\\\[', '[').replace('\\\\]', ']')
+        # Also handle escaped underscores in UUIDs (some LLMs escape these)
+        full_draft = re.sub(r'\\(_)', r'\1', full_draft)
+        
+        # Normalize Unicode brackets to square brackets for consistent processing
+        # Some LLMs use 【】 instead of []
+        full_draft = full_draft.replace('【', '[').replace('】', ']')
+        
+        # Get mission context to check for simple reference mappings
+        has_simple_refs = False
+        if mission_context and mission_context.reference_id_map:
+            has_simple_refs = True
+            logger.info(f"Mission {mission_id} has {len(mission_context.reference_id_map)} reference ID mappings")
+        
+        # Regex to find placeholders - now also supports simple refs like [ref1], [ref2], etc.
         # It captures the full content inside the brackets.
-        # Now supports both 8-char hex IDs and full UUIDs
+        # Now supports both 8-char hex IDs, full UUIDs, note_IDs, and simple refs (ref1, ref2, etc.)
+        # Also supports Unicode brackets 【】 that some LLMs use
         uuid_or_hex = r'(?:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|[a-f0-9]{8})'
-        placeholder_pattern = re.compile(r'\[((?:' + uuid_or_hex + r'|note_[a-f0-9]{8})(?:\s*,\s*(?:' + uuid_or_hex + r'|note_[a-f0-9]{8}))*)\]')
-        # Regex to extract individual UUIDs, 8-char hex IDs, or note_IDs from the content within brackets
-        id_pattern = re.compile(r'([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|[a-f0-9]{8}|note_[a-f0-9]{8})')
+        simple_ref = r'ref\d+'  # Matches ref1, ref2, ref123, etc.
+        # Match both square brackets [] and Unicode brackets 【】
+        placeholder_pattern = re.compile(r'(?:\[|【)((?:' + uuid_or_hex + r'|note_[a-f0-9]{8}|' + simple_ref + r')(?:\s*,\s*(?:' + uuid_or_hex + r'|note_[a-f0-9]{8}|' + simple_ref + r'))*)(?:\]|】)')
+        # Regex to extract individual UUIDs, 8-char hex IDs, note_IDs, or simple refs from the content within brackets
+        id_pattern = re.compile(r'([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|[a-f0-9]{8}|note_[a-f0-9]{8}|ref\d+)')
 
         # Build doc_metadata_source (mapping doc_id -> Note object for metadata lookup)
         all_notes = self.controller.context_manager.get_notes(mission_id)
@@ -312,8 +332,20 @@ CRITICAL: Do NOT include formatting like "**Title:**", "Title:", markdown, or an
             content_inside_brackets = match.group(1)
             potential_ids_in_match = id_pattern.findall(content_inside_brackets)
             for potential_id in potential_ids_in_match:
+                original_id = potential_id  # Keep track of the original for replacement
+                
+                # Check if it's a simple reference ID (ref1, ref2, etc.) and translate back
+                if potential_id.startswith('ref') and mission_context:
+                    original_uuid = mission_context.get_original_reference_id(potential_id)
+                    if original_uuid:
+                        logger.info(f"Translated simple ref '{potential_id}' back to UUID '{original_uuid}'")
+                        potential_id = original_uuid
+                    else:
+                        logger.warning(f"Could not translate simple ref '{potential_id}' back to UUID")
+                        continue  # Skip this ID
+                
                 # Check if it's a note_id and map it to doc_id if needed
-                if potential_id.startswith('note_'):
+                elif potential_id.startswith('note_'):
                     if potential_id in note_id_to_doc_id_map:
                         mapped_doc_id = note_id_to_doc_id_map[potential_id]
                         logger.info(f"Mapped note ID '{potential_id}' to document ID '{mapped_doc_id}'")
@@ -339,9 +371,9 @@ CRITICAL: Do NOT include formatting like "**Title:**", "Title:", markdown, or an
 
         if not used_doc_ids:
             logger.info(f"No valid citation placeholders containing known document IDs found in the draft for mission {mission_id}.")
-            self.controller.context_manager.store_final_report(mission_id, full_draft.strip())
-            self.controller.context_manager.update_mission_status(mission_id, "completed")
-            self.controller.context_manager.log_execution_step(
+            await self.controller.context_manager.store_final_report(mission_id, full_draft.strip())
+            await self.controller.context_manager.update_mission_status(mission_id, "completed")
+            await self.controller.context_manager.log_execution_step(
                 mission_id, "AgentController", "Process Citations",
                 output_summary="Completed (No citations found/needed).", status="success",
                 full_input={'draft_length': len(full_draft)}, full_output=full_draft.strip(),
@@ -577,10 +609,17 @@ CRITICAL: Do NOT include formatting like "**Title:**", "Title:", markdown, or an
             # Extract individual IDs from the matched content
             individual_ids_in_match = id_pattern.findall(content_inside_brackets)
 
-            # Process each ID, mapping note_ids to doc_ids if needed
+            # Process each ID, mapping note_ids to doc_ids and simple refs to UUIDs if needed
             processed_ids = []
             for id_str in individual_ids_in_match:
-                if id_str.startswith('note_'):
+                if id_str.startswith('ref') and mission_context:
+                    # Map simple ref ID back to original UUID
+                    original_uuid = mission_context.get_original_reference_id(id_str)
+                    if original_uuid:
+                        processed_ids.append(original_uuid)
+                    else:
+                        logger.warning(f"Could not map simple ref '{id_str}' back to UUID during replacement")
+                elif id_str.startswith('note_'):
                     # Map note_id to doc_id
                     if id_str in note_id_to_doc_id_map:
                         processed_ids.append(note_id_to_doc_id_map[id_str])
@@ -631,10 +670,10 @@ CRITICAL: Do NOT include formatting like "**Title:**", "Title:", markdown, or an
 
         final_report_string += final_text_body.strip() + references_section
 
-        self.controller.context_manager.store_final_report(mission_id, final_report_string.strip())
-        self.controller.context_manager.update_mission_status(mission_id, "completed")
+        await self.controller.context_manager.store_final_report(mission_id, final_report_string.strip())
+        await self.controller.context_manager.update_mission_status(mission_id, "completed")
         logger.info(f"Citation processing complete. {num_references} unique references generated for mission {mission_id}.")
-        self.controller.context_manager.log_execution_step(
+        await self.controller.context_manager.log_execution_step(
             mission_id, "AgentController", "Process Citations",
             output_summary=f"Completed ({num_references} references generated).", status="success",
             full_input={'draft_length': len(full_draft), 'used_doc_ids': list(used_doc_ids)},

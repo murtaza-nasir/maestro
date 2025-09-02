@@ -15,6 +15,16 @@ def _get_mission_settings(mission_id: Optional[str]) -> Optional[Dict[str, Any]]
         if context_mgr:
             mission_context = context_mgr.get_mission_context(mission_id)
             if mission_context and mission_context.metadata:
+                # Try multiple possible locations for settings
+                # 1. First check for research_params (primary location)
+                research_params = mission_context.metadata.get("research_params")
+                if research_params:
+                    return research_params
+                # 2. Check comprehensive_settings -> research_params
+                comprehensive = mission_context.metadata.get("comprehensive_settings", {})
+                if comprehensive and "research_params" in comprehensive:
+                    return comprehensive["research_params"]
+                # 3. Fall back to mission_settings for backward compatibility
                 return mission_context.metadata.get("mission_settings")
     except Exception:
         pass # Fail silently if context manager isn't available
@@ -63,6 +73,21 @@ def get_structured_research_rounds(mission_id: Optional[str] = None) -> int:
 
 def get_writing_passes(mission_id: Optional[str] = None) -> int:
     return get_setting_with_fallback("writing_passes", 3, int, mission_id)
+def get_max_suggestions_per_batch(mission_id: Optional[str] = None) -> int:
+    """
+    Get max parent sections to process per batch for subsection suggestions during outline revision.
+    Returns -1 for unlimited (process all suggestions in one batch), otherwise a positive integer.
+    Default: 3 parent sections per batch.
+    """
+    return get_setting_with_fallback("max_suggestions_per_batch", 3, int, mission_id)
+
+def get_writing_mode_doc_results(mission_id: Optional[str] = None) -> int:
+    """Get number of document results for writing mode searches."""
+    return get_setting_with_fallback("writing_mode_doc_results", 5, int, mission_id)
+
+def get_writing_mode_web_results(mission_id: Optional[str] = None) -> int:
+    """Get number of web results for writing mode searches."""
+    return get_setting_with_fallback("writing_mode_web_results", 5, int, mission_id)
 
 def get_initial_exploration_doc_results(mission_id: Optional[str] = None) -> int:
     return get_setting_with_fallback("initial_exploration_doc_results", 5, int, mission_id)
@@ -83,14 +108,17 @@ def get_max_notes_for_assignment_reranking(mission_id: Optional[str] = None) -> 
     return get_setting_with_fallback("max_notes_for_assignment_reranking", 80, int, mission_id)
 
 def get_max_concurrent_requests(mission_id: Optional[str] = None) -> int:
-    return get_setting_with_fallback("max_concurrent_requests", 5, int, mission_id)
+    # Get the user's configured value with default of 10
+    user_value = get_setting_with_fallback("max_concurrent_requests", 10, int, mission_id)
+    # Ensure minimum of 10 concurrent requests to prevent deadlocks
+    return max(10, user_value)
 
 def get_skip_final_replanning(mission_id: Optional[str] = None) -> bool:
     return get_setting_with_fallback("skip_final_replanning", False, bool, mission_id)
 
 # --- Advanced Research Loop Configuration ---
 def get_max_research_cycles_per_section(mission_id: Optional[str] = None) -> int:
-    return get_setting_with_fallback("max_research_cycles_per_section", 2, int, mission_id)
+    return get_setting_with_fallback("max_research_cycles_per_section", 2, int, mission_id)  # Default is 2 to match UI
 
 def get_max_total_iterations(mission_id: Optional[str] = None) -> int:
     return get_setting_with_fallback("max_total_iterations", 40, int, mission_id)
@@ -114,6 +142,10 @@ def get_writing_previous_content_preview_chars(mission_id: Optional[str] = None)
 
 def get_research_note_content_limit(mission_id: Optional[str] = None) -> int:
     return get_setting_with_fallback("research_note_content_limit", 32000, int, mission_id)
+
+def get_writing_agent_max_context_chars(mission_id: Optional[str] = None) -> int:
+    """Maximum characters for the entire writing agent context (all notes + previous sections + outline)"""
+    return get_setting_with_fallback("writing_agent_max_context_chars", 300000, int, mission_id)
 
 # --- Search Provider Settings ---
 def get_web_search_provider(mission_id: Optional[str] = None) -> str:
@@ -189,24 +221,6 @@ def get_searxng_categories(mission_id: Optional[str] = None) -> str:
     # Fallback to environment variable
     return os.getenv("SEARXNG_CATEGORIES", "general")
 
-def get_search_max_results(mission_id: Optional[str] = None) -> int:
-    """Get the maximum number of search results from user settings or environment."""
-    # Check user settings first
-    user_settings = get_user_settings()
-    if user_settings:
-        search_settings = user_settings.get("search", {})
-        if search_settings and search_settings.get("max_results"):
-            try:
-                return int(search_settings["max_results"])
-            except (ValueError, TypeError):
-                pass
-    
-    # Fallback to environment variable then default
-    env_value = os.getenv("SEARCH_MAX_RESULTS", "5")
-    try:
-        return int(env_value)
-    except (ValueError, TypeError):
-        return 5
 
 def get_search_depth(mission_id: Optional[str] = None) -> str:
     """Get the search depth (standard/advanced) from user settings or environment."""

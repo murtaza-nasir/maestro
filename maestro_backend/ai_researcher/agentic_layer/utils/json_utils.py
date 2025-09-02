@@ -371,6 +371,10 @@ def extract_non_schema_fields(data: Dict[str, Any], model_class: Type[T]) -> Dic
     Returns:
         A dictionary containing fields that are not part of the model schema.
     """
+    # Handle case where data might be a list instead of dict
+    if not isinstance(data, dict):
+        return {}
+    
     schema_fields = set(model_class.__annotations__.keys())
     extra_fields = {k: v for k, v in data.items() if k not in schema_fields}
     return extra_fields

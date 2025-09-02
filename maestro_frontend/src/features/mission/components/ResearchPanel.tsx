@@ -243,25 +243,30 @@ export const ResearchPanel: React.FC = () => {
     }
   }
 
+  const [isPausing, setIsPausing] = React.useState(false)
+  
   const handleStopMission = async () => {
     if (!activeChat?.missionId) return
     
+    setIsPausing(true)
     try {
       await stopMission(activeChat.missionId)
       // Refresh mission status to ensure UI updates
       await fetchMissionStatus(activeChat.missionId)
       addToast({
         type: 'success',
-        title: 'Mission Stopped',
-        message: 'The research mission has been stopped successfully.',
+        title: 'Mission Paused',
+        message: 'The research mission has been paused successfully.',
       })
     } catch (error) {
-      console.error('Failed to stop mission:', error)
+      console.error('Failed to pause mission:', error)
       addToast({
         type: 'error',
-        title: 'Stop Failed',
-        message: 'Failed to stop the mission. Please try again.',
+        title: 'Pause Failed',
+        message: 'Failed to pause the mission. Please try again.',
       })
+    } finally {
+      setIsPausing(false)
     }
   }
 
@@ -290,15 +295,17 @@ export const ResearchPanel: React.FC = () => {
   const getStatusColor = (status?: string) => {
     switch (status) {
       case 'running':
-        return 'bg-green-500'
+        return 'bg-green-500 animate-pulse'
       case 'paused':
         return 'bg-yellow-500'
       case 'stopped':
-        return 'bg-destructive'
+        return 'bg-gray-500'
       case 'completed':
         return 'bg-primary'
       case 'pending':
         return 'bg-orange-500'
+      case 'planning':
+        return 'bg-blue-500'
       case 'failed':
         return 'bg-destructive'
       default:
@@ -357,9 +364,9 @@ export const ResearchPanel: React.FC = () => {
         title="Research Mission"
         subtitle={
           <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2">
-              <div className={`w-2 h-2 rounded-full ${getStatusColor(currentMission?.status)}`}></div>
-              <span className="text-sm text-muted-foreground">{getStatusText(currentMission?.status)}</span>
+            <div className="flex items-center space-x-2 px-2 py-0.5 bg-muted/50 rounded-md">
+              <div className={`w-2.5 h-2.5 rounded-full ${getStatusColor(currentMission?.status)}`}></div>
+              <span className="text-sm font-medium">{getStatusText(currentMission?.status)}</span>
             </div>
             <MissionHeaderStats 
               logs={activeChat?.missionId ? (missionLogs[activeChat.missionId] || []) : []} 
@@ -373,16 +380,17 @@ export const ResearchPanel: React.FC = () => {
             <div className="flex items-center space-x-2">
               {currentMission?.status && (
                 <>
-                  {/* Running state: Show Stop */}
+                  {/* Running state: Show Stop/Pausing */}
                   {currentMission.status === 'running' && (
                     <Button
                       onClick={handleStopMission}
                       variant="destructive"
                       size="sm"
                       className="text-xs"
+                      disabled={isPausing}
                     >
                       <Square className="h-3 w-3 mr-1" />
-                      Stop
+                      {isPausing ? 'Pausing...' : 'Pause'}
                     </Button>
                   )}
                   
@@ -399,8 +407,8 @@ export const ResearchPanel: React.FC = () => {
                     </Button>
                   )}
                   
-                  {/* Stopped, Completed, or Failed state: Show Resume/Retry */}
-                  {(currentMission.status === 'stopped' || currentMission.status === 'completed' || currentMission.status === 'failed') && (
+                  {/* Paused, Stopped, Completed, or Failed state: Show Resume/Retry */}
+                  {(currentMission.status === 'paused' || currentMission.status === 'stopped' || currentMission.status === 'completed' || currentMission.status === 'failed') && (
                     <Button
                       onClick={handleResumeMission}
                       variant="outline"
@@ -436,7 +444,7 @@ export const ResearchPanel: React.FC = () => {
       {/* Research Tabs Content */}
       <div className="flex-1 overflow-hidden p-6">
         <div className="h-full">
-          <ResearchTabs 
+            <ResearchTabs 
             missionId={activeChat.missionId} 
             isWebSocketConnected={isConnected}
             hasMoreLogs={hasMoreLogs}

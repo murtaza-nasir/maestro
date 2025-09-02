@@ -131,8 +131,10 @@ async def startup_event():
         # Continue anyway, as tables might already exist
     
     # Create a configurable thread pool
-    max_workers = int(os.getenv("MAX_WORKER_THREADS", "10"))
+    # Increased default from 10 to 20 to handle concurrent web fetches better
+    max_workers = int(os.getenv("MAX_WORKER_THREADS", "20"))
     app.state.thread_pool = ThreadPoolExecutor(max_workers=max_workers)
+    logger.info(f"Initialized thread pool with {max_workers} workers")
     
     # Create first user for development if no users exist
     db = SessionLocal()
@@ -198,23 +200,30 @@ async def startup_event():
     # Initialize AI research components
     try:
         from api.missions import initialize_ai_components
-        success = initialize_ai_components()
+        success = await initialize_ai_components()
         if not success:
             logger.error("Failed to initialize AI research components")
     except Exception as e:
         logger.error(f"Error during AI component initialization: {e}", exc_info=True)
     
-    # DISABLED: Consistency check causes crashes at startup
-    # The consistency manager has complex dependencies that fail during initialization
-    # TODO: Fix the initialization order before re-enabling
-    # try:
-    #     from services.document_consistency_monitor import consistency_monitor
-    #     asyncio.create_task(consistency_monitor.force_consistency_check())
-    #     logger.info("Running one-time document consistency check at startup")
-    # except ImportError as e:
-    #     logger.warning(f"Could not import consistency monitor: {e}")
-    # except Exception as e:
-    #     logger.error(f"Failed to run consistency check: {e}", exc_info=True)
+    # Print startup completion message directly to stdout (visible at any log level)
+    # Get the external accessible port from environment (what nginx exposes)
+    maestro_port = os.getenv("MAESTRO_PORT", "80")
+    
+    # Determine the access URL based on configuration
+    # This matches what the setup script configures
+    if maestro_port == "80":
+        access_url = "http://localhost"
+    else:
+        access_url = f"http://localhost:{maestro_port}"
+    
+    print("\n" + "="*60)
+    print("MAESTRO Backend Started Successfully!")
+    print("="*60)
+    print(f"Access MAESTRO at: {access_url}")
+    print(f"API documentation: {access_url}/docs")
+    print("Ready to handle requests")
+    print("="*60 + "\n", flush=True)
 
 @app.on_event("shutdown")
 async def shutdown_event():

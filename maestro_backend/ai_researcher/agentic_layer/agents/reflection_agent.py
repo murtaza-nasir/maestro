@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from typing import Optional, Dict, Tuple, Any, List
 from pydantic import ValidationError
 
@@ -32,6 +33,9 @@ from ai_researcher.agentic_layer.utils.json_format_helper import (
 
 logger = logging.getLogger(__name__)
 
+# Check for debug mode from environment variable
+DEBUG_REFLECTION = os.getenv('DEBUG_REFLECTION', 'false').lower() == 'true'
+
 class ReflectionAgent(BaseAgent):
     """
     Analyzes the current state of the research (plan, notes) and suggests
@@ -40,11 +44,14 @@ class ReflectionAgent(BaseAgent):
     questions or suggests structural changes (like subsections) to guide further research.
     """
     def __init__(self, model_dispatcher: ModelDispatcher, controller: Optional[Any] = None):
-        # TODO: Consider a dedicated 'reflection' model type in config? For now, use default.
         super().__init__(agent_name="ReflectionAgent", model_dispatcher=model_dispatcher)
         self.controller = controller # Store controller
         self.mission_id = None # Initialize mission_id as None
         logger.info("ReflectionAgent initialized.")
+        
+        if DEBUG_REFLECTION:
+            logger.info("🔍 REFLECTION AGENT DEBUG MODE ENABLED - Verbose logging active")
+            logger.info("   To disable, set environment variable: DEBUG_REFLECTION=false")
 
     def _format_notes_for_prompt(self, notes: List[Note]) -> str:
         """Formats the list of Note objects into a string for the prompt."""
@@ -194,7 +201,8 @@ Provide ONLY a single JSON object conforming EXACTLY to the ReflectionOutput sch
 
 **IMPORTANT:** Focus your analysis and generated questions/subsections *only* on the provided notes and the goal of the current section (`{section_id}`), BUT use the provided **Current Report Outline Structure** and **Agent Scratchpad** for context and to avoid proposing redundant sections or subsections. Ensure your entire output is a single, valid JSON object.
 """
-        logger.debug(f"Generated ReflectionAgent prompt for section {section_id}:\n{prompt[:500]}...")
+        if DEBUG_REFLECTION:
+            logger.info(f"Generated ReflectionAgent prompt for section {section_id}:\n{prompt[:500]}...")
         return prompt.strip()
 
     # Removed _format_summaries_for_prompt as it's not used
@@ -301,8 +309,38 @@ Provide ONLY a single JSON object conforming EXACTLY to the ReflectionOutput sch
                         # Use the centralized JSON utilities to parse and prepare the response
                         raw_json_output = response.choices[0].message.content
                         
+                        # Log the raw response for debugging
+                        if DEBUG_REFLECTION:
+                            logger.info(f"Raw LLM response (first 1000 chars): {raw_json_output[:1000]}")
+                        
                         # Parse the JSON response
                         parsed_data = parse_llm_json_response(raw_json_output)
+                        
+                        # Log the parsed data type and content for debugging
+                        if DEBUG_REFLECTION:
+                            logger.info(f"Parsed data type: {type(parsed_data)}")
+                        
+                        # Handle case where parsed_data might be a list
+                        if isinstance(parsed_data, list):
+                            logger.warning(f"Parsed data is a list, not a dict. Content: {parsed_data[:2] if len(parsed_data) > 2 else parsed_data}")
+                            # If it's a list, try to find the dict inside or convert appropriately
+                            if len(parsed_data) > 0 and isinstance(parsed_data[0], dict):
+                                parsed_data = parsed_data[0]
+                                logger.info("Extracted first dict from list response")
+                            else:
+                                # The LLM returned just a list of questions, convert to proper format
+                                logger.warning("LLM returned only a list of questions, converting to proper ReflectionOutput format")
+                                parsed_data = {
+                                    "overall_assessment": "The model returned a list of questions without proper formatting. These questions have been captured for further research.",
+                                    "new_questions": parsed_data if isinstance(parsed_data, list) else [],
+                                    "suggested_subsection_topics": [],
+                                    "proposed_modifications": [],
+                                    "sections_needing_review": [],
+                                    "critical_issues_summary": None,
+                                    "discard_note_ids": [],
+                                    "generated_thought": "Model output was not properly formatted - questions extracted for continued research."
+                                }
+                                logger.info(f"Converted list to proper format with {len(parsed_data.get('new_questions', []))} questions")
                         
                         # Extract non-schema fields like scratchpad_update
                         extra_fields = extract_non_schema_fields(parsed_data, ReflectionOutput)
@@ -325,7 +363,8 @@ Provide ONLY a single JSON object conforming EXACTLY to the ReflectionOutput sch
                                     logger.info("Flattened tuple in suggested_subsection_topics")
                         
                         # Log the parsed data structure for debugging
-                        logger.debug(f"Parsed data after processing: {json.dumps(prepared_data, indent=2)}")
+                        if DEBUG_REFLECTION:
+                            logger.info(f"Parsed data after processing: {json.dumps(prepared_data, indent=2)}")
                         
                         # Validate the rest of the data against the schema
                         response_model = ReflectionOutput(**prepared_data)

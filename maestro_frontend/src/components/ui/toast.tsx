@@ -57,7 +57,7 @@ const ToastContainer: React.FC = () => {
   const { toasts, removeToast } = useToast()
 
   return (
-    <div className="fixed top-4 right-4 z-50 space-y-2">
+    <div className="fixed bottom-4 right-4 z-50 space-y-2">
       {toasts.map(toast => (
         <ToastItem key={toast.id} toast={toast} onRemove={removeToast} />
       ))}
@@ -93,7 +93,7 @@ const ToastItem: React.FC<{ toast: Toast; onRemove: (id: string) => void }> = ({
   }
 
   return (
-    <div className={`min-w-80 max-w-md w-full ${getBgColor()} border rounded-lg shadow-lg p-4 animate-in slide-in-from-right duration-300`}>
+    <div className={`min-w-80 max-w-md w-full ${getBgColor()} border rounded-lg shadow-lg p-4 animate-in slide-in-from-bottom-4 slide-in-from-right-4 duration-300`}>
       <div className="flex items-start">
         <div className="flex-shrink-0">
           {getIcon()}

@@ -138,7 +138,6 @@ class Retriever:
             print(f"Returning {len(final_results)} results (reranker disabled or skipped).")
 
 
-        # 4. TODO: Potentially format results further if needed by agents
-        # For now, return the list of dictionaries as retrieved/reranked
+        # Return the list of dictionaries as retrieved/reranked
 
         return final_results

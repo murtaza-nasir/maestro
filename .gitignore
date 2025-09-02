@@ -13,6 +13,12 @@
 *.log
 docker-logs.txt
 
+# Release notes (not for version control)
+release-notes/
+
+# Evaluation folder (local testing only)
+evaluation/
+
 # =============================================================================
 # PYTHON
 # =============================================================================
@@ -410,7 +416,6 @@ htmlcov/
 .pytest_cache/
 .tox/
 pdfs*/
-docs/
 # =============================================================================
 # STREAMLIT & EVALUATION
 # =============================================================================
@@ -434,7 +439,7 @@ docs/
 # =============================================================================
 .claude/
 CLAUDE.md
-docs/*
+own_docs/*
 notes.md
 WEBSOCKET_REWRITE_TODO.md
 # Temporary test files

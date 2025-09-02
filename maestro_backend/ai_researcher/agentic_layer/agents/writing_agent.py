@@ -14,7 +14,11 @@ from ai_researcher.agentic_layer.agents.base_agent import BaseAgent
 from ai_researcher.agentic_layer.model_dispatcher import ModelDispatcher
 # Note: MODEL_MAPPING was removed from model_dispatcher, we should get it from config now
 from ai_researcher import config # Import config to get model mapping
-from ai_researcher.dynamic_config import get_writing_previous_content_preview_chars, get_thought_pad_context_limit
+from ai_researcher.dynamic_config import (
+    get_writing_previous_content_preview_chars, 
+    get_thought_pad_context_limit,
+    get_writing_agent_max_context_chars
+)
 # Writing agent typically doesn't need tools directly
 # from ai_researcher.agentic_layer.tool_registry import ToolRegistry
 from ai_researcher.agentic_layer.schemas.planning import ReportSection # Needed for section context
@@ -70,6 +74,60 @@ class WritingAgent(BaseAgent):
         self.controller = controller # Store controller
         self.mission_id = None # Initialize mission_id as None
 
+    def _estimate_tokens(self, text: str) -> int:
+        """Rough estimate of token count - approximately 4 chars per token"""
+        return len(text) // 4
+    
+    def _truncate_context_intelligently(
+        self, 
+        notes_context: str, 
+        previous_context: str, 
+        outline_context: str,
+        other_context: str,
+        max_chars: int
+    ) -> Tuple[str, str, str]:
+        """
+        Intelligently truncate context to fit within max_chars limit.
+        Prioritizes: notes > outline > previous sections
+        Returns truncated (notes_context, previous_context, outline_context)
+        """
+        # Calculate current total
+        total_chars = len(notes_context) + len(previous_context) + len(outline_context) + len(other_context)
+        
+        if total_chars <= max_chars:
+            return notes_context, previous_context, outline_context
+        
+        logger.warning(f"WritingAgent context size ({total_chars} chars) exceeds limit ({max_chars} chars). Truncating...")
+        
+        # Reserve space for other context (system prompt, section details, etc.)
+        available_chars = max_chars - len(other_context)
+        
+        # Allocation strategy: 
+        # - Notes: 60% (most important for content)
+        # - Previous sections: 25% (context)
+        # - Outline: 15% (structure reference)
+        notes_budget = int(available_chars * 0.6)
+        previous_budget = int(available_chars * 0.25)
+        outline_budget = int(available_chars * 0.15)
+        
+        # Truncate each section if needed
+        if len(notes_context) > notes_budget:
+            # Keep first part of notes (most relevant are usually first)
+            notes_context = notes_context[:notes_budget - 50] + "\n\n[... additional notes truncated due to context limits ...]"
+        
+        if len(previous_context) > previous_budget:
+            # Keep most recent sections (end of content)
+            previous_context = "## Content from Previous Sections (truncated):\n\n" + previous_context[-(previous_budget - 100):] 
+        
+        if len(outline_context) > outline_budget:
+            # Keep beginning of outline (shows structure)
+            outline_context = outline_context[:outline_budget - 50] + "\n\n[... additional outline sections truncated ...]"
+        
+        final_total = len(notes_context) + len(previous_context) + len(outline_context) + len(other_context)
+        logger.info(f"Context truncated from {total_chars} to {final_total} chars")
+        
+        return notes_context, previous_context, outline_context
+    
     def _sort_consecutive_citations(self, text: str) -> str:
         """Finds consecutive citation brackets like [10][2] or [abc][10] and sorts them numerically/lexicographically -> [2][10] or [10][abc]."""
         if not text:
@@ -108,7 +166,7 @@ class WritingAgent(BaseAgent):
     def _default_system_prompt(self) -> str:
         """Generates the default system prompt for the Writing Agent."""
         # Note: Citation placeholder format is defined here: [doc_id]
-        return """You are an expert academic writer. Your task is to write or revise a specific section or subsection of a research report. You will be provided with the section's details (ID, title, goal, strategy), the full report outline, the title of the parent section (if applicable), relevant research notes, potentially content from previously written sections, possibly revision suggestions, and the overall mission goals.
+        return r"""You are an expert academic writer. Your task is to write or revise a specific section or subsection of a research report. You will be provided with the section's details (ID, title, goal, strategy), the full report outline, the title of the parent section (if applicable), relevant research notes, potentially content from previously written sections, possibly revision suggestions, and the overall mission goals.
 
 **Context Awareness:**
 - **Active Mission Goals:** The user prompt will contain the overall mission goals (original request, request type, target tone, target audience, etc.). **CRITICAL: You MUST strictly adhere to these goals, especially `request_type`, `target_tone`, and `target_audience`, when writing.** Adjust your vocabulary, sentence structure, level of detail, and overall style accordingly. For example, a 'technical report' for an 'expert audience' requires different language than a 'blog post' for a 'general audience'.
@@ -120,6 +178,24 @@ class WritingAgent(BaseAgent):
 **General Writing Guidelines:**
 - Write in a style that is **consistent with the `target_tone` and appropriate for the `target_audience`** specified in the Active Mission Goals. Adapt formality, objectivity, and complexity as needed.
 - **CRITICAL:** Your primary guide for content is the detailed `Description/Goal` provided for the 'Section to Write/Revise'. Ensure your writing covers *only* the specific sub-topics, arguments, key points, or questions listed in that description. Do not go beyond the scope defined by the goal.
+- **Mathematical Formulas and LaTeX:**
+    - **Use proper LaTeX syntax** for all mathematical expressions and formulas.
+    - **Use single dollar signs for inline math**: `$formula$`
+    - **Use double dollar signs for display math**: `$$formula$$` 
+    - **CRITICAL:** Always use dollar sign delimiters, NEVER square brackets or parentheses
+    - **Correct examples:**
+        - For inline: `$E = mc^2$` or `$R^2 = 0.95$`
+        - For display: `$$\int_{-\infty}^{\infty} e^{-x^2} dx = \sqrt{\pi}$$`
+        - For Greek letters: `$\lambda$`, `$\rho$`, `$\beta$`
+        - For equations: `$\rho W y$`, `$\lambda W u$`
+        - For subscripts: `$x_1$`, `$\beta_0 + \beta_1 X$`
+        - For sums: `$\sum_{i=1}^{n} x_i$`
+        - For quantum: `$$i\hbar\frac{\partial}{\partial t}\Psi = \hat{H}\Psi$$`
+    - **NEVER do this (WRONG):**
+        - `[ \hbar\frac{\partial}{\partial t}\Psi ]` ← Wrong! Use `$$` instead
+        - `\( E = mc^2 \)` ← Wrong! Use `$` instead
+        - `\[ formula \]` ← Wrong! Use `$$` instead
+        - `\begin{equation}...\end{equation}` ← Wrong! Use `$$` instead
 - **Research Strategy Handling:**
     - **`research_based`:** Synthesize information from the provided `Research Notes` into a coherent narrative supporting the section's goal, **ensuring the synthesis aligns with the mission goals (tone, audience)**. Base writing strictly on these notes.
     - **`content_based`:** (e.g., Introduction, Conclusion) Write this section based *primarily* on the content of *other* sections provided in `Content from Previous Sections` and the `Overall Report Outline`. Synthesize the key themes/arguments from the rest of the report to create a cohesive introduction or conclusion. `Research Notes` may be minimal or absent for these sections.
@@ -168,39 +244,6 @@ class WritingAgent(BaseAgent):
 **Important:** The 'Agent Scratchpad' provided is for your contextual awareness only - it shows previous agent thoughts and actions. DO NOT include any scratchpad content in your output. Output ONLY the section text.
 """
 
-    def _format_notes_for_writing(self, notes: List[Note]) -> str:
-        """Formats the list of Note objects, grouped by source, into a string for the writing prompt."""
-        if not notes:
-            return "## Research Notes:\n\nNo relevant notes were provided for this section.\n"
-
-        notes_by_source: Dict[str, List[Note]] = {}
-        for note in notes:
-            source_id = note.source_id # Group by the unique source ID
-            # For documents, source_id is already the full UUID, no need to split
-            doc_id = source_id
-            if doc_id not in notes_by_source:
-                notes_by_source[doc_id] = []
-            notes_by_source[doc_id].append(note)
-
-        formatted_text = "## Research Notes (Grouped by Source Document):\n\n"
-        for doc_id, source_notes in notes_by_source.items():
-            # Try to get consistent metadata from the first note of the group
-            first_note = source_notes[0]
-            title = getattr(first_note.source_metadata, 'title', None) or 'Unknown Title'
-            year = getattr(first_note.source_metadata, 'publication_year', None) or 'N/A' # Corrected key
-            authors = getattr(first_note.source_metadata, 'authors', None) or 'Unknown Authors'
-            source_header = f"### Source Document: {doc_id} (Title: {title}, Year: {year}, Authors: {authors})\n"
-            formatted_text += source_header
-            for note in source_notes:
-                formatted_text += f"- **Note ID: {note.note_id}**\n"
-                formatted_text += f"  - Content: {note.content}\n"
-                # Optional: Add chunk ID if useful, but might be too much detail
-                # chunk_id = note.source_metadata.get('chunk_id', 'N/A')
-                # formatted_text += f"  - (Origin Chunk: {chunk_id})\n"
-            formatted_text += "\n" # Add space between source groups
-
-        return formatted_text
-
     def _format_revision_suggestions(self, suggestions: List[WritingChangeSuggestion]) -> str:
         """Formats the list of revision suggestions into a string for the prompt."""
         if not suggestions:
@@ -217,11 +260,24 @@ class WritingAgent(BaseAgent):
             formatted_text += "\n"
         return formatted_text
 
-    def _format_notes_for_writing(self, notes: List[Note]) -> str:
-        """Formats the list of Note objects, grouped by source, into a string for the writing prompt."""
+    def _format_notes_for_writing(self, notes: List[Note], mission_id: Optional[str] = None) -> str:
+        """Formats the list of Note objects, grouped by source, into a string for the writing prompt.
+        
+        Args:
+            notes: List of Note objects to format
+            mission_id: Optional mission ID to get reference mapping from mission context
+        """
         if not notes:
             return "## Research Notes:\n\nNo relevant notes were provided for this section.\n"
 
+        # Get mission context for reference ID mapping if available
+        mission_context = None
+        if mission_id and hasattr(self, 'controller') and self.controller:
+            try:
+                mission_context = self.controller.context_manager.get_mission_context(mission_id)
+            except Exception as e:
+                logger.warning(f"Could not get mission context for reference mapping: {e}")
+        
         formatted_text = "## Research Notes (Grouped by Source Document/Synthesis):\n\n"
         processed_internal_notes = set() # Keep track of internal notes already processed via aggregation
 
@@ -247,14 +303,19 @@ class WritingAgent(BaseAgent):
             first_note = source_notes[0]
             source_type = first_note.source_type
             doc_id_for_citation = source_id # This is already the base doc_id or URL
+            
+            # Get simple reference ID if mission context is available
+            simple_ref_id = doc_id_for_citation  # Default to original ID
+            if mission_context:
+                simple_ref_id = mission_context.get_simple_reference_id(doc_id_for_citation)
 
             # --- Determine Header based on source_type ---
             if source_type == "document":
                  title = getattr(first_note.source_metadata, 'title', None) or 'Unknown Title'
                  year = getattr(first_note.source_metadata, 'publication_year', None) or 'N/A'
                  authors = getattr(first_note.source_metadata, 'authors', None) or 'Unknown Authors'
-                 source_header = f"### Source Document: {doc_id_for_citation} (Title: {title}, Year: {year}, Authors: {authors})\n"
-                 source_header += f"**Use `[{doc_id_for_citation}]` for citations from this document.**\n\n"
+                 source_header = f"### Source Document: {simple_ref_id} (Title: {title}, Year: {year}, Authors: {authors})\n"
+                 source_header += f"**Use `[{simple_ref_id}]` for citations from this document.**\n\n"
             elif source_type == "web":
                  title = getattr(first_note.source_metadata, 'title', None) or 'Unknown Title'
                  url = getattr(first_note.source_metadata, 'url', None) or source_id # Use metadata URL if available
@@ -271,7 +332,13 @@ class WritingAgent(BaseAgent):
                  # --> REVISED APPROACH: Use the first 8 chars of URL hash as doc_id for web?
                  import hashlib
                  web_doc_id = hashlib.sha1(url.encode()).hexdigest()[:8]
-                 source_header += f"**Use `[{web_doc_id}]` for citations from this web page.**\n\n"
+                 
+                 # Get simple reference ID if mission context is available
+                 simple_web_ref_id = web_doc_id  # Default to hash ID
+                 if mission_context:
+                     simple_web_ref_id = mission_context.get_simple_reference_id(web_doc_id)
+                 
+                 source_header += f"**Use `[{simple_web_ref_id}]` for citations from this web page.**\n\n"
                  doc_id_for_citation = web_doc_id # Use the generated hash for citation
             else: # Should not happen based on filtering
                  source_header = f"### Unknown Source Type: {source_id}\n"
@@ -393,7 +460,7 @@ class WritingAgent(BaseAgent):
                 # Proceed without notes if revising, scratchpad update will be set later
             else:
                 # Format notes only if research_based and notes exist
-                notes_context = self._format_notes_for_writing(notes_for_section)
+                notes_context = self._format_notes_for_writing(notes_for_section, mission_id)
         elif not notes_for_section and is_revision_pass:
              # Log if revising a non-research section without new notes (though notes aren't primary input here)
              logger.info(f"No *new* notes provided for revision of non-research_based section {section_to_write.section_id}. Proceeding with draft and suggestions.")
@@ -462,17 +529,6 @@ class WritingAgent(BaseAgent):
 - **Research Strategy:** {section_to_write.research_strategy}
 """
 
-        input_section = f"""
-**Input Information:**
----
-{outline_context_str}
----
-{notes_context}
----
-{previous_context}
----
-"""
-
         revision_section = ""
         if is_revision_pass:
             revision_section = f"""
@@ -491,6 +547,33 @@ class WritingAgent(BaseAgent):
 **Task:** {'Revise the "Current Draft Content" based *specifically* on the "Revision Suggestions".' if is_revision_pass else 'Write the initial draft content.'} Ensure the final output is the *complete* text for the '{section_to_write.title}' section/subsection, adhering to all system prompt guidelines (style, citations, NO HEADERS, transitions, avoiding repetition). 
 
 **CRITICAL:** Output *only* the section text. Do NOT include any meta-commentary, agent thoughts, or scratchpad content. Do NOT prefix your response with "Agent Scratchpad:" or any similar text.
+"""
+
+        # Calculate other context size (everything except notes, previous sections, and outline)
+        other_context = prompt_header + section_details + revision_section + task_instruction
+        
+        # Get max context limit
+        max_context_chars = get_writing_agent_max_context_chars(self.mission_id)
+        
+        # Apply intelligent truncation if needed
+        notes_context, previous_context, outline_context_str = self._truncate_context_intelligently(
+            notes_context,
+            previous_context,
+            outline_context_str,
+            other_context,
+            max_context_chars
+        )
+        
+        # Now construct the input section with truncated content
+        input_section = f"""
+**Input Information:**
+---
+{outline_context_str}
+---
+{notes_context}
+---
+{previous_context}
+---
 """
 
         prompt = prompt_header + section_details + input_section + revision_section + task_instruction
@@ -620,7 +703,7 @@ class WritingAgent(BaseAgent):
         # --- End Fetch Goals & Thoughts ---
 
         # Construct the prompt
-        prompt = f"""You are an expert academic writer. Your task is to write a concise introductory paragraph for a specific section of a research report, based *only* on the provided content of its immediate subsections.
+        prompt = fr"""You are an expert academic writer. Your task is to write a concise introductory paragraph for a specific section of a research report, based *only* on the provided content of its immediate subsections.
 
 {active_goals_context}
 {active_thoughts_context}
@@ -640,7 +723,12 @@ class WritingAgent(BaseAgent):
     - Provides a smooth transition into the first subsection.
 4.  **CRITICAL:** Base the introduction *strictly* on the provided subsection content. Do not introduce new information, concepts, or citations not present in the subsections.
 5.  Adhere to the `target_tone` and `target_audience` specified in the Active Mission Goals.
-6.  **CRITICAL:** Output *only* the generated introductory paragraph text. Do NOT include headings, titles, meta-commentary, agent thoughts, or scratchpad content. Do NOT prefix your response with "Agent Scratchpad:" or any similar text.
+6.  **Mathematical Formulas:** 
+    - **Use proper LaTeX syntax** with single dollar signs `$...$` for inline math and double dollar signs `$$...$$` for display math.
+    - **NEVER use square brackets [ ] or parentheses \( \) for math delimiters** - always use dollar signs.
+    - Use LaTeX for all mathematical expressions, Greek letters, subscripts, and superscripts.
+    - Example: `$\\lambda$`, `$E = mc^2$`, `$$\\int_{{0}}^{{\\infty}} f(x) dx$$`
+7.  **CRITICAL:** Output *only* the generated introductory paragraph text. Do NOT include headings, titles, meta-commentary, agent thoughts, or scratchpad content. Do NOT prefix your response with "Agent Scratchpad:" or any similar text.
 """
 
         try:
@@ -658,27 +746,27 @@ class WritingAgent(BaseAgent):
                 synthesized_content = llm_response.choices[0].message.content.strip()
                 if synthesized_content:
                     # Store the synthesized content
-                    self.controller.context_manager.store_report_section(mission_id, section.section_id, synthesized_content)
+                    await self.controller.context_manager.store_report_section(mission_id, section.section_id, synthesized_content)
                     logger.info(f"Successfully synthesized and stored intro for section {section.section_id}.")
                     scratchpad_update = f"Synthesized intro for section {section.section_id}."
                 else:
                     logger.error(f"LLM returned empty content for synthesizing intro of section {section.section_id}.")
                     scratchpad_update = f"LLM returned empty content during intro synthesis for section {section.section_id}."
                     # Store the default error message
-                    self.controller.context_manager.store_report_section(mission_id, section.section_id, synthesized_content)
+                    await self.controller.context_manager.store_report_section(mission_id, section.section_id, synthesized_content)
 
             else:
                 logger.error(f"LLM response invalid or missing content for synthesizing intro of section {section.section_id}.")
                 scratchpad_update = f"LLM call failed during intro synthesis for section {section.section_id}."
                 # Store the default error message
-                self.controller.context_manager.store_report_section(mission_id, section.section_id, synthesized_content)
+                await self.controller.context_manager.store_report_section(mission_id, section.section_id, synthesized_content)
 
 
         except Exception as e:
             logger.error(f"Error during intro synthesis LLM call for section {section.section_id}: {e}", exc_info=True)
             scratchpad_update = f"Exception during intro synthesis for section {section.section_id}: {e}"
             # Store the default error message
-            self.controller.context_manager.store_report_section(mission_id, section.section_id, synthesized_content)
+            await self.controller.context_manager.store_report_section(mission_id, section.section_id, synthesized_content)
 
         # Log the step (using controller's context manager for consistency)
         log_status = "success" if synthesized_content and not synthesized_content.startswith("[Error:") else "failure"

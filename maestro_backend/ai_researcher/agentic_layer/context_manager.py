@@ -156,17 +156,53 @@ class MissionContext(BaseModel):
     error_info: Optional[str] = None # Store error details if mission fails
     agent_scratchpad: Optional[str] = Field(None, description="Dynamic scratchpad for high-level agent context and insights.") # <-- Add scratchpad
     execution_log: List[ExecutionLogEntry] = Field(default_factory=list, description="Log of agent actions and results.")
+    writing_suggestions: Optional[List[Any]] = Field(default=None, description="Writing revision suggestions from reflection passes.")
     goal_pad: List[GoalEntry] = Field(default_factory=list, description="Persistent list of research goals and guiding thoughts.") # <-- ADDED goal_pad
     thought_pad: List[ThoughtEntry] = Field(default_factory=list, description="Working memory holding recent thoughts and focus points.") # <-- ADDED thought_pad
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata for the mission (e.g., questions, refinements).")
+    
+    # Comprehensive mission settings
+    mission_settings: Optional[Dict[str, Any]] = Field(None, description="All settings used for this mission")
+    document_group_id: Optional[str] = Field(None, description="Document group ID if provided")
+    document_group_name: Optional[str] = Field(None, description="Document group name if provided")
+    use_web_search: bool = Field(True, description="Whether web search was enabled")
+    
+    # Model configurations used
+    llm_config: Optional[Dict[str, Any]] = Field(None, description="LLM models and providers used")
+    
+    # Research parameters snapshot
+    research_params: Optional[Dict[str, Any]] = Field(None, description="Research parameters used")
+    
+    # Cost and statistics
+    total_cost: float = Field(0.0, description="Total cost of the mission")
+    total_tokens: Dict[str, int] = Field(default_factory=lambda: {"prompt": 0, "completion": 0, "native": 0})
+    total_web_searches: int = Field(0, description="Total web searches performed")
     
     # Resumable execution tracking
     execution_phase: str = Field(default="not_started", description="Current execution phase")
     completed_phases: List[str] = Field(default_factory=list, description="List of completed phases")
     phase_checkpoint: Dict[str, Any] = Field(default_factory=dict, description="Checkpoint data for resuming phases")
+    
+    # Reference ID mapping for simplified citations
+    reference_id_map: Dict[str, str] = Field(default_factory=dict, description="Maps UUID/complex IDs to simple reference IDs (e.g., 'ref1', 'ref2')")
+    reverse_reference_map: Dict[str, str] = Field(default_factory=dict, description="Maps simple reference IDs back to original UUIDs")
+    reference_counter: int = Field(default=0, description="Counter for generating sequential reference IDs")
 
     def update_timestamp(self):
         self.updated_at = get_current_time()
+    
+    def get_simple_reference_id(self, original_id: str) -> str:
+        """Get or create a simple reference ID for a complex UUID."""
+        if original_id not in self.reference_id_map:
+            self.reference_counter += 1
+            simple_id = f"ref{self.reference_counter}"
+            self.reference_id_map[original_id] = simple_id
+            self.reverse_reference_map[simple_id] = original_id
+        return self.reference_id_map[original_id]
+    
+    def get_original_reference_id(self, simple_id: str) -> Optional[str]:
+        """Get the original UUID from a simple reference ID."""
+        return self.reverse_reference_map.get(simple_id)
 
 class ContextManager:
     """
@@ -256,10 +292,24 @@ class ContextManager:
 
     # --- Public Methods ---
 
-    def start_mission(self, user_request: str, chat_id: str) -> MissionContext:
-        """Creates and stores context for a new mission."""
+    def start_mission(self, user_request: str, chat_id: str, 
+                      document_group_id: Optional[str] = None,
+                      document_group_name: Optional[str] = None,
+                      use_web_search: bool = True,
+                      mission_settings: Optional[Dict[str, Any]] = None,
+                      llm_config: Optional[Dict[str, Any]] = None,
+                      research_params: Optional[Dict[str, Any]] = None) -> MissionContext:
+        """Creates and stores context for a new mission with comprehensive settings."""
         """Creates a new mission, stores it in the database, and adds it to the in-memory cache."""
-        mission = MissionContext(user_request=user_request)
+        mission = MissionContext(
+            user_request=user_request,
+            document_group_id=document_group_id,
+            document_group_name=document_group_name,
+            use_web_search=use_web_search,
+            mission_settings=mission_settings,
+            llm_config=llm_config,
+            research_params=research_params
+        )
         mission.metadata["chat_id"] = chat_id
 
         self._missions[mission.mission_id] = mission
@@ -547,6 +597,35 @@ class ContextManager:
                 db.close()
         else:
             logger.error(f"Cannot add note for non-existent mission ID: {mission_id}")
+
+    def update_writing_suggestions(self, mission_id: str, suggestions: List[Any]):
+        """Updates writing suggestions for a mission and persists to database."""
+        mission = self.get_mission_context(mission_id)
+        if mission:
+            mission.writing_suggestions = suggestions
+            mission.update_timestamp()
+            
+            db = self.db_session_factory()
+            try:
+                crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
+                logger.debug(f"Updated writing suggestions for mission {mission_id} with {len(suggestions)} suggestions.")
+            except Exception as e:
+                logger.error(f"Error updating writing suggestions in DB: {e}")
+            finally:
+                db.close()
+        else:
+            logger.error(f"Cannot update writing suggestions for non-existent mission ID: {mission_id}")
+
+    def get_writing_suggestions(self, mission_id: str) -> List[Any]:
+        """Retrieves writing suggestions for a mission."""
+        mission = self.get_mission_context(mission_id)
+        if mission:
+            # Handle missions created before writing_suggestions field was added
+            if hasattr(mission, 'writing_suggestions') and mission.writing_suggestions is not None:
+                return mission.writing_suggestions
+            else:
+                return []
+        return []
 
     def add_notes(self, mission_id: str, notes: List[Note]):
         """Adds a list of notes and persists the updated context to the database."""

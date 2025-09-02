@@ -27,8 +27,8 @@ else:
     # Use QueuePool for proper connection pooling
     engine = create_engine(
         DATABASE_URL,
-        pool_size=20,  # Number of persistent connections
-        max_overflow=10,  # Maximum overflow connections
+        pool_size=50,  # Increased: Number of persistent connections to handle concurrent operations
+        max_overflow=30,  # Increased: Maximum overflow connections for peak loads
         pool_pre_ping=True,  # Verify connections before using
         pool_recycle=3600,  # Recycle connections after 1 hour
         echo=False,  # Set to True for SQL query debugging

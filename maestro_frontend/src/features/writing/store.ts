@@ -28,6 +28,7 @@ interface Chat {
   created_at: string
   updated_at: string
   chat_type: string
+  settings?: Record<string, any>  // Add settings field for storing tool configuration
 }
 
 // Extended message type to include sources and proper timestamp handling
@@ -258,15 +259,8 @@ export const useWritingStore = create<WritingState>((set, get) => ({
       }
     } catch (error) {
       console.error('Failed to delete message pair:', error)
-      // Still remove from UI even if backend fails - just remove the clicked message
-      const currentMessages = state.getCurrentMessages()
-      const filteredMessages = currentMessages.filter((msg: WritingMessageWithSources) => msg.id !== messageId)
-      set((state: WritingState) => ({
-        messagesByChat: {
-          ...state.messagesByChat,
-          [chatId]: filteredMessages
-        }
-      }))
+      // Don't remove from UI if backend fails - show error instead
+      throw error // Propagate error to caller so they can show it to user
     }
   },
 
@@ -412,12 +406,27 @@ export const useWritingStore = create<WritingState>((set, get) => ({
       // Import the API client
       const { apiClient } = await import('../../config/api')
       const response = await apiClient.get('/api/chats?chat_type=writing')
-      set({ chats: response.data, isLoading: false })
+      
+      // Handle both paginated and non-paginated responses
+      let chatsData = []
+      if (response.data && Array.isArray(response.data.items)) {
+        // Paginated response
+        chatsData = response.data.items
+      } else if (Array.isArray(response.data)) {
+        // Direct array response (legacy)
+        chatsData = response.data
+      } else {
+        console.error('Unexpected response format from /api/chats:', response.data)
+        chatsData = []
+      }
+      
+      set({ chats: chatsData, isLoading: false })
     } catch (error) {
       console.error('Failed to load writing chats:', error)
       set({ 
         error: error instanceof Error ? error.message : 'Failed to load writing chats',
-        isLoading: false 
+        isLoading: false,
+        chats: [] // Ensure chats is always an array
       })
     }
   },
@@ -473,83 +482,73 @@ export const useWritingStore = create<WritingState>((set, get) => ({
       }
     }
     
-    // Check if we already have the chat
-    const existingChat = state.chats.find(c => c.id === chatId)
-    if (existingChat) {
-      // Clear current state first to ensure clean slate
+    // Always fetch the latest chat data to get the most recent settings
+    try {
+      const { apiClient } = await import('../../config/api')
+      const chatResponse = await apiClient.get(`/api/chats/${chatId}`)
+      const fullChat = chatResponse.data
+      
+      // Update the chats list with the fresh data
       set((state: WritingState) => ({ 
-        activeChat: existingChat, 
+        chats: state.chats.map(c => c.id === chatId ? fullChat : c),
+        activeChat: fullChat, 
         error: null,
         messagesByChat: {
           ...state.messagesByChat,
-          [existingChat.id]: []
+          [fullChat.id]: []
         },
         currentSession: null, 
         currentDraft: null,
         // Clear agent status for the new chat to prevent spinner from following
         agentStatus: {
           ...state.agentStatus,
-          [existingChat.id]: 'idle'
+          [fullChat.id]: 'idle'
         }
       }))
       
-      // Load chat messages and writing session
-      try {
-        // Import the API client
-        const { apiClient } = await import('../../config/api')
-        
-        // Load chat messages
-        const messagesResponse = await apiClient.get(`/api/chats/${chatId}/messages`)
-        const convertedMessages: WritingMessageWithSources[] = messagesResponse.data.map((msg: any) => ({
-          id: msg.id,
-          role: msg.role,
-          content: msg.content,
-          timestamp: ensureDate(msg.created_at),
-          sources: msg.sources || []
-        }))
-        set((state: WritingState) => ({
-          messagesByChat: {
-            ...state.messagesByChat,
-            [chatId]: convertedMessages
-          }
-        }))
-
-        // Try to load writing session for this chat
-        try {
-          const sessionResponse = await apiClient.get(`/api/writing/sessions/by-chat/${chatId}`)
-          const session = sessionResponse.data
-          set({ currentSession: session })
-          
-          // Load current draft if exists
-          if (session.current_draft) {
-            set({ currentDraft: session.current_draft })
-          } else {
-            // Try to load/create draft
-            try {
-              const draftResponse = await apiClient.get(`/api/writing/sessions/${session.id}/draft`)
-              set({ currentDraft: draftResponse.data })
-            } catch (draftError) {
-              console.error('Failed to load/create draft:', draftError)
-            }
-          }
-        } catch (sessionError) {
-          // console.log('No writing session found for chat, will create when needed')
-        }
-      } catch (error) {
-        console.error('Failed to load chat data:', error)
-        set({ error: error instanceof Error ? error.message : 'Failed to load chat data' })
-      }
-    } else {
-      set((state: WritingState) => ({ 
-        error: 'Chat not found', 
-        activeChat: null, 
+      // Load chat messages
+      const messagesResponse = await apiClient.get(`/api/chats/${chatId}/messages`)
+      const convertedMessages: WritingMessageWithSources[] = messagesResponse.data.map((msg: any) => ({
+        id: msg.id,
+        role: msg.role,
+        content: msg.content,
+        timestamp: ensureDate(msg.created_at),
+        sources: msg.sources || []
+      }))
+      set((state: WritingState) => ({
         messagesByChat: {
           ...state.messagesByChat,
-          ['default']: []
-        },
-        currentSession: null, 
-        currentDraft: null 
+          [chatId]: convertedMessages
+        }
       }))
+
+      // Try to load writing session for this chat
+      try {
+        const sessionResponse = await apiClient.get(`/api/writing/sessions/by-chat/${chatId}`)
+        const session = sessionResponse.data
+        set({ currentSession: session })
+        
+        // Load current draft if exists
+        if (session.current_draft) {
+          set({ currentDraft: session.current_draft })
+        } else {
+          // Try to load/create draft
+          try {
+            const draftResponse = await apiClient.get(`/api/writing/sessions/${session.id}/draft`)
+            set({ currentDraft: draftResponse.data })
+          } catch (draftError) {
+            console.error('Failed to load/create draft:', draftError)
+          }
+        }
+      } catch (sessionError) {
+        // console.log('No writing session found for chat, will create when needed')
+      }
+    } catch (error) {
+      console.error('Failed to load chat data:', error)
+      set({ 
+        error: error instanceof Error ? error.message : 'Failed to load chat data',
+        activeChat: null 
+      })
     }
   },
 
@@ -988,8 +987,8 @@ export const useWritingStore = create<WritingState>((set, get) => ({
         }
       }
 
-      // Send the regeneration request
-      const response = await writingApi.sendWritingChatMessage({
+      // Send the regeneration request using streaming endpoint (no timeout)
+      const taskResponse = await writingApi.sendWritingChatMessageStream({
         message: userMessage.content,
         draft_id: currentDraft!.id,
         operation_mode: 'balanced',
@@ -1000,34 +999,13 @@ export const useWritingStore = create<WritingState>((set, get) => ({
         max_decomposed_queries: options?.maxQueries
       })
 
-      // Add the new assistant response
-      const assistantMessage: WritingMessageWithSources = {
-        id: generateUUID(),
-        role: 'assistant',
-        content: response.message,
-        timestamp: ensureDate(new Date()),
-        sources: response.sources || []
-      }
-
-      state.addMessage(assistantMessage)
+      // Store the task ID for tracking
+      set((state) => ({
+        currentTaskId: taskResponse.task_id
+      }))
       
-      // Clear loading state and reset agent status  
-      // Force clear ALL possible loading states to ensure spinner is removed
-      const idsToClean = new Set([
-        loadingId,
-        state.currentSession?.id,
-        state.activeChat?.id
-      ].filter(Boolean))
-      
-      // console.log('Clearing loading states for regeneration IDs:', Array.from(idsToClean))
-      
-      // Clear loading for all relevant IDs
-      idsToClean.forEach(id => {
-        if (id) {
-          state.setSessionLoading(id, false)
-          state.setAgentStatus(id, 'idle')
-        }
-      })
+      // The response will be handled via WebSocket updates
+      // Loading state will be cleared when the response completes
 
     } catch (error: any) {
       console.error('Failed to regenerate message:', error)

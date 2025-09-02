@@ -36,7 +36,6 @@ export interface SearchSettings {
   jina_api_key: string | null
   searxng_base_url: string | null
   searxng_categories: string | null
-  max_results?: number
   search_depth?: 'standard' | 'advanced'
   // Jina-specific settings
   jina_read_full_content?: boolean
@@ -58,6 +57,24 @@ export interface ResearchParameters {
   max_concurrent_requests: number
   skip_final_replanning: boolean
   auto_optimize_params: boolean
+  // Advanced parameters
+  max_research_cycles_per_section?: number
+  max_total_iterations?: number
+  max_total_depth?: number
+  min_notes_per_section_assignment?: number
+  max_notes_per_section_assignment?: number
+  max_suggestions_per_batch?: number
+  max_planning_context_chars?: number
+  writing_previous_content_preview_chars?: number
+  research_note_content_limit?: number
+  writing_agent_max_context_chars?: number
+  // Writing mode search parameters
+  writing_search_max_iterations?: number
+  writing_search_max_queries?: number
+  writing_deep_search_iterations?: number
+  writing_deep_search_queries?: number
+  writing_mode_doc_results?: number
+  writing_mode_web_results?: number
 }
 
 export interface WebFetchSettings {

@@ -1,5 +1,6 @@
 import logging
 import requests
+import asyncio
 import fitz # PyMuPDF
 import io
 from newspaper import Article, ArticleException
@@ -16,6 +17,10 @@ from ai_researcher.core_rag.metadata_extractor import MetadataExtractor # Import
 from ai_researcher.dynamic_config import get_web_fetch_provider
 
 logger = logging.getLogger(__name__)
+
+# Global semaphore to limit concurrent web fetches
+# This prevents blocking the thread pool when multiple fetches happen
+WEB_FETCH_SEMAPHORE = asyncio.Semaphore(3)  # Allow max 3 concurrent fetches
 
 # Define cache directory relative to this file or project root
 # Assuming the script runs from the project root where ai_researcher dir exists
@@ -221,8 +226,17 @@ class WebPageFetcherTool:
             session.headers.update(headers)
 
             # Download the content with a timeout, using the session headers
-            response = session.get(url, timeout=30) # Increased timeout slightly for potential larger files
-            response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+            # Use semaphore and run_in_executor to prevent blocking
+            async with WEB_FETCH_SEMAPHORE:
+                logger.debug(f"Acquired semaphore for native fetch of {url}")
+                loop = asyncio.get_event_loop()
+                # Run the blocking request in a thread pool to avoid blocking the event loop
+                response = await loop.run_in_executor(
+                    None,  # Use default executor
+                    lambda: session.get(url, timeout=30)  # Increased timeout slightly for potential larger files
+                )
+                response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+                logger.debug(f"Released semaphore for native fetch of {url}")
 
             # --- Content successfully downloaded, save to cache before processing ---
             downloaded_content_bytes = response.content

@@ -214,9 +214,24 @@ If you DO NOT receive 'Focus Questions' but receive 'Existing Relevant Notes':
         # This allows _call_llm to access it for updating mission stats
         self.mission_id = mission_id
         
+        # Get max notes per section configuration
+        from ai_researcher.dynamic_config import get_max_notes_per_section_assignment
+        max_notes_per_section = get_max_notes_per_section_assignment(mission_id)
+        
+        # Check current note count for this section
+        current_note_count = len(existing_notes) if existing_notes else 0
+        
         log_prefix = f"{self.agent_name} (Section {section.section_id})"
         print(f"\n{log_prefix}: Generating notes for Title: '{section.title}'")
         print(f"{log_prefix}: Section Topic/Goal: {section.description}")
+        print(f"{log_prefix}: Current notes: {current_note_count}/{max_notes_per_section}")
+        
+        # Check if we've already reached the limit
+        if current_note_count >= max_notes_per_section:
+            logger.warning(f"{log_prefix}: Already have {current_note_count} notes (limit: {max_notes_per_section}). Skipping note generation.")
+            scratchpad_message = f"Section {section.section_id} already has maximum notes ({max_notes_per_section})"
+            return [], {"model_calls": [], "tool_calls": [], "file_interactions": []}, scratchpad_message
+        
         if focus_questions:
             print(f"{log_prefix}: Focusing on questions: {focus_questions}")
         else:
@@ -225,7 +240,7 @@ If you DO NOT receive 'Focus Questions' but receive 'Existing Relevant Notes':
         all_generated_notes: List[Note] = []
         model_calls_list: List[Dict[str, Any]] = []
         tool_calls_list: List[Dict[str, Any]] = []
-        file_interactions_list: List[str] = []
+        file_interactions_list: List[str] = []  # Track file operations
         scratchpad_update: Optional[str] = None # Initialize scratchpad update
 
         # --- Conditional Logic: Search or Synthesize ---
@@ -283,13 +298,30 @@ If you DO NOT receive 'Focus Questions' but receive 'Existing Relevant Notes':
             for filename, chunks in doc_results_by_file.items():
                 logger.info(f"Processing {len(chunks)} chunks from document: {filename}")
                 # Extract content windows for this document, passing the callback and registry override
-                content_windows = await self._extract_content_windows(
+                # Determine question context for chunk evaluation
+                question_context = focus_questions[0] if focus_questions else section.description
+                content_windows, file_was_read = await self._extract_content_windows(
                     filename,
                     chunks,
                     feedback_callback,
                     log_queue=log_queue, # <-- Pass log_queue
-                    tool_registry_override=tool_registry # Pass the override
+                    tool_registry_override=tool_registry, # Pass the override
+                    update_callback=update_callback,
+                    question_context=question_context # Pass question context for chunk evaluation
                 )
+                
+                # Track file interaction and log if a document was read
+                if file_was_read:
+                    file_interactions_list.append(f"read_document:{filename}")
+                    # Log the Read Document action for UI display during structured research
+                    if feedback_callback:
+                        feedback_callback(log_queue, {
+                            "type": "tool_call",
+                            "tool_name": "read_document",
+                            "action": f"Read Document: {filename}",
+                            "input_summary": f"Reading full document content for {filename}",
+                            "output_summary": f"Successfully read document {filename}"
+                        })
 
                 # Schedule note generation for each window
                 for window in content_windows:
@@ -358,17 +390,31 @@ If you DO NOT receive 'Focus Questions' but receive 'Existing Relevant Notes':
 
             # --- Execute Note Generation Concurrently ---
             if note_generation_tasks:
-                print(f"{log_prefix}: Generating notes from {len(note_generation_tasks)} content sources (windows/web) in parallel...")
-                note_processing_results = await asyncio.gather(*note_generation_tasks)
+                # Calculate how many more notes we can generate
+                remaining_capacity = max_notes_per_section - current_note_count
+                
+                # Limit the number of tasks to process based on remaining capacity
+                # Each task typically generates 1 note, so we limit tasks to remaining capacity
+                tasks_to_process = note_generation_tasks[:remaining_capacity] if remaining_capacity > 0 else []
+                
+                if tasks_to_process:
+                    print(f"{log_prefix}: Generating notes from {len(tasks_to_process)} content sources (limited from {len(note_generation_tasks)} to stay within {max_notes_per_section} limit)...")
+                    note_processing_results = await asyncio.gather(*tasks_to_process)
 
-                # Collect results from parallel processing
-                for note, note_model_details, _ in note_processing_results: # Unpack 3 values, ignore context here
-                    # read_tool_call and file_read are handled within _extract_content_windows
-                    if note:
-                        all_generated_notes.append(note)
-                    if note_model_details:
-                        model_calls_list.append(note_model_details)
-                    # Tool calls/file reads happened during window extraction
+                    # Collect results from parallel processing
+                    for note, note_model_details, _ in note_processing_results: # Unpack 3 values, ignore context here
+                        # read_tool_call and file_read are handled within _extract_content_windows
+                        if note:
+                            all_generated_notes.append(note)
+                            # Check if we've reached the limit
+                            if current_note_count + len(all_generated_notes) >= max_notes_per_section:
+                                logger.info(f"{log_prefix}: Reached note limit ({max_notes_per_section}). Stopping note generation.")
+                                break
+                        if note_model_details:
+                            model_calls_list.append(note_model_details)
+                        # Tool calls/file reads happened during window extraction
+                else:
+                    logger.warning(f"{log_prefix}: Skipping all {len(note_generation_tasks)} tasks as section already at capacity.")
             else:
                 print(f"{log_prefix}: No content windows or web results to generate notes from.")
 
@@ -434,13 +480,20 @@ If you DO NOT receive 'Focus Questions' but receive 'Existing Relevant Notes':
                     for filename, chunks in proactive_doc_results_by_file.items():
                         logger.info(f"Proactive search: Processing {len(chunks)} chunks from document: {filename}")
                         # Pass callback and registry override
-                        content_windows = await self._extract_content_windows(
+                        # For proactive search, use section description as question context
+                        content_windows, file_was_read = await self._extract_content_windows(
                             filename,
                             chunks,
                     feedback_callback,
                     log_queue=log_queue, # <-- Pass log_queue
-                    tool_registry_override=tool_registry # Pass the override
+                    tool_registry_override=tool_registry, # Pass the override
+                    update_callback=update_callback,
+                    question_context=section.description # Use section description for proactive search
                 )
+                        
+                        # Track file interaction if a document was read
+                        if file_was_read:
+                            file_interactions_list.append(f"read_document:{filename}")
 
                         for window in content_windows:
                             # Create a unique window ID (still useful internally if needed) and get doc_id
@@ -506,25 +559,38 @@ If you DO NOT receive 'Focus Questions' but receive 'Existing Relevant Notes':
 
                     # --- Execute Note Generation Concurrently (Cycle 1) ---
                     if proactive_note_tasks:
-                        logger.info(f"{log_prefix}: Generating notes from proactive search ({len(proactive_note_tasks)} sources)...")
-                        proactive_note_results = await asyncio.gather(*proactive_note_tasks)
+                        # Calculate how many more notes we can generate
+                        remaining_capacity = max_notes_per_section - current_note_count
+                        
+                        # Limit the number of tasks to process based on remaining capacity
+                        tasks_to_process = proactive_note_tasks[:remaining_capacity] if remaining_capacity > 0 else []
+                        
+                        if tasks_to_process:
+                            logger.info(f"{log_prefix}: Generating notes from proactive search ({len(tasks_to_process)} sources, limited from {len(proactive_note_tasks)} to stay within {max_notes_per_section} limit)...")
+                            proactive_note_results = await asyncio.gather(*tasks_to_process)
 
-                        # Collect results
-                        # --- Add logging for gather results ---
-                        logger.info(f"Processing {len(proactive_note_results)} results from proactive note generation gather.")
-                        for i, result_tuple in enumerate(proactive_note_results):
-                            logger.info(f"Proactive note result {i}: Type={type(result_tuple)}, Value={str(result_tuple)[:200]}...") # Log type and preview
-                            # Unpack 3 values, ignore context here
-                            if isinstance(result_tuple, tuple) and len(result_tuple) == 3:
-                                note, note_model_details, _ = result_tuple # Unpack if valid tuple
-                                if note:
-                                    all_generated_notes.append(note)
-                                    proactive_notes_generated += 1
-                                if note_model_details: model_calls_list.append(note_model_details)
-                            else:
-                                logger.error(f"Unexpected result format from proactive note generation task {i}: {result_tuple}")
-                        # --- End added logging ---
-                            # Tool calls/file reads handled in _extract_content_windows
+                            # Collect results
+                            # --- Add logging for gather results ---
+                            logger.info(f"Processing {len(proactive_note_results)} results from proactive note generation gather.")
+                            for i, result_tuple in enumerate(proactive_note_results):
+                                logger.info(f"Proactive note result {i}: Type={type(result_tuple)}, Value={str(result_tuple)[:200]}...") # Log type and preview
+                                # Unpack 3 values, ignore context here
+                                if isinstance(result_tuple, tuple) and len(result_tuple) == 3:
+                                    note, note_model_details, _ = result_tuple # Unpack if valid tuple
+                                    if note:
+                                        all_generated_notes.append(note)
+                                        proactive_notes_generated += 1
+                                        # Check if we've reached the limit
+                                        if current_note_count + len(all_generated_notes) >= max_notes_per_section:
+                                            logger.info(f"{log_prefix}: Reached note limit ({max_notes_per_section}). Stopping proactive note generation.")
+                                            break
+                                    if note_model_details: model_calls_list.append(note_model_details)
+                                else:
+                                    logger.error(f"Unexpected result format from proactive note generation task {i}: {result_tuple}")
+                            # --- End added logging ---
+                                # Tool calls/file reads handled in _extract_content_windows
+                        else:
+                            logger.warning(f"{log_prefix}: Skipping all {len(proactive_note_tasks)} proactive tasks as section already at capacity.")
                     else:
                         logger.info(f"{log_prefix}: No proactive content windows or web results to generate notes from.")
 
@@ -578,7 +644,7 @@ If you DO NOT receive 'Focus Questions' but receive 'Existing Relevant Notes':
         notes_with_context: List[Tuple[Note, str]] = [] # Store (Note, context) tuples
         model_calls_list: List[Dict[str, Any]] = []
         tool_calls_list: List[Dict[str, Any]] = []
-        file_interactions_list: List[str] = []
+        file_interactions_list: List[str] = []  # Track file operations
         scratchpad_update: Optional[str] = None
 
         # --- Perform Search-Based Research (Copied & Adapted from run()) ---
@@ -622,9 +688,16 @@ If you DO NOT receive 'Focus Questions' but receive 'Existing Relevant Notes':
                 logger.warning(f"Document result missing original_filename in metadata: {doc_result.get('id')}")
 
         for filename, chunks in doc_results_by_file.items():
-            content_windows = await self._extract_content_windows(
-                filename, chunks, feedback_callback, log_queue=log_queue, tool_registry_override=tool_registry, update_callback=update_callback
+            # Determine question context for chunk evaluation
+            question_context = focus_questions[0] if focus_questions else section.description
+            content_windows, file_was_read = await self._extract_content_windows(
+                filename, chunks, feedback_callback, log_queue=log_queue, tool_registry_override=tool_registry, update_callback=update_callback,
+                question_context=question_context # Pass question context for chunk evaluation
             )
+            
+            # Track file interaction if a document was read
+            if file_was_read:
+                file_interactions_list.append(f"read_document:{filename}")
             for window in content_windows:
                 first_chunk_id = window["original_chunk_ids"][0] if window["original_chunk_ids"] else "unknown"
                 window_metadata = {
@@ -860,7 +933,7 @@ Now, generate the questions for the provided research request.
         updated_scratchpad: Optional[str] = agent_scratchpad # Start with current
         model_calls_list: List[Dict[str, Any]] = []
         tool_calls_list: List[Dict[str, Any]] = []
-        file_interactions_list: List[str] = []
+        file_interactions_list: List[str] = []  # Track file operations
 
         # 1. Generate Search Queries for the specific question
         # Use simpler query prep for single question? Or reuse existing? Let's reuse for now.
@@ -939,14 +1012,21 @@ Now, generate the questions for the provided research request.
         for filename, chunks in initial_doc_results_by_file.items():
             logger.info(f"Initial exploration: Processing {len(chunks)} chunks from document: {filename}")
             # Pass callback and registry override
-            content_windows = await self._extract_content_windows(
+            # For initial exploration, use the question being explored as context
+            question_context = question
+            content_windows, file_was_read = await self._extract_content_windows(
                 filename,
                 chunks,
                     feedback_callback,
                     log_queue=log_queue, # <-- Pass log_queue
                     tool_registry_override=tool_registry, # Pass the override
-                    update_callback=update_callback # <-- Pass update_callback
+                    update_callback=update_callback, # <-- Pass update_callback
+                    question_context=question_context # Pass question context for chunk evaluation
                 )
+            
+            # Track file interaction if a document was read
+            if file_was_read:
+                file_interactions_list.append(f"read_document:{filename}")
 
             for window in content_windows:
                 # Create a unique window ID (still useful internally if needed) and get doc_id
@@ -1136,15 +1216,19 @@ If no relevant sub-questions are identified, return an empty list for "sub_quest
         feedback_callback: Optional[Callable[[Dict[str, Any]], None]] = None, # Type hint already correct, ensuring it stays
         log_queue: Optional[queue.Queue] = None, # <-- Add log_queue parameter
         tool_registry_override: Optional[ToolRegistry] = None, # <-- Add override parameter
-        update_callback: Optional[Callable] = None # <-- Add update_callback parameter
-    ) -> List[Dict[str, Any]]:
+        update_callback: Optional[Callable] = None, # <-- Add update_callback parameter
+        question_context: Optional[str] = None # <-- Add question context for chunk evaluation
+    ) -> Tuple[List[Dict[str, Any]], bool]:
         """
         Reads a document using the provided/default tool registry, finds chunk locations,
         calculates content windows centered around each chunk, merges overlapping windows,
         and returns the processed windows.
         """
         logger.debug(f"Extracting content windows for {filename} from {len(chunks)} chunks.")
-        if not chunks: return []
+        if not chunks: return [], False
+        
+        # Combine chunk texts for evaluation
+        chunk_content = "\n\n---CHUNK---\n\n".join([chunk.get("text", "") for chunk in chunks[:5]])  # Use first 5 chunks for evaluation
         
         # Use metadata from first chunk to read document, passing callback and registry override
         first_chunk_metadata = chunks[0].get("metadata", {})
@@ -1153,12 +1237,14 @@ If no relevant sub-questions are identified, return an empty list for "sub_quest
             feedback_callback=feedback_callback, # Pass callback down
             log_queue=log_queue, # <-- Pass log_queue down
             tool_registry_override=tool_registry_override, # Pass the override
-            update_callback=update_callback # <-- Pass update_callback
+            update_callback=update_callback, # <-- Pass update_callback
+            chunk_content=chunk_content, # <-- Pass chunk content for evaluation
+            question_context=question_context # <-- Pass question context
         )
 
         if not full_content_original:
             logger.warning(f"Could not read full content for {filename}. Cannot extract windows.")
-            return []
+            return [], False, False
 
         logger.debug(f"Processing full content for {filename} (length: {len(full_content_original)} chars)")
         logger.debug(f"First 500 chars of content: {repr(full_content_original[:500])}")
@@ -1277,7 +1363,7 @@ If no relevant sub-questions are identified, return an empty list for "sub_quest
 
         if not processed_chunks:
             logger.warning(f"No valid chunks found in {filename}")
-            return []
+            return [], False
 
         # Second pass: Merge overlapping windows
         sorted_windows = sorted(processed_chunks.items(), key=lambda x: x[1]["start"])
@@ -1373,7 +1459,8 @@ If no relevant sub-questions are identified, return an empty list for "sub_quest
                 final_windows.append(window_obj)
 
         logger.info(f"Extracted {len(final_windows)} final content windows for {filename}")
-        return final_windows
+        # Return windows and True to indicate a file was successfully read
+        return final_windows, (file_read is not None)
 
 
     async def _generate_section_queries(
@@ -1666,9 +1753,11 @@ If no relevant sub-questions are identified, return an empty list for "sub_quest
                     web_query = web_query[:400]
                     logger.info(f"Truncated web search query: '{web_query}'")
 
-                # Don't override max_results - let WebSearchTool use user's settings
-                web_args = {"query": web_query} # Use potentially truncated query
-                # Note: max_results will be determined by user's search settings in WebSearchTool
+                # Pass n_web_results to control how many results based on research phase
+                web_args = {
+                    "query": web_query,  # Use potentially truncated query
+                    "max_results": n_web_results  # Pass the phase-specific web results limit
+                }
                 # Pass the enhanced query to _execute_single_search for logging context
                 search_tasks.append(self._execute_single_search(
                     "web_search", # Use the generic tool name
@@ -1714,17 +1803,96 @@ If no relevant sub-questions are identified, return an empty list for "sub_quest
         feedback_callback: Optional[Callable[[Dict[str, Any]], None]] = None, # Type hint already correct, ensuring it stays
         log_queue: Optional[queue.Queue] = None, # <-- Add log_queue parameter
         tool_registry_override: Optional[ToolRegistry] = None, # <-- Add override parameter
-        update_callback: Optional[Callable] = None # <-- Add update_callback parameter
+        update_callback: Optional[Callable] = None, # <-- Add update_callback parameter
+        chunk_content: Optional[str] = None, # <-- Add chunk content for evaluation
+        question_context: Optional[str] = None # <-- Add question/goal context
     ) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[str]]:
         """
-        Checks if full document is needed, uses FileReaderTool via the provided/default registry,
+        Intelligently decides if full document is needed based on chunk sufficiency,
+        then uses FileReaderTool if necessary via the provided/default registry,
         returns content, tool call details, and file path read.
         """
         tool_call_details = None
         file_path_read = None
-        # TODO: Implement logic to decide if snippet is sufficient.
-        # Placeholder: Always try to read full doc for now if it's a document source.
-        needs_full_doc = source_info.get("source_type") == "document" # Basic check
+        
+        # Only evaluate for document sources
+        if source_info.get("source_type") != "document":
+            return None, None, None
+        
+        # Intelligent evaluation of whether full document is needed
+        needs_full_doc = True  # Default to fetching full doc
+        
+        metadata = source_info.get("metadata", {})
+        filename = metadata.get("original_filename", "unknown")
+        
+        # If we have chunk content and question context, evaluate if chunks are sufficient
+        if chunk_content and question_context and len(chunk_content) > 500:  # Only evaluate if we have meaningful content
+            try:
+                logger.info(f"Evaluating if chunk content ({len(chunk_content)} chars) is sufficient for document {filename}")
+                
+                evaluation_prompt = f"""
+You are evaluating whether document chunks contain sufficient information to answer a research question.
+
+Research Question/Goal: {question_context}
+
+Document: {filename}
+Chunk Content Length: {len(chunk_content)} characters
+
+Document Chunk Content (first 6000 chars):
+---
+{chunk_content[:6000]}
+---
+
+Evaluate whether this chunk content:
+1. Contains comprehensive information directly answering the research question
+2. Provides complete context without needing surrounding document sections
+3. Includes all relevant details, data, or arguments related to the question
+
+Respond with ONLY one of these two responses:
+- "SUFFICIENT" - if the chunk contains enough information to fully address the research question
+- "NEED_FULL" - if more context from the full document would likely provide important additional information
+
+Important considerations:
+- If the chunk references other sections, figures, or tables not included, return NEED_FULL
+- If the chunk appears to be mid-discussion without clear beginning/end, return NEED_FULL
+- If the chunk fully answers the question with complete information, return SUFFICIENT
+- If the chunk contains highly relevant technical details or data that directly answers the question, lean towards SUFFICIENT
+- When in doubt, prefer NEED_FULL to ensure comprehensive research
+"""
+                
+                # Make async LLM call for evaluation with the same model
+                response = await self.model_dispatcher.generate_async(
+                    prompt=evaluation_prompt,
+                    max_tokens=20,
+                    temperature=0.1,
+                    model=self.model  # Use the same model as the research agent
+                )
+                
+                if response and response.choices and response.choices[0].message.content:
+                    evaluation = response.choices[0].message.content.strip().upper()
+                    
+                    if "SUFFICIENT" in evaluation:
+                        needs_full_doc = False
+                        logger.info(f"✓ Chunk content deemed SUFFICIENT for {filename}. Skipping full document fetch to save resources.")
+                        # Return early - no need to read full document
+                        return None, None, None
+                    else:
+                        logger.info(f"→ Chunk content deemed INSUFFICIENT for {filename}. Will fetch full document for comprehensive analysis.")
+                else:
+                    logger.warning("LLM evaluation of chunk sufficiency returned empty response. Defaulting to fetch full document.")
+                    
+            except Exception as e:
+                logger.warning(f"Error evaluating chunk sufficiency: {e}. Defaulting to fetch full document.")
+                needs_full_doc = True
+        else:
+            # Log why we're skipping evaluation
+            if not chunk_content:
+                logger.debug(f"No chunk content provided for {filename}. Will fetch full document.")
+            elif not question_context:
+                logger.debug(f"No question context provided for {filename}. Will fetch full document.")
+            elif len(chunk_content) <= 500:
+                logger.debug(f"Chunk content too short ({len(chunk_content)} chars) for meaningful evaluation. Will fetch full document.")
+            needs_full_doc = True
 
         if needs_full_doc:
             metadata = source_info.get("metadata", {})

@@ -21,7 +21,7 @@ else
     else
         echo "[INFO] No GPU detected - running in CPU mode"
     fi
-    COMPOSE_FILES="-f docker-compose.yml"
+    COMPOSE_FILES="-f docker-compose.cpu.yml"
 fi
 
 # Check if .env file exists
@@ -38,6 +38,9 @@ fi
 
 # Source environment variables
 export $(grep -v '^#' .env | xargs)
+
+# Ensure cache directories exist (Docker will create them but this ensures proper permissions)
+mkdir -p maestro_model_cache maestro_datalab_cache maestro_backend/data reports pdfs
 
 # Check if images exist, build if needed
 echo "[CHECK] Checking Docker images..."
@@ -82,7 +85,7 @@ if docker compose ps | grep -q "Up"; then
     echo "[NOTE] IMPORTANT - First Run:"
     echo "       Initial startup takes 5-10 minutes to download AI models"
     echo "       Monitor progress with: docker compose logs -f maestro-backend"
-    echo "       Wait for message: Application startup complete"
+    echo "       Wait for message: MAESTRO Backend Started Successfully!"
 else
     echo "[ERROR] Failed to start services. Check logs with: docker compose logs"
     exit 1

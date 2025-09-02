@@ -63,53 +63,62 @@ class DocumentSearchTool:
         """
         # logger.info(f"DEBUG: _get_document_ids_from_group called with document_group_id={document_group_id}")
         try:
-            # Import database dependencies
-            from database.database import get_db
-            from database.models import Document, DocumentGroup, document_group_association
-            from sqlalchemy.orm import Session
+            import asyncio
             
-            # Get database session
-            db_gen = get_db()
-            db: Session = next(db_gen)
+            # Define synchronous database function
+            def get_docs_sync():
+                # Import database dependencies inside the sync function
+                from database.database import get_db
+                from database.models import Document, DocumentGroup, document_group_association
+                from sqlalchemy.orm import Session
+                
+                # Get database session
+                db_gen = get_db()
+                db: Session = next(db_gen)
+                
+                try:
+                    # logger.info(f"DEBUG: Querying database for documents in group {document_group_id}")
+                    
+                    # First, let's check if the document group exists
+                    group = db.query(DocumentGroup).filter(DocumentGroup.id == document_group_id).first()
+                    if not group:
+                        # logger.error(f"DEBUG: Document group {document_group_id} not found in database")
+                        return []
+                    
+                    # logger.info(f"DEBUG: Found document group: {group.name} (id={group.id})")
+                    
+                    # Query documents in the group
+                    documents = db.query(Document).join(
+                        document_group_association,
+                        Document.id == document_group_association.c.document_id
+                    ).filter(
+                        document_group_association.c.document_group_id == document_group_id
+                    ).all()
+                    
+                    doc_ids = [doc.id for doc in documents]
+                    # logger.info(f"DEBUG: Found {len(doc_ids)} documents in group {document_group_id}: {doc_ids}")
+                    
+                    # Also log document details for debugging
+                    for doc in documents:
+                        # Use the correct attribute names from the Document model
+                        filename = getattr(doc, 'original_filename', 'Unknown')
+                        # logger.info(f"DEBUG: Document in group - ID: {doc.id}, Filename: {filename}")
+                    
+                    return doc_ids
+                    
+                finally:
+                    db.close()
             
-            try:
-                # logger.info(f"DEBUG: Querying database for documents in group {document_group_id}")
-                
-                # First, let's check if the document group exists
-                group = db.query(DocumentGroup).filter(DocumentGroup.id == document_group_id).first()
-                if not group:
-                    # logger.error(f"DEBUG: Document group {document_group_id} not found in database")
-                    return []
-                
-                # logger.info(f"DEBUG: Found document group: {group.name} (id={group.id})")
-                
-                # Query documents in the group
-                documents = db.query(Document).join(
-                    document_group_association,
-                    Document.id == document_group_association.c.document_id
-                ).filter(
-                    document_group_association.c.document_group_id == document_group_id
-                ).all()
-                
-                doc_ids = [doc.id for doc in documents]
-                # logger.info(f"DEBUG: Found {len(doc_ids)} documents in group {document_group_id}: {doc_ids}")
-                
-                # Also log document details for debugging
-                for doc in documents:
-                    # Use the correct attribute names from the Document model
-                    filename = getattr(doc, 'original_filename', 'Unknown')
-                    # logger.info(f"DEBUG: Document in group - ID: {doc.id}, Filename: {filename}")
-                
-                return doc_ids
-                
-            finally:
-                db.close()
+            # Execute the synchronous function in a thread pool to avoid blocking the event loop
+            loop = asyncio.get_event_loop()
+            doc_ids = await loop.run_in_executor(None, get_docs_sync)
+            return doc_ids
                 
         except Exception as e:
             logger.error(f"DEBUG: Error querying documents from group {document_group_id}: {e}", exc_info=True)
             return []
     
-    def _enrich_chunks_with_document_metadata(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    async def _enrich_chunks_with_document_metadata(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Enrich chunks with document metadata from PostgreSQL database.
         
@@ -123,62 +132,72 @@ class DocumentSearchTool:
             return chunks
         
         try:
-            # Import database dependencies
-            from database.database import get_db
-            from database.models import Document
-            from sqlalchemy.orm import Session
+            import asyncio
             
-            # Extract unique doc_ids from chunks
-            doc_ids = set()
-            for chunk in chunks:
-                doc_id = chunk.get("metadata", {}).get("doc_id")
-                if doc_id:
-                    doc_ids.add(doc_id)
-            
-            if not doc_ids:
-                logger.warning("No doc_ids found in chunks to enrich")
-                return chunks
-            
-            # Get database session
-            db_gen = get_db()
-            db: Session = next(db_gen)
-            
-            try:
-                # Batch fetch documents from PostgreSQL
-                documents = db.query(Document).filter(Document.id.in_(list(doc_ids))).all()
+            # Define synchronous database function
+            def enrich_sync():
+                # Import database dependencies inside the sync function
+                from database.database import get_db
+                from database.models import Document
+                from sqlalchemy.orm import Session
                 
-                # Create lookup dictionary
-                doc_metadata_lookup = {}
-                for doc in documents:
-                    doc_metadata_lookup[doc.id] = {
-                        "original_filename": doc.original_filename or doc.filename,
-                        "filename": doc.filename,
-                        "title": doc.metadata_.get("title") if doc.metadata_ else None,
-                        "authors": doc.metadata_.get("authors") if doc.metadata_ else None,
-                        "year": doc.metadata_.get("year") if doc.metadata_ else None,
-                        "journal": doc.metadata_.get("journal") if doc.metadata_ else None,
-                        "processing_status": doc.processing_status
-                    }
-                
-                # Enrich each chunk
+                # Extract unique doc_ids from chunks
+                doc_ids = set()
                 for chunk in chunks:
                     doc_id = chunk.get("metadata", {}).get("doc_id")
-                    if doc_id and doc_id in doc_metadata_lookup:
-                        # Merge document metadata into chunk metadata
-                        chunk["metadata"].update(doc_metadata_lookup[doc_id])
-                    else:
-                        logger.debug(f"Document {doc_id} not found in database for enrichment")
+                    if doc_id:
+                        doc_ids.add(doc_id)
                 
-                logger.info(f"Enriched {len(chunks)} chunks with metadata from {len(doc_metadata_lookup)} documents")
+                if not doc_ids:
+                    logger.warning("No doc_ids found in chunks to enrich")
+                    return chunks
                 
-            finally:
-                db.close()
+                # Get database session
+                db_gen = get_db()
+                db: Session = next(db_gen)
+                
+                try:
+                    # Batch fetch documents from PostgreSQL
+                    documents = db.query(Document).filter(Document.id.in_(list(doc_ids))).all()
+                    
+                    # Create lookup dictionary
+                    doc_metadata_lookup = {}
+                    for doc in documents:
+                        doc_metadata_lookup[doc.id] = {
+                            "original_filename": doc.original_filename or doc.filename,
+                            "filename": doc.filename,
+                            "title": doc.metadata_.get("title") if doc.metadata_ else None,
+                            "authors": doc.metadata_.get("authors") if doc.metadata_ else None,
+                            "year": doc.metadata_.get("year") if doc.metadata_ else None,
+                            "journal": doc.metadata_.get("journal") if doc.metadata_ else None,
+                            "processing_status": doc.processing_status
+                        }
+                    
+                    # Enrich each chunk
+                    for chunk in chunks:
+                        doc_id = chunk.get("metadata", {}).get("doc_id")
+                        if doc_id and doc_id in doc_metadata_lookup:
+                            # Merge document metadata into chunk metadata
+                            chunk["metadata"].update(doc_metadata_lookup[doc_id])
+                        else:
+                            logger.debug(f"Document {doc_id} not found in database for enrichment")
+                    
+                    logger.info(f"Enriched {len(chunks)} chunks with metadata from {len(doc_metadata_lookup)} documents")
+                    
+                finally:
+                    db.close()
+                    
+                return chunks
+            
+            # Execute the synchronous function in a thread pool to avoid blocking the event loop
+            loop = asyncio.get_event_loop()
+            enriched_chunks = await loop.run_in_executor(None, enrich_sync)
+            return enriched_chunks
         
         except Exception as e:
             logger.error(f"Error enriching chunks with document metadata: {e}")
             # Return chunks unchanged if enrichment fails
-        
-        return chunks
+            return chunks
 
     async def execute( # Make method async
         self,
@@ -355,7 +374,7 @@ class DocumentSearchTool:
                 logger.info(f"Returning {len(final_results)} aggregated results (reranker disabled or skipped).")
 
             # 6.5. Enrich results with document metadata from PostgreSQL
-            final_results = self._enrich_chunks_with_document_metadata(final_results)
+            final_results = await self._enrich_chunks_with_document_metadata(final_results)
 
             # 7. Return Results
             return final_results

@@ -1,0 +1,234 @@
+site_name: MAESTRO Documentation
+site_description: Your Self-Hosted AI Research Assistant - Complete Documentation
+site_author: MAESTRO Team
+site_url: https://yourusername.github.io/maestro/
+repo_name: maestro
+repo_url: https://github.com/murtaza-nasir/maestro
+edit_uri: edit/main/docs/
+
+# Theme configuration
+theme:
+  name: material
+  logo: assets/logo.png
+  favicon: assets/favicon.png
+  
+  palette:
+    # Light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    
+    # Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  
+  font:
+    text: Roboto
+    code: Roboto Mono
+  
+  features:
+    - announce.dismiss
+    - content.action.edit
+    - content.action.view
+    - content.code.annotate
+    - content.code.copy
+    - content.tabs.link
+    - content.tooltips
+    - header.autohide
+    - navigation.expand
+    - navigation.footer
+    - navigation.indexes
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.instant.progress
+    - navigation.prune
+    - navigation.sections
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - search.share
+    - search.suggest
+    - toc.follow
+    - toc.integrate
+
+# Plugins
+plugins:
+  - search:
+      separator: '[\s\u200b\-_,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+  - minify:
+      minify_html: true
+  - git-revision-date-localized:
+      enable_creation_date: true
+  - mike:  # For versioning
+      version_selector: true
+      css_dir: css
+      javascript_dir: js
+      canonical_version: latest
+
+# Markdown extensions
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - toc:
+      permalink: true
+      permalink_title: Anchor link to this section for reference
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.snippets:
+      auto_append:
+        - includes/abbreviations.md
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+      combine_header_slug: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+# Extra CSS and JavaScript
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+  - https://unpkg.com/mermaid@10/dist/mermaid.min.js
+
+# Extra configuration
+extra:
+  version:
+    provider: mike
+    default: stable
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/murtaza-nasir/maestro
+    - icon: fontawesome/brands/docker
+      link: https://hub.docker.com/r/yourusername/maestro
+  analytics:
+    provider: google
+    property: G-XXXXXXXXXX  # Replace with your Google Analytics ID
+  consent:
+    title: Cookie consent
+    description: >- 
+      We use cookies to recognize your repeated visits and preferences, as well
+      as to measure the effectiveness of our documentation and whether users
+      find what they're searching for. With your consent, you're helping us to
+      make our documentation better.
+
+# Navigation structure
+nav:
+  - Home: index.md
+  
+  - Getting Started:
+    - Quick Start: getting-started/quickstart.md
+    - Installation:
+      - getting-started/installation/index.md
+      - Linux: getting-started/installation/linux.md
+      - macOS: getting-started/installation/macos.md
+      - Windows: getting-started/installation/windows.md
+      - CPU Mode: getting-started/installation/cpu-mode.md
+      - Database Reset: getting-started/installation/database-reset.md
+      - CLI Commands: getting-started/installation/cli-commands.md
+    - Configuration:
+      - getting-started/configuration/overview.md
+      - getting-started/configuration/environment-variables.md
+      - getting-started/configuration/ai-providers.md
+      - getting-started/configuration/search-providers.md
+      - getting-started/configuration/web-fetch.md
+    - First Login: getting-started/first-login.md
+  
+  - User Guide:
+    - user-guide/index.md
+    - Research:
+      - user-guide/research/overview.md
+      - user-guide/research/parameters.md
+    - Writing:
+      - user-guide/writing/overview.md
+    - Documents:
+      - user-guide/documents/overview.md
+      - user-guide/documents/uploading.md
+      - user-guide/documents/document-library.md
+      - user-guide/documents/document-groups.md
+    - Settings:
+      - user-guide/settings/overview.md
+      - user-guide/settings/profile.md
+      - user-guide/settings/appearance.md
+      - user-guide/settings/ai-config.md
+      - user-guide/settings/search-config.md
+      - user-guide/settings/web-fetch-config.md
+      - user-guide/settings/research-config.md
+      - user-guide/settings/admin.md
+  
+  - Architecture: architecture/index.md
+  
+  - Example Reports:
+    - example-reports/index.md
+    - Prompts Used: example-reports/prompts-used.md
+    - By Model:
+      - Qwen 2.5 72B: 
+        - example-reports/qwen-25-72b/index.md
+      - GPT-OSS 120B:
+        - example-reports/gpt-oss-120b/index.md
+      - Qwen 3 32B:
+        - example-reports/qwen-3-32b/index.md
+      - Qwen 3 30B-A3B:
+        - example-reports/qwen-3-30ba3b/index.md
+      - Gemma 3 27B:
+        - example-reports/gemma-3-27b/index.md
+      - GPT-OSS 20B:
+        - example-reports/gpt-oss-20b/index.md
+    - By Research Style:
+      - Academic & Technical: example-reports/academic-technical.md
+      - Popular Science: example-reports/popular-science.md
+      - Business & Professional: example-reports/business-professional.md
+      - Creative & Narrative: example-reports/creative-narrative.md
+  
+  - Local LLM Deployment: deployment/local-llms.md
+  
+  - Troubleshooting:
+    - troubleshooting/index.md
+    - Common Issues:
+      - troubleshooting/common-issues/installation.md
+      - troubleshooting/common-issues/database.md
+      - troubleshooting/common-issues/documents.md
+      - troubleshooting/common-issues/ai-models.md
+    - Database Reset: troubleshooting/database-reset.md
+    - Logs: troubleshooting/logs.md
+    - FAQ: troubleshooting/faq.md

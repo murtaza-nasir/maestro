@@ -591,7 +591,7 @@ def create_document_group(
         description=group.description
     )
 
-@router.get("/document-groups/", response_model=List[schemas.DocumentGroupWithCount])
+@router.get("/document-groups/", response_model=List[schemas.DocumentGroupSummary])
 async def read_user_document_groups(
     skip: int = 0,
     limit: int = 100,
@@ -600,38 +600,31 @@ async def read_user_document_groups(
 ):
     """
     Retrieve all document groups for the current user with document counts.
+    Returns lightweight summaries without document data to reduce payload size.
     """
-    groups = crud.get_user_document_groups(db, user_id=current_user.id, skip=skip, limit=limit)
+    # Get groups without eager loading documents
+    query = db.query(models.DocumentGroup).filter_by(user_id=current_user.id)
+    groups = query.offset(skip).limit(limit).all()
     
-    # Convert to groups with counts
-    groups_with_counts = []
+    # Convert to lightweight summaries
+    group_summaries = []
     for group in groups:
-        # Manually convert metadata to dict to avoid validation errors
-        for doc in group.documents:
-            if doc.metadata_:
-                doc.metadata_ = dict(doc.metadata_)
+        # Count documents efficiently without loading their data
+        document_count = db.query(models.document_group_association).filter_by(
+            document_group_id=group.id
+        ).count()
         
-        # Use database as the source of truth for document count
-        document_count = len(group.documents)
-        logger.debug(f"DEBUG: Group '{group.name}' (ID: {group.id}) has {document_count} documents in database")
-        
-        # Debug: List the document IDs in this group
-        # if group.name == "Papers":
-        #     # logger.debug(f"DEBUG: Papers group document IDs: {[doc.id for doc in group.documents]}")
-        
-        group_with_count = schemas.DocumentGroupWithCount(
+        group_summary = schemas.DocumentGroupSummary(
             id=group.id,
             name=group.name,
-            user_id=group.user_id,
-            created_at=group.created_at,
-            updated_at=group.updated_at,
             description=group.description,
-            documents=group.documents,
-            document_count=document_count
+            document_count=document_count,
+            created_at=group.created_at,
+            updated_at=group.updated_at
         )
-        groups_with_counts.append(group_with_count)
+        group_summaries.append(group_summary)
     
-    return groups_with_counts
+    return group_summaries
 
 @router.get("/document-groups/{group_id}", response_model=schemas.DocumentGroup)
 def read_document_group(
@@ -754,8 +747,12 @@ async def delete_document(
         document_service = UnifiedDocumentService(db)
         vector_success = await document_service.delete_document_with_cascade(doc_id, current_user.id)
         
-        # Delete from main database
-        db_success = crud.delete_document_simple_sync(db, doc_id=doc_id, user_id=current_user.id)
+        # Delete from main database using async CRUD
+        from database.database import get_async_db
+        from database import async_crud
+        
+        async with get_async_db() as async_db:
+            db_success = await async_crud.delete_document(async_db, doc_id=doc_id, user_id=current_user.id)
         
         # Return success if deleted from any system
         if vector_success or db_success:

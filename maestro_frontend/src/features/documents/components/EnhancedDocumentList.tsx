@@ -10,7 +10,8 @@ import {
   BookOpen,
   Upload,
   Edit,
-  Eye
+  Eye,
+  FolderPlus
 } from 'lucide-react';
 import type { Document } from '../types';
 import { 
@@ -23,6 +24,7 @@ import { DeleteConfirmationModal } from '../../../components/ui/DeleteConfirmati
 import { useDocumentUploadManager } from '../context/DocumentUploadContext';
 import { DocumentMetadataEditModal } from './DocumentMetadataEditModal';
 import { DocumentViewModal } from './DocumentViewModal';
+import { AddToGroupModal } from './AddToGroupModal';
 
 interface EnhancedDocumentListProps {
   documents: Document[];
@@ -50,6 +52,7 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [addToGroupModalOpen, setAddToGroupModalOpen] = useState(false);
   
   // Modal state
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -373,6 +376,17 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
                       Add to Group
                     </button>
                   )}
+                  {/* Add to Group button - available in main document list */}
+                  {!selectedGroupId && (
+                    <button
+                      onClick={() => setAddToGroupModalOpen(true)}
+                      disabled={isProcessing}
+                      className="flex items-center gap-1 px-3 py-1 text-sm bg-primary text-primary-foreground rounded hover:bg-primary/80 disabled:opacity-50"
+                    >
+                      <FolderPlus className="h-3 w-3" />
+                      Add to Group
+                    </button>
+                  )}
                   <button
                     onClick={handleDeleteClick}
                     disabled={isProcessing}
@@ -595,6 +609,19 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
         document={selectedDocument}
         isOpen={viewModalOpen}
         onClose={handleCloseModals}
+      />
+
+      {/* Add to Group Modal */}
+      <AddToGroupModal
+        isOpen={addToGroupModalOpen}
+        onClose={() => setAddToGroupModalOpen(false)}
+        selectedDocumentIds={Array.from(selectedDocuments)}
+        onSuccess={() => {
+          setSelectedDocuments(new Set());
+          setAddToGroupModalOpen(false);
+          onDocumentAdded?.();
+          refreshGroups();
+        }}
       />
     </div>
   );

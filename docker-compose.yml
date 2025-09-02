@@ -52,11 +52,12 @@ services:
       - ./maestro_datalab_cache:/root/.cache/datalab
       - ./reports:/app/reports
       - ./maestro_backend/data:/app/data
-    # Backend is now only accessible through nginx, not directly exposed
-    # ports:
-    #   - "${BACKEND_HOST}:${BACKEND_PORT}:${BACKEND_INTERNAL_PORT}"
     working_dir: /app
     environment:
+      - DEBUG_MESSENGER=true
+      - MESSENGER_SIMPLE_PROMPT=true
+      - DEBUG_PLANNING=true
+      - DEBUG_REFLECTION=true
       - MAX_WORKER_THREADS=${MAX_WORKER_THREADS:-10}
       - TZ=${TZ:-UTC}
       - LOG_LEVEL=${LOG_LEVEL:-ERROR}
@@ -195,8 +196,6 @@ services:
 volumes:
   postgres-data:
   maestro-data:
-  maestro-models:  # New volume for models
-  # ollama-data:
 
 networks:
   maestro-network:

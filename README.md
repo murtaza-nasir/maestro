@@ -5,23 +5,33 @@
 # MAESTRO: Your Self-Hosted AI Research Assistant
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-2.1.0-green.svg)](https://github.com/murtaza-nasir/maestro.git)
+[![Version](https://img.shields.io/badge/Version-0.1.5--alpha-green.svg)](https://github.com/murtaza-nasir/maestro.git)
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://hub.docker.com/r/yourusername/maestro)
+[![Documentation](https://img.shields.io/badge/Docs-Available-brightgreen.svg)](https://yourusername.github.io/maestro/)
 
-> **Version 0.1.4 Update (08/20/2025)**
+> **Version 0.1.5-alpha (January 2025) - Major Update**
 > 
-> - **New**: Jina.ai integration for web search and content fetching
-> - **Improved**: Search queries now expand vague references automatically  
-> - **Enhanced**: Better handling of JavaScript-heavy sites with Jina fetcher but will be slower
+> - **Performance**: Complete async backend migration (2-3x faster)
+> - **Stability**: 50+ bug fixes and mission recovery improvements
+> - **Documentation**: Complete overhaul with example reports and guides
+> - **UI/UX**: Enhanced interface with LaTeX support and better navigation
+> - **[Full Release Notes](RELEASE_NOTES_v0.1.5-alpha.md)** | **[Documentation](https://yourusername.github.io/maestro/)**
 >
-> **⚠️ Version 0.1.3 - BREAKING CHANGE (08/15/2025)** 
-> 
-> Complete migration from SQLite/ChromaDB to PostgreSQL with pgvector. 
-> - **Action Required**: If upgrading, you must rebuild from scratch with `docker compose down -v`
-> - **New Requirements**: PostgreSQL with pgvector extension (included in Docker setup)
-> - **Security**: All credentials now configurable via environment variables 
+> **Breaking Change**: PostgreSQL with pgvector is required (SQLite no longer supported) 
 
-MAESTRO is an AI-powered research platform you can host on your own hardware. It's designed to manage complex research tasks from start to finish in a collaborative, multi-user environment. Plan your research, let AI agents carry it out, and watch as they generate detailed reports based on your documents and sources from the web.
+MAESTRO is an AI-powered research platform you can host on your own hardware. It's designed to manage complex research tasks from start to finish in a collaborative research environment. Plan your research, let AI agents carry it out, and watch as they generate detailed reports based on your documents and sources from the web.
+
+## Documentation
+
+**[View Full Documentation](https://yourusername.github.io/maestro/)**
+
+### Quick Links
+- **[Quick Start Guide](https://yourusername.github.io/maestro/getting-started/quickstart/)** - Get up and running in minutes
+- **[Installation Guide](https://yourusername.github.io/maestro/getting-started/installation/)** - Detailed setup instructions
+- **[User Guide](https://yourusername.github.io/maestro/user-guide/)** - Learn all features
+- **[Configuration](https://yourusername.github.io/maestro/getting-started/configuration/overview/)** - Set up AI providers
+- **[Example Reports](https://yourusername.github.io/maestro/example-reports/)** - See what MAESTRO can do
+- **[Troubleshooting](https://yourusername.github.io/maestro/troubleshooting/)** - Common issues and solutions
 
 <p align="center">
   <img src="images/10-research-draft.png" alt="Final Draft" width="700"/>
@@ -242,7 +252,7 @@ docker compose up -d
 **⚠️ First Run:** Initial startup takes 5-10 minutes to download AI models. Monitor progress with:
 ```bash
 docker compose logs -f maestro-backend
-# Wait for: "Application startup complete"
+# Wait for: "MAESTRO Backend Started Successfully!"
 ```
 
 Access MAESTRO at **http://localhost**
@@ -291,7 +301,7 @@ Access MAESTRO at **http://localhost**
     docker compose logs -f maestro-backend
     
     # Wait for this message:
-    # "INFO:     Application startup complete."
+    # "MAESTRO Backend Started Successfully!"
     # or "Uvicorn running on http://0.0.0.0:8000"
     ```
 
@@ -343,7 +353,7 @@ Access MAESTRO at **http://localhost**
     docker compose logs -f maestro-backend
     
     # Wait for this message:
-    # "INFO:     Application startup complete."
+    # "MAESTRO Backend Started Successfully!"
     # or "Uvicorn running on http://0.0.0.0:8000"
     ```
 

@@ -5,7 +5,7 @@ import json
 
 from ai_researcher.config import THOUGHT_PAD_CONTEXT_LIMIT
 from ai_researcher.dynamic_config import get_max_planning_context_chars
-from ai_researcher.agentic_layer.context_manager import ExecutionLogEntry
+from ai_researcher.agentic_layer.async_context_manager import ExecutionLogEntry
 from ai_researcher.agentic_layer.schemas.planning import SimplifiedPlan, ReportSection
 from ai_researcher.agentic_layer.schemas.notes import Note
 from ai_researcher.agentic_layer.schemas.reflection import ReflectionOutput, SuggestedSubsectionTopic
@@ -115,13 +115,13 @@ class ReflectionManager:
             
             # Update scratchpad if provided
             if scratchpad_update:
-                self.controller.context_manager.update_scratchpad(mission_id, scratchpad_update)
+                await self.controller.context_manager.update_scratchpad(mission_id, scratchpad_update)
                 
             # Log the reflection step
             log_status = "success" if reflection_output else "failure"
             error_message = None if reflection_output else "Reflection agent failed to generate output."
             
-            self.controller.context_manager.log_execution_step(
+            await self.controller.context_manager.log_execution_step(
                 mission_id=mission_id,
                 agent_name="ReflectionAgent",
                 action=f"Reflect on Section {section_id} (Pass {pass_num})",
@@ -142,7 +142,7 @@ class ReflectionManager:
                 
             # Store generated thought if available
             if reflection_output and reflection_output.generated_thought:
-                self.controller.context_manager.add_thought(mission_id, "ReflectionAgent", reflection_output.generated_thought)
+                await self.controller.context_manager.add_thought(mission_id, "ReflectionAgent", reflection_output.generated_thought)
                 
             return reflection_output
             
@@ -150,7 +150,7 @@ class ReflectionManager:
             logger.error(f"Error during reflection for section {section_id}: {e}", exc_info=True)
             
             # Log the failure
-            self.controller.context_manager.log_execution_step(
+            await self.controller.context_manager.log_execution_step(
                 mission_id=mission_id,
                 agent_name="ReflectionAgent",
                 action=f"Reflect on Section {section_id} (Pass {pass_num+1})",
@@ -200,7 +200,7 @@ class ReflectionManager:
         # Handle Generated Thought
         if reflection_output.generated_thought:
             # Add the generated thought to the thought pad
-            thought_id = self.controller.context_manager.add_thought(
+            thought_id = await self.controller.context_manager.add_thought(
                 mission_id=mission_id,
                 agent_name="ReflectionAgent",
                 content=reflection_output.generated_thought
@@ -223,6 +223,28 @@ class ReflectionManager:
         update_callback: Optional[Callable[[queue.Queue, ExecutionLogEntry], None]] = None
     ) -> bool:
         """
+        Processes collected reflection outputs (subsection suggestions AND structural modifications),
+        calls PlanningAgent to revise the outline, and updates the plan if the outline changes.
+        Now uses batched processing to handle large contexts.
+        Returns True if successful, False otherwise.
+        """
+        # Import the batched implementation
+        from ai_researcher.agentic_layer.controller.reflection_manager_batched import process_suggestions_and_update_plan_batched
+        
+        # Use the batched implementation
+        return await process_suggestions_and_update_plan_batched(
+            self, mission_id, reflection_data, log_queue, update_callback
+        )
+    
+    async def process_suggestions_and_update_plan_original(
+        self,
+        mission_id: str,
+        reflection_data: List[Tuple[str, ReflectionOutput]],
+        log_queue: Optional[queue.Queue] = None,
+        update_callback: Optional[Callable[[queue.Queue, ExecutionLogEntry], None]] = None
+    ) -> bool:
+        """
+        Original implementation - kept for reference and fallback.
         Processes collected reflection outputs (subsection suggestions AND structural modifications),
         calls PlanningAgent to revise the outline, and updates the plan if the outline changes.
         Includes logging for note assignment changes.
@@ -378,7 +400,7 @@ class ReflectionManager:
                 # ADD AGENT STEP LOGGING
                 log_status_planning_rev = "success" if revised_plan_response and not revised_plan_response.parsing_error else "failure"
                 log_error_planning_rev = revised_plan_response.parsing_error if revised_plan_response and revised_plan_response.parsing_error else ("Agent returned None" if not revised_plan_response else None)
-                self.controller.context_manager.log_execution_step(
+                await self.controller.context_manager.log_execution_step(
                     mission_id=mission_id,
                     agent_name=self.controller.planning_agent.agent_name,
                     action="Revise Outline (Inter-Pass)",
@@ -395,7 +417,7 @@ class ReflectionManager:
 
                 # Update scratchpad if the agent provided an update
                 if scratchpad_update:
-                    self.controller.context_manager.update_scratchpad(mission_id, scratchpad_update)
+                    await self.controller.context_manager.update_scratchpad(mission_id, scratchpad_update)
                     logger.info(f"Updated scratchpad after inter-pass plan revision for mission {mission_id}.")
 
                 if log_status_planning_rev == "success":
@@ -416,11 +438,11 @@ class ReflectionManager:
                             mission_goal=revised_plan_response.mission_goal,
                             report_outline=revised_plan_response.report_outline
                         )
-                        self.controller.context_manager.store_plan(mission_id, updated_plan)
+                        await self.controller.context_manager.store_plan(mission_id, updated_plan)
                         logger.info("Revised outline and steps stored.")
                     except Exception as e:
                         logger.error(f"Failed to create/store updated SimplifiedPlan: {e}", exc_info=True)
-                        self.controller.context_manager.log_execution_step(
+                        await self.controller.context_manager.log_execution_step(
                             mission_id, "AgentController", "Store Revised Plan",
                             input_summary="Storing revised plan from PlanningAgent.",
                             output_summary="Failed to store revised plan.", status="failure", error_message=str(e),
@@ -437,7 +459,7 @@ class ReflectionManager:
 
         except Exception as e:
             logger.error(f"Error during Inter-Pass suggestion processing for mission {mission_id}: {e}", exc_info=True)
-            self.controller.context_manager.log_execution_step(
+            await self.controller.context_manager.log_execution_step(
                 mission_id, "AgentController", "Process Suggestions (Inter-Pass)",
                 input_summary="Processing collected subsection suggestions.",
                 status="failure", error_message=f"Exception: {e}", model_details=model_call_details,
@@ -569,7 +591,7 @@ class ReflectionManager:
         logger.info(f"Overall redundancy check completed. Kept {len(filtered_notes)} out of {len(notes)} original notes.")
         
         # Log overall result
-        self.controller.context_manager.log_execution_step(
+        await self.controller.context_manager.log_execution_step(
             mission_id=mission_id,
             agent_name="ReflectionManager",
             action="Perform Redundancy Check (Parallel Per Section)",
@@ -659,7 +681,7 @@ class ReflectionManager:
 
             # Update scratchpad if provided
             if scratchpad_update:
-                self.controller.context_manager.update_scratchpad(mission_id, scratchpad_update)
+                await self.controller.context_manager.update_scratchpad(mission_id, scratchpad_update)
 
             # Process the response (Expecting IDs to REMOVE based on user feedback in prompt)
             notes_to_remove_ids_section: Set[str] = set()
@@ -729,7 +751,7 @@ class ReflectionManager:
 
             # Log step result
             log_status = "success" if not parsing_error else "failure"
-            self.controller.context_manager.log_execution_step(
+            await self.controller.context_manager.log_execution_step(
                 mission_id=mission_id,
                 agent_name="ReflectionAgent",
                 action=f"Redundancy Check (Section: {section_id})",
@@ -755,7 +777,7 @@ class ReflectionManager:
 
         except Exception as e:
             logger.error(f"Exception during redundancy check for section {section_id}: {e}", exc_info=True)
-            self.controller.context_manager.log_execution_step(
+            await self.controller.context_manager.log_execution_step(
                 mission_id=mission_id,
                 agent_name="ReflectionAgent",
                 action=f"Redundancy Check (Section: {section_id})",

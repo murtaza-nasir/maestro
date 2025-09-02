@@ -138,9 +138,11 @@ export const WritingSessionsList: React.FC = () => {
   }
 
   // Filter sessions based on search term
-  const filteredSessions = sessions.filter(session =>
-    session.name.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const filteredSessions = Array.isArray(sessions)
+    ? sessions.filter(session =>
+        session.name.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    : []
 
   return (
     <div className="h-full flex flex-col bg-background">
