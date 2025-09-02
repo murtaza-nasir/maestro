@@ -423,11 +423,14 @@ pdfs*/
 .streamlit/
 
 # Evaluation and testing artifacts
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.svg
+# Don't ignore images in specific directories
+!docs/assets/images/**/*.png
+!docs/assets/images/**/*.jpg
+!docs/assets/images/**/*.jpeg
+!docs/assets/images/**/*.gif
+!docs/assets/images/**/*.svg
+!docs/assets/*.png
+!docs/assets/*.jpg
 !images/*.png
 !images/*.jpg
 !images/*.jpeg
