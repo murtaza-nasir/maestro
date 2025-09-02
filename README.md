@@ -29,6 +29,84 @@ MAESTRO is an AI-powered research platform you can host on your own hardware. It
 - **[Example Reports](https://murtaza-nasir.github.io/maestro/example-reports/)** - Sample outputs from various models
 - **[Troubleshooting](https://murtaza-nasir.github.io/maestro/troubleshooting/)** - Common issues and solutions
 
+## Screenshots
+
+<p align="center">
+  <img src="images/10-research-draft.png" alt="Final Draft" width="700"/>
+</p>
+
+<details>
+  <summary><strong>Document Library</strong></summary>
+  <br>
+  <p align="center">
+    <img src="images/01-document-library.png" alt="Document Library" width="700"/>
+  </p>
+</details>
+
+<details>
+  <summary><strong>Document Groups</strong></summary>
+  <br>
+  <p align="center">
+    <img src="images/02-document-groups.png" alt="Document Groups" width="700"/>
+  </p>
+</details>
+
+<details>
+  <summary><strong>Mission Settings</strong></summary>
+  <br>
+  <p align="center">
+    <img src="images/03-mission-settings.png" alt="Mission Settings" width="700"/>
+  </p>
+</details>
+
+<details>
+  <summary><strong>Chat Interface</strong></summary>
+  <br>
+  <p align="center">
+    <img src="images/04-chat-with-docs.png" alt="Chat with Documents" width="700"/>
+  </p>
+</details>
+
+<details>
+  <summary><strong>Writing Assistant</strong></summary>
+  <br>
+  <p align="center">
+    <img src="images/05-writing-assistant.png" alt="Writing Assistant" width="700"/>
+  </p>
+</details>
+
+<details>
+  <summary><strong>Research Transparency</strong></summary>
+  <br>
+  <p align="center">
+    <img src="images/06-research-transparency.png" alt="Research Transparency" width="700"/>
+  </p>
+</details>
+
+<details>
+  <summary><strong>AI-Generated Notes</strong></summary>
+  <br>
+  <p align="center">
+    <img src="images/07-automated-notes.png" alt="Automated Notes" width="700"/>
+  </p>
+</details>
+
+<details>
+  <summary><strong>Mission Tracking</strong></summary>
+  <br>
+  <p align="center">
+    <img src="images/08-mission-tracking.png" alt="Mission Tracking" width="700"/>
+  </p>
+</details>
+
+<details>
+  <summary><strong>Agent Reflection</strong></summary>
+  <br>
+  <p align="center">
+    <img src="images/09-agent-reflection.png" alt="Agent Reflection" width="700"/>
+  </p>
+</details>
+
 ## Getting Started
 
 ### Prerequisites
