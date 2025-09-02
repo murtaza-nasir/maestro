@@ -2,7 +2,7 @@
 
 Document Groups allow you to organize your library into logical collections, making it easier to manage large document sets and focus research on specific topics.
 
-<!-- Image not available: Document Groups View (doc view document groups.png) -->
+![Document Groups View](../../assets/images/doc view document groups.png)
 
 ## What are Document Groups?
 

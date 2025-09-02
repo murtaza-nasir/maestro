@@ -14,7 +14,7 @@ Quick fixes for AI model configuration and API issues.
 4. Click "Test" button
 5. Models should populate automatically
 
-<!-- Image not available: AI Config Model Selection (ai-config-model-selection.png) -->
+![AI Config Model Selection](../../assets/images/troubleshooting/ai-config-model-selection.png)
 
 **If still empty:**
 ```bash

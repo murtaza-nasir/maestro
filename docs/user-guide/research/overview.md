@@ -28,7 +28,7 @@ MAESTRO's research system uses an agentic framework to gather information from w
 
 ## Starting a Research Session
 
-<!-- Image not available: Research Chat Interface (Research view.png) -->
+![Research Chat Interface](../../assets/images/Research view.png)
 
 ### Step 1: Initial Conversation
 
@@ -78,7 +78,7 @@ Once started, the chat interface is disabled and research begins.
 
 ## Monitoring Research Progress
 
-<!-- Image not available: Research Mission Interface (Research view.png) -->
+![Research Mission Interface](../../assets/images/Research view.png)
 
 ### The Mission Panel Tabs
 
@@ -86,7 +86,7 @@ During research, monitor progress through four main tabs:
 
 #### 1. Plan Tab
 
-<!-- Image not available: Planning Phase (Research view-plan outline.png) -->
+![Planning Phase](../../assets/images/Research view-plan outline.png)
 
 Shows the research outline with sections and subsections:
 
@@ -116,7 +116,7 @@ Each agent entry shows:
 
 #### 3. Notes Tab
 
-<!-- Image not available: Research Notes (Resarch view notes.png) -->
+![Research Notes](../../assets/images/Resarch view notes.png)
 
 Collected research findings:
 
@@ -134,7 +134,7 @@ Filter and search capabilities:
 
 #### 4. Draft Tab
 
-<!-- Image not available: Draft Generation (Research view draft.png) -->
+![Draft Generation](../../assets/images/Research view draft.png)
 
 Final report generation:
 
@@ -201,7 +201,7 @@ Final report generation:
 
 ## Research Configuration
 
-<!-- Image not available: Mission Settings (research view settings.png) -->
+![Mission Settings](../../assets/images/research view settings.png)
 
 Research missions can be configured through the Settings tab or customized per mission. For a complete reference of all parameters, see the [Research Parameters Reference](parameters.md).
 

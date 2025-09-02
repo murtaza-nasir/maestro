@@ -2,7 +2,7 @@
 
 The Document Library is your centralized repository for all uploaded documents. It provides comprehensive tools for viewing, organizing, searching, and managing your document collection.
 
-<!-- Image not available: Document Library View (doc view all docs.png) -->
+![Document Library View](../../assets/images/doc view all docs.png)
 
 ## Library Interface
 
@@ -26,7 +26,7 @@ Each document card shows:
 ## Viewing Documents
 
 ### Document Grid View
-<!-- Image not available: Document Grid (doc view all docs.png) -->
+![Document Grid](../../assets/images/doc view all docs.png)
 - **Visual Layout**: Card-based display
 - **Quick Preview**: Hover for summary
 - **Batch Selection**: Click to select multiple
@@ -43,7 +43,7 @@ Alternative compact display:
 
 ## Filtering Documents
 
-<!-- Image not available: Filter Options (doc view filters.png) -->
+![Filter Options](../../assets/images/doc view filters.png)
 
 ### Available Filters
 Filter your library by:

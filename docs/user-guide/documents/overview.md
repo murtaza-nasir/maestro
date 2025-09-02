@@ -2,7 +2,7 @@
 
 The document management system is the foundation of MAESTRO's research capabilities, allowing you to upload, organize, and search through your document library.
 
-<!-- Image not available: Document Library (doc view all docs.png) -->
+![Document Library](../../assets/images/doc view all docs.png)
 
 ## How Document Processing Works
 

@@ -2,7 +2,7 @@
 
 MAESTRO provides multiple ways to upload documents to your library, supporting various file formats and batch uploads. The system automatically processes documents for semantic search and research capabilities.
 
-<!-- Image not available: Drag and Drop Upload (doc view drag and drop upload.png) -->
+![Drag and Drop Upload](../../assets/images/doc view drag and drop upload.png)
 
 ## Upload Methods
 
