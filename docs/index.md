@@ -276,11 +276,11 @@ graph TB
     
     Ask questions and share experiences
 
--   :material-road-variant: **Roadmap**
+-   :material-bug: **Issues**
     
-    [View Plans](community/roadmap.md){ .md-button }
+    [Report Issues](https://github.com/murtaza-nasir/maestro/issues){ .md-button }
     
-    See what's coming next
+    Report bugs and request features
 
 </div>
 
