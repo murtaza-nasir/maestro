@@ -79,7 +79,7 @@ Each group has:
 ## Group Operations
 
 ### Viewing Group Contents
-<!-- Image not available: Group Documents (doc view document groups.png) -->
+![Group Documents](../../assets/images/doc view document groups.png)
 
 Group view shows:
 - **Document List**: All documents in group
@@ -128,7 +128,7 @@ Groups provide focused context:
 - **Search Scope**: Search within group only
 
 ### Group Selection
-<!-- Image not available: Group Selection in Research (doc view filters.png) -->
+![Group Selection in Research](../../assets/images/doc view filters.png)
 
 In research interfaces:
 1. Click **"Select Group"** dropdown
