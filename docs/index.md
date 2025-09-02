@@ -8,7 +8,7 @@
   <div style="margin-top: 1rem;">
     <a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="License: AGPL v3"/></a>
     <a href="https://github.com/murtaza-nasir/maestro.git"><img src="https://img.shields.io/badge/Version-0.1.5--alpha-green.svg" alt="Version"/></a>
-    <a href="https://hub.docker.com/r/yourusername/maestro"><img src="https://img.shields.io/badge/Docker-Ready-blue.svg" alt="Docker"/></a>
+    <a href="https://hub.docker.com/r/murtaza-nasir/maestro"><img src="https://img.shields.io/badge/Docker-Ready-blue.svg" alt="Docker"/></a>
   </div>
 </div>
 

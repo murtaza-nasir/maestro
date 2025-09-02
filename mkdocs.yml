@@ -1,7 +1,7 @@
 site_name: MAESTRO Documentation
 site_description: Your Self-Hosted AI Research Assistant - Complete Documentation
 site_author: MAESTRO Team
-site_url: https://yourusername.github.io/maestro/
+site_url: https://murtaza-nasir.github.io/maestro/
 repo_name: maestro
 repo_url: https://github.com/murtaza-nasir/maestro
 edit_uri: edit/main/docs/
@@ -140,7 +140,7 @@ extra:
     - icon: fontawesome/brands/github
       link: https://github.com/murtaza-nasir/maestro
     - icon: fontawesome/brands/docker
-      link: https://hub.docker.com/r/yourusername/maestro
+      link: https://hub.docker.com/r/murtaza-nasir/maestro
   analytics:
     provider: google
     property: G-XXXXXXXXXX  # Replace with your Google Analytics ID
