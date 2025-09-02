@@ -2,7 +2,7 @@
 
 MAESTRO's Writing Mode is a powerful AI-assisted writing environment that combines intelligent research capabilities with a full-featured markdown editor. It enables you to create well-researched documents with proper citations from both your document library and web sources.
 
-<!-- Image not available: Writing Mode Interface (writing view chat.png) -->
+![Writing Mode Interface](../../images/user-guide/writing view chat.png)
 
 ## Core Features
 
@@ -48,7 +48,7 @@ Before starting your research, configure your sources:
 
 ### 1. Setting Up Search Parameters
 
-<!-- Image not available: Search Settings (writing view search settings.png) -->
+![Search Settings](../../images/user-guide/writing view search settings.png)
 
 Click the gear icon to access **Writing Search Settings**:
 
@@ -64,7 +64,7 @@ For quick responses, use minimal settings (1 iteration, 3 queries). For comprehe
 
 ### 2. Adding Custom Instructions
 
-<!-- Image not available: Additional Instructions (writing view additional instructions.png) -->
+![Additional Instructions](../../images/user-guide/writing view additional instructions.png)
 
 Click **"Additional Instructions"** to provide persistent context:
 - Writing style preferences (academic, technical, casual)
@@ -98,7 +98,7 @@ The AI assistant can help with:
 
 ### 4. Understanding References
 
-<!-- Image not available: References in Chat (writing view references in chat.png) -->
+![References in Chat](../../images/user-guide/writing view references in chat.png)
 
 The assistant provides numbered references with color coding:
 - **Blue references** `[1]` `[2]`: Links to document sources from your collection
@@ -110,7 +110,7 @@ The assistant provides numbered references with color coding:
 
 ### Markdown and LaTeX Support
 
-<!-- Image not available: Formulas and Tables (writing view fomrulas and tables in latex and markdown.png) -->
+![Formulas and Tables](../../images/user-guide/writing view fomrulas and tables in latex and markdown.png)
 
 The editor supports full markdown formatting plus LaTeX:
 
@@ -152,7 +152,7 @@ The editor provides quick formatting options:
 
 ### Real-time Preview
 
-<!-- Image not available: Editor with Preview (writing view editor and preview (is available to assistant in context, not for editing).png) -->
+![Editor with Preview](../../images/user-guide/writing view editor and preview (is available to assistant in context, not for editing).png)
 
 Toggle between:
 - **Editor View**: Write and edit your content

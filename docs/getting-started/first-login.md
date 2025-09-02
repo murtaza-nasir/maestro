@@ -47,7 +47,7 @@ grep ADMIN_PASSWORD .env
 
 ### Step 2: Configure AI Provider
 
-![AI Configuration](/assets/images/settings/ai-config.png)
+![AI Configuration](../assets/images/settings/ai-config.png)
 
 1. Stay in Settings, click **AI Config** tab
 2. Select your AI Provider:
@@ -65,7 +65,7 @@ grep ADMIN_PASSWORD .env
 
 ### Step 3: Configure Search Provider (Optional)
 
-![Search Configuration](/assets/images/settings/search.png)
+![Search Configuration](../assets/images/settings/search.png)
 
 1. Click **Search** tab in Settings
 2. Select a search provider:

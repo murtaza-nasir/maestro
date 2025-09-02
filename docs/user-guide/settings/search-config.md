@@ -2,7 +2,7 @@
 
 Configure web search providers for MAESTRO's research capabilities.
 
-![Search Configuration Interface](//assets/images/settings/search.png)
+![Search Configuration Interface](../../assets/images/settings/search.png)
 
 ## Overview
 

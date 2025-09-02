@@ -2,7 +2,7 @@
 
 Configure language model providers to power MAESTRO's research and writing capabilities.
 
-![AI Configuration Interface](//assets/images/settings/ai-config.png)
+![AI Configuration Interface](../../assets/images/settings/ai-config.png)
 
 ## Overview
 

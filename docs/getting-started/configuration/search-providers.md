@@ -2,7 +2,7 @@
 
 Enable web search capabilities for MAESTRO's research agents to access current information from the internet.
 
-![Search Configuration Interface](//assets/images/settings/search.png)
+![Search Configuration Interface](../../assets/images/settings/search.png)
 
 ## Overview
 
