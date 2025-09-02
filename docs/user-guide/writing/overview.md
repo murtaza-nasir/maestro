@@ -2,7 +2,7 @@
 
 MAESTRO's Writing Mode is a powerful AI-assisted writing environment that combines intelligent research capabilities with a full-featured markdown editor. It enables you to create well-researched documents with proper citations from both your document library and web sources.
 
-![Writing Mode Interface](../../images/user-guide/writing view chat.png)
+![Writing Mode Interface](../../assets/images/writing view chat.png)
 
 ## Core Features
 
@@ -48,7 +48,7 @@ Before starting your research, configure your sources:
 
 ### 1. Setting Up Search Parameters
 
-![Search Settings](../../images/user-guide/writing view search settings.png)
+![Search Settings](../../assets/images/writing view search settings.png)
 
 Click the gear icon to access **Writing Search Settings**:
 
@@ -64,7 +64,7 @@ For quick responses, use minimal settings (1 iteration, 3 queries). For comprehe
 
 ### 2. Adding Custom Instructions
 
-![Additional Instructions](../../images/user-guide/writing view additional instructions.png)
+![Additional Instructions](../../assets/images/writing view additional instructions.png)
 
 Click **"Additional Instructions"** to provide persistent context:
 - Writing style preferences (academic, technical, casual)
@@ -98,7 +98,7 @@ The AI assistant can help with:
 
 ### 4. Understanding References
 
-![References in Chat](../../images/user-guide/writing view references in chat.png)
+![References in Chat](../../assets/images/writing view references in chat.png)
 
 The assistant provides numbered references with color coding:
 - **Blue references** `[1]` `[2]`: Links to document sources from your collection
@@ -110,7 +110,7 @@ The assistant provides numbered references with color coding:
 
 ### Markdown and LaTeX Support
 
-![Formulas and Tables](../../images/user-guide/writing view fomrulas and tables in latex and markdown.png)
+![Formulas and Tables](../../assets/images/writing view fomrulas and tables in latex and markdown.png)
 
 The editor supports full markdown formatting plus LaTeX:
 
@@ -152,7 +152,7 @@ The editor provides quick formatting options:
 
 ### Real-time Preview
 
-![Editor with Preview](../../images/user-guide/writing view editor and preview (is available to assistant in context, not for editing).png)
+![Editor with Preview](../../assets/images/writing view editor and preview (is available to assistant in context, not for editing).png)
 
 Toggle between:
 - **Editor View**: Write and edit your content
