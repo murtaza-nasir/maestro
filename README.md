@@ -9,7 +9,7 @@
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://hub.docker.com/r/yourusername/maestro)
 [![Documentation](https://img.shields.io/badge/Docs-Available-brightgreen.svg)](https://yourusername.github.io/maestro/)
 
-> **Version 0.1.5-alpha (January 2025) - Major Update**
+> **Version 0.1.5-alpha (Sep 2, 2025) - Major Update**
 > 
 > - **Performance**: Complete async backend migration (2-3x faster)
 > - **Stability**: 50+ bug fixes and mission recovery improvements
