@@ -11,6 +11,7 @@ interface AdvancedModelConfig {
   api_key: string | null
   base_url: string
   model_name: string
+  thinking_level?: string  // For GPT-5 models: "minimal", "low", "medium", "high"
 }
 
 export interface AISettings {

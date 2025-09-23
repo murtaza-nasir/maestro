@@ -17,6 +17,11 @@ class WritingController:
         self.user = user
         self.model_dispatcher = ModelDispatcher(user_settings=user.settings)
 
+    async def cleanup(self):
+        """Cleanup the model dispatcher connections."""
+        if hasattr(self.model_dispatcher, 'cleanup'):
+            await self.model_dispatcher.cleanup()
+
     @classmethod
     async def get_instance(cls, user: User) -> "WritingController":
         """
@@ -26,6 +31,15 @@ class WritingController:
             if user.id not in cls._instances:
                 cls._instances[user.id] = cls(user)
             return cls._instances[user.id]
+    
+    @classmethod
+    async def cleanup_instance(cls, user_id: int):
+        """Cleanup and remove a user's WritingController instance."""
+        async with cls._lock:
+            if user_id in cls._instances:
+                controller = cls._instances[user_id]
+                await controller.cleanup()
+                del cls._instances[user_id]
 
     async def run_writing_task(self, prompt: str, context: str) -> str:
         """

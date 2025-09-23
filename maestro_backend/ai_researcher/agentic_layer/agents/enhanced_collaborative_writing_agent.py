@@ -268,7 +268,8 @@ Provide your content as natural text with appropriate markdown formatting. The s
         llm_response, model_details = await self._call_llm(
             user_prompt=planning_prompt,
             agent_mode="writing_planner",
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
+            log_llm_call=False # Disable duplicate LLM call logging
         )
 
         if not llm_response or not llm_response.choices:

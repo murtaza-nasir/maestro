@@ -280,6 +280,19 @@ async def intelligent_web_search(
     logger.info(f"  - Search depth: {depth}")
     logger.info(f"  - Max results: {max_results}")
     
+    # Safety check for query length using user-configured limit
+    from ai_researcher.dynamic_config import get_max_query_length
+    max_query_len = get_max_query_length(mission_id)
+    if len(cleaned_query) > max_query_len:
+        logger.warning(f"Intelligent web search query exceeds configured limit of {max_query_len} chars ({len(cleaned_query)} chars). Truncating.")
+        # Simple truncation at word boundary
+        truncate_at = max_query_len - 5
+        cleaned_query = cleaned_query[:truncate_at] + "..."
+        last_space = cleaned_query[:truncate_at].rfind(' ')
+        if last_space > truncate_at * 0.75:
+            cleaned_query = cleaned_query[:last_space] + "..."
+        logger.info(f"Truncated intelligent web search query to {len(cleaned_query)} chars")
+    
     # Execute the search with analyzed parameters
     result = await web_search_tool.execute(
         query=cleaned_query,

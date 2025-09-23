@@ -171,7 +171,10 @@ Output ONLY a single JSON object conforming EXACTLY to the RequestAnalysisOutput
                 response, model_details = await self.controller.model_dispatcher.dispatch(
                     messages=messages,
                     response_format=response_format,
-                    agent_mode="planning"  # Use planning model for structured output and instruction following
+                    agent_mode="planning",  # Use planning model for structured output and instruction following
+                    mission_id=mission_id,  # Pass mission_id for cost tracking
+                    log_queue=log_queue,  # Pass log_queue for UI updates
+                    update_callback=update_callback  # Pass update_callback for cost tracking
                 )
 
             if response and response.choices and response.choices[0].message.content:
@@ -213,7 +216,7 @@ Output ONLY a single JSON object conforming EXACTLY to the RequestAnalysisOutput
 
         # Update stats (Now handled by ContextManager)
         if model_details:
-            self.controller.context_manager.update_mission_stats(mission_id, model_details, log_queue, update_callback)
+            await self.controller.context_manager.update_mission_stats(mission_id, model_details, log_queue, update_callback)
 
         return analysis_result
 
@@ -368,7 +371,7 @@ Output ONLY a single JSON object conforming EXACTLY to the RequestAnalysisOutput
                         
                         # Update mission stats
                         if model_details:
-                            self.controller.context_manager.update_mission_stats(mission_id, model_details, log_queue, update_callback)
+                            await self.controller.context_manager.update_mission_stats(mission_id, model_details, log_queue, update_callback)
                         
                         # Update the agent response to include the questions
                         questions_text = "\n".join([f"- {q}" for q in questions])
@@ -752,12 +755,15 @@ Instructions:
             async with self.controller.maybe_semaphore:
                 response, model_details = await self.controller.model_dispatcher.dispatch(
                     messages=[{"role": "user", "content": prompt}],
-                    agent_mode="planning"
+                    agent_mode="planning",
+                    mission_id=mission_id,  # Pass mission_id for cost tracking
+                    log_queue=log_queue,  # Pass log_queue for UI updates
+                    update_callback=update_callback  # Pass update_callback for cost tracking
                 )
             
             # Update Stats
             if model_details:
-                self.controller.context_manager.update_mission_stats(mission_id, model_details, log_queue, update_callback)
+                await self.controller.context_manager.update_mission_stats(mission_id, model_details, log_queue, update_callback)
             
             if response and response.choices and response.choices[0].message.content:
                 content = response.choices[0].message.content

@@ -293,14 +293,21 @@ Provide ONLY a single JSON object conforming EXACTLY to the ReflectionOutput sch
                         pydantic_model=ReflectionOutput
                     )
                 
-                # Use the dispatch method - assuming it returns (response_object, details_dict)
-                response, model_call_details = await self.model_dispatcher.dispatch( # <-- Add await
-                    messages=current_messages,
+                # Use _call_llm for consistent logging
+                # Need to extract user prompt from messages for _call_llm
+                # Store mission_id as instance attribute so _call_llm can access it
+                self.mission_id = mission_id
+                user_prompt = current_messages[-1]["content"] if current_messages else ""
+                response, model_call_details = await self._call_llm(
+                    user_prompt=user_prompt,
+                    history=current_messages[:-1] if len(current_messages) > 1 else None,
                     response_format=response_format_pydantic,
                     model=self.model_name,
                     agent_mode="reflection", # <-- Pass agent_mode
+                    # Don't pass mission_id - _call_llm gets it from self.mission_id
                     log_queue=log_queue, # Pass log_queue for UI updates
-                    update_callback=update_callback # Pass update_callback for UI updates
+                    update_callback=update_callback, # Pass update_callback for UI updates
+                    log_llm_call=True # Enable logging for cost tracking
                 )
 
                 if response and response.choices and response.choices[0].message.content:

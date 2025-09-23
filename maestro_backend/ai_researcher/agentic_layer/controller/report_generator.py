@@ -143,7 +143,10 @@ CRITICAL: Do NOT include formatting like "**Title:**", "Title:", markdown, or an
             async with self.controller.maybe_semaphore:
                 response, model_details = await self.controller.model_dispatcher.dispatch(
                     messages=[{"role": "user", "content": prompt}],
-                    agent_mode="writing"  # Use the writing model configuration
+                    agent_mode="writing",  # Use the writing model configuration
+                    mission_id=mission_id,  # Pass mission_id for cost tracking
+                    log_queue=log_queue,  # Pass log_queue for UI updates
+                    update_callback=update_callback  # Pass update_callback for cost tracking
                 )
 
             if response and response.choices and response.choices[0].message.content:
@@ -168,7 +171,7 @@ CRITICAL: Do NOT include formatting like "**Title:**", "Title:", markdown, or an
 
             # Update stats if details are available
             if model_details:
-                self.controller.context_manager.update_mission_stats(mission_id, model_details, log_queue, update_callback)
+                await self.controller.context_manager.update_mission_stats(mission_id, model_details, log_queue, update_callback)
 
         except Exception as e:
             logger.error(f"Error during title generation LLM call for mission {mission_id}: {e}", exc_info=True)

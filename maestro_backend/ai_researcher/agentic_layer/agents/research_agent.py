@@ -216,7 +216,7 @@ If you DO NOT receive 'Focus Questions' but receive 'Existing Relevant Notes':
         
         # Get max notes per section configuration
         from ai_researcher.dynamic_config import get_max_notes_per_section_assignment
-        max_notes_per_section = get_max_notes_per_section_assignment(mission_id)
+        max_notes_per_section = get_max_notes_per_section_assignment(self.mission_id)
         
         # Check current note count for this section
         current_note_count = len(existing_notes) if existing_notes else 0
@@ -849,7 +849,7 @@ Now, generate the questions for the provided research request.
                 response_format={"type": "json_object"},
                 log_queue=log_queue,
                 update_callback=update_callback,
-                log_llm_call=False # Disable duplicate LLM call logging since this is called by controller methods that already log
+                log_llm_call=True # Enable logging for cost tracking - controller creates summary logs but we need individual operation logs
             )
 
             if response and response.choices and response.choices[0].message.content:
@@ -1169,7 +1169,7 @@ If no relevant sub-questions are identified, return an empty list for "sub_quest
                 response_format={"type": "json_object"}, # Request JSON output
                 log_queue=log_queue if 'log_queue' in locals() else None, # Pass log_queue for UI updates
                 update_callback=update_callback, # <-- Pass the correct update_callback
-                log_llm_call=False # Disable duplicate LLM call logging since explore_question is logged by the research manager
+                log_llm_call=True # Enable logging for cost tracking of synthesis operation
             )
             model_calls_list.append(synthesis_model_details)
 
@@ -1239,7 +1239,8 @@ If no relevant sub-questions are identified, return an empty list for "sub_quest
             tool_registry_override=tool_registry_override, # Pass the override
             update_callback=update_callback, # <-- Pass update_callback
             chunk_content=chunk_content, # <-- Pass chunk content for evaluation
-            question_context=question_context # <-- Pass question context
+            question_context=question_context, # <-- Pass question context
+            mission_id=self.mission_id # <-- Pass mission_id for cost tracking (use self.mission_id)
         )
 
         if not full_content_original:
@@ -1510,8 +1511,10 @@ If no relevant sub-questions are identified, return an empty list for "sub_quest
                 prepared_queries, model_details_list = await query_preparer.prepare_queries(
                     original_query=initial_query,
                     techniques=techniques,
-                    domain_context=domain_context_for_preparer # Pass domain context here
-                    # Removed log_queue and update_callback arguments
+                    domain_context=domain_context_for_preparer, # Pass domain context here
+                    mission_id=self.mission_id,  # Pass cost tracking parameters
+                    log_queue=log_queue,
+                    update_callback=update_callback
                 )
             # Ensure at least one query is returned (fallback to initial)
             if not prepared_queries:
@@ -1748,10 +1751,20 @@ If no relevant sub-questions are identified, return an empty list for "sub_quest
             # Web Search Task - Check if tool exists before adding
             if registry_to_use.get_tool("web_search"):
                 web_query = enhanced_query  # Use enhanced query
-                if len(web_query) > 400:
-                    logger.warning(f"Web search query exceeds 400 chars ({len(web_query)}). Truncating. Original: '{web_query}'")
-                    web_query = web_query[:400]
-                    logger.info(f"Truncated web search query: '{web_query}'")
+                # Note: Query length refinement is now handled by QueryPreparer.refine_long_query()
+                # which intelligently rewrites queries that exceed API limits.
+                # We still keep a safety check here as a fallback.
+                # Import is at top of file, but get the configured max length
+                from ai_researcher.dynamic_config import get_max_query_length
+                max_query_len = get_max_query_length(self.mission_id)
+                if len(web_query) > max_query_len:
+                    logger.warning(f"Web search query still exceeds {max_query_len} chars ({len(web_query)} chars) after preparation. This should have been refined by QueryPreparer.")
+                    # Simple fallback truncation at word boundary
+                    truncate_at = max_query_len - 5  # Leave room for ellipsis
+                    web_query = web_query[:truncate_at] + "..."
+                    last_space = web_query[:truncate_at].rfind(' ')
+                    if last_space > truncate_at * 0.75:
+                        web_query = web_query[:last_space] + "..."
 
                 # Pass n_web_results to control how many results based on research phase
                 web_args = {
@@ -1805,7 +1818,8 @@ If no relevant sub-questions are identified, return an empty list for "sub_quest
         tool_registry_override: Optional[ToolRegistry] = None, # <-- Add override parameter
         update_callback: Optional[Callable] = None, # <-- Add update_callback parameter
         chunk_content: Optional[str] = None, # <-- Add chunk content for evaluation
-        question_context: Optional[str] = None # <-- Add question/goal context
+        question_context: Optional[str] = None, # <-- Add question/goal context
+        mission_id: Optional[str] = None # <-- Add mission_id for cost tracking
     ) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[str]]:
         """
         Intelligently decides if full document is needed based on chunk sufficiency,
@@ -1861,11 +1875,16 @@ Important considerations:
 """
                 
                 # Make async LLM call for evaluation with the same model
-                response = await self.model_dispatcher.generate_async(
-                    prompt=evaluation_prompt,
+                # Use _call_llm instead of direct model_dispatcher to ensure logging
+                response, eval_model_details = await self._call_llm(
+                    user_prompt=evaluation_prompt,
+                    agent_mode="research",  # Use research mode for this evaluation
                     max_tokens=20,
                     temperature=0.1,
-                    model=self.model  # Use the same model as the research agent
+                    model=self.model,  # Use the same model as the research agent
+                    log_queue=log_queue,  # Pass log_queue for UI updates
+                    update_callback=update_callback,  # Pass update_callback for cost tracking
+                    log_llm_call=True  # Enable logging to track these evaluation costs
                 )
                 
                 if response and response.choices and response.choices[0].message.content:
@@ -2125,7 +2144,7 @@ Task: Extract all key information relevant to the section goal (and focus questi
                 log_queue=log_queue if 'log_queue' in locals() else None, # Pass log_queue for UI updates
                 update_callback=update_callback, # <-- Pass correct update_callback
                 model=model, # <-- Pass the model parameter down
-                log_llm_call=False # Disable duplicate LLM call logging since this is an internal helper method
+                log_llm_call=True # Enable logging for cost tracking of individual note generation
             )
             note_content = ""
             raw_llm_response_content = "" # <-- Add variable to store raw response

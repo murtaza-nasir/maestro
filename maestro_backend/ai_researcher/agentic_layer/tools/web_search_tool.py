@@ -3,6 +3,7 @@ import logging
 import queue
 import aiohttp
 import asyncio
+import threading
 import time
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional, Callable
@@ -57,10 +58,22 @@ class WebSearchTool:
     Tool for performing web searches using the configured provider (Tavily or LinkUp).
     """
     # Class-level semaphore for rate limiting (max 2 concurrent requests)
-    _rate_limit_semaphore = asyncio.Semaphore(2)
+    # Make it lazy to avoid event loop binding issues
+    _rate_limit_semaphore = None
+    _semaphore_lock = threading.Lock()
     # Add delay between requests to avoid rate limits
     _last_request_time = 0
     _min_request_interval = 1.0  # Minimum 1 second between requests
+    
+    @classmethod
+    def _get_semaphore(cls):
+        """Get or create the rate limit semaphore for the current event loop."""
+        loop = asyncio.get_event_loop()
+        with cls._semaphore_lock:
+            # Create a new semaphore for this event loop if needed
+            if cls._rate_limit_semaphore is None or cls._rate_limit_semaphore._loop != loop:
+                cls._rate_limit_semaphore = asyncio.Semaphore(2)
+            return cls._rate_limit_semaphore
     
     def __init__(self, controller=None):
         # Get provider and API keys from user settings or environment
@@ -185,7 +198,7 @@ class WebSearchTool:
             return {"error": user_friendly_error}
 
         # Rate limiting: acquire semaphore to limit concurrent requests
-        async with WebSearchTool._rate_limit_semaphore:
+        async with self._get_semaphore():
             # Add delay between requests to avoid rate limits
             current_time = time.time()
             time_since_last = current_time - WebSearchTool._last_request_time

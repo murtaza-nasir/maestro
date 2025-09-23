@@ -237,6 +237,27 @@ def get_search_depth(mission_id: Optional[str] = None) -> str:
     # Fallback to environment variable then default
     return os.getenv("SEARCH_DEPTH", "standard")
 
+def get_max_query_length(mission_id: Optional[str] = None) -> int:
+    """Get the maximum query length for web search from user settings or environment."""
+    # Check user settings first
+    user_settings = get_user_settings()
+    if user_settings:
+        search_settings = user_settings.get("search", {})
+        if search_settings and search_settings.get("max_query_length"):
+            try:
+                max_length = int(search_settings["max_query_length"])
+                # Ensure it's within reasonable bounds (100-400 chars)
+                return max(100, min(400, max_length))
+            except (ValueError, TypeError):
+                pass
+    
+    # Fallback to environment variable then default
+    try:
+        max_length = int(os.getenv("MAX_QUERY_LENGTH", "350"))
+        return max(100, min(400, max_length))
+    except (ValueError, TypeError):
+        return 350  # Safe default that works with Tavily
+
 # --- Web Fetch Provider Settings ---
 def get_web_fetch_provider(mission_id: Optional[str] = None) -> str:
     """Get the web fetch provider from user settings or environment."""

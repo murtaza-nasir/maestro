@@ -37,8 +37,8 @@ def setup_logging(log_level: str = "WARNING") -> None:
             logging.getLogger(logger_name).setLevel(logging.WARNING)
 
         # The model_dispatcher is exceptionally noisy with token counts.
-        # We'll set it to ERROR to hide these messages unless in DEBUG mode.
-        logging.getLogger('ai_researcher.agentic_layer.model_dispatcher').setLevel(logging.ERROR)
+        # We'll set it to INFO to see cost tracking logs.
+        logging.getLogger('ai_researcher.agentic_layer.model_dispatcher').setLevel(logging.INFO)
     
     # Create a custom filter to reduce repetitive messages
     class DuplicateFilter:

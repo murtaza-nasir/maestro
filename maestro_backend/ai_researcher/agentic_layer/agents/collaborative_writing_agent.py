@@ -360,7 +360,8 @@ Your goal is to be a knowledgeable writing partner that helps users create well-
                 user_prompt=generation_prompt,
                 agent_mode="writing",
                 log_queue=log_queue,
-                update_callback=update_callback
+                update_callback=update_callback,
+                log_llm_call=False # Disable duplicate LLM call logging
             )
             
             if llm_response and llm_response.choices:

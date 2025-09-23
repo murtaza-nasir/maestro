@@ -1093,14 +1093,27 @@ async def resume_mission_execution(
         loop = asyncio.get_event_loop()
         thread_pool: ThreadPoolExecutor = request.app.state.thread_pool
         
+        async def run_mission_async():
+            """Resume the mission from where it left off."""
+            try:
+                await controller.resume_mission(
+                    mission_id,
+                    log_queue=log_queue,
+                    update_callback=websocket_update_callback
+                )
+            finally:
+                # Clean up the model dispatcher to prevent connection errors
+                if hasattr(controller, 'model_dispatcher') and hasattr(controller.model_dispatcher, 'cleanup'):
+                    try:
+                        await controller.model_dispatcher.cleanup()
+                        logger.debug(f"Cleaned up model dispatcher for resumed mission {mission_id}")
+                    except Exception as cleanup_error:
+                        logger.warning(f"Error cleaning up model dispatcher for resumed mission {mission_id}: {cleanup_error}")
+        
         def run_mission_in_thread():
-            """Sets user context and resumes the mission from where it left off."""
+            """Sets user context and runs the async mission."""
             set_current_user(current_user)
-            asyncio.run(controller.resume_mission(
-                mission_id,
-                log_queue=log_queue,
-                update_callback=websocket_update_callback
-            ))
+            asyncio.run(run_mission_async())
 
         loop.run_in_executor(thread_pool, run_mission_in_thread)
         
@@ -2164,6 +2177,14 @@ async def start_mission_execution(
                     status="failure",
                     error_message=str(e)
                 )
+            finally:
+                # Clean up the model dispatcher to prevent connection errors
+                if hasattr(controller, 'model_dispatcher') and hasattr(controller.model_dispatcher, 'cleanup'):
+                    try:
+                        await controller.model_dispatcher.cleanup()
+                        logger.debug(f"Cleaned up model dispatcher for mission {mission_id}")
+                    except Exception as cleanup_error:
+                        logger.warning(f"Error cleaning up model dispatcher for mission {mission_id}: {cleanup_error}")
         
         # Start the background task that handles everything
         def run_background_task():

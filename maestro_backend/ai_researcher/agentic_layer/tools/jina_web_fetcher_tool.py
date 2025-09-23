@@ -1,6 +1,7 @@
 import logging
 import aiohttp
 import asyncio
+import threading
 from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional, Callable
 import queue
@@ -17,7 +18,19 @@ logger = logging.getLogger(__name__)
 
 # Global semaphore to limit concurrent web fetches
 # This prevents blocking the thread pool when multiple fetches happen
-WEB_FETCH_SEMAPHORE = asyncio.Semaphore(3)  # Allow max 3 concurrent fetches
+# Make it lazy to avoid event loop binding issues
+_WEB_FETCH_SEMAPHORE = None
+_SEMAPHORE_LOCK = threading.Lock()
+
+def get_web_fetch_semaphore():
+    """Get or create the web fetch semaphore for the current event loop."""
+    global _WEB_FETCH_SEMAPHORE
+    loop = asyncio.get_event_loop()
+    with _SEMAPHORE_LOCK:
+        # Create a new semaphore for this event loop if needed
+        if _WEB_FETCH_SEMAPHORE is None or _WEB_FETCH_SEMAPHORE._loop != loop:
+            _WEB_FETCH_SEMAPHORE = asyncio.Semaphore(3)  # Allow max 3 concurrent fetches
+        return _WEB_FETCH_SEMAPHORE
 
 # Define cache directory for Jina fetcher (shared with native fetcher for consistency)
 CACHE_DIR = pathlib.Path("ai_researcher/data/web_cache/")
@@ -157,7 +170,7 @@ class JinaWebFetcherTool:
             
             # Make the request with longer timeout (60 seconds for slow sites)
             # Use semaphore to limit concurrent fetches
-            async with WEB_FETCH_SEMAPHORE:
+            async with get_web_fetch_semaphore():
                 logger.debug(f"Acquired semaphore for Jina fetch of {url}")
                 async with aiohttp.ClientSession() as session:
                     async with session.get(jina_url, headers=headers, timeout=aiohttp.ClientTimeout(total=60)) as response:

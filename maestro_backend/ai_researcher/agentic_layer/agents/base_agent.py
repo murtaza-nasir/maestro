@@ -84,7 +84,16 @@ class BaseAgent(ABC):
             # Get mission_id from agent context if available
             mission_id = getattr(self, 'mission_id', None)
             
+            # Determine if we will log this call
+            # We log if log_llm_call is True OR if there's a cost (but we don't know cost yet)
+            # For now, mark agent_logged if log_llm_call is True and we have the required parameters
+            will_log = log_llm_call and mission_id and log_queue and update_callback
+            
             # Await the async dispatch method
+            # When base_agent is handling logging, mark it so model_dispatcher doesn't duplicate
+            if will_log:
+                kwargs['agent_logged'] = True  # Mark that agent is handling the logging
+            
             response, model_call_details = await self.model_dispatcher.dispatch( # <-- Use await
                 messages=messages,
                 model=model_to_use, # Pass the determined model
@@ -98,33 +107,165 @@ class BaseAgent(ABC):
                 **kwargs # Pass any extra arguments (like max_tokens, temperature)
             )
 
-            # --- ADD CONDITIONAL LOGGING FOR LLM CALLS ---
-            if log_llm_call:
+            # --- LOG LLM CALLS AND COSTS ---
+            # Only log if log_llm_call is True
+            # When False, the higher-level code (research_manager, writing_manager) handles logging
+            # This prevents duplicate logs
+            should_log = log_llm_call
+            
+            if should_log:
                 log_status = "success" if response and response.choices else "failure"
                 output_summary = "No response"
-                if log_status == "success":
+                
+                # Only include detailed output if log_llm_call is True
+                if log_llm_call and log_status == "success":
                     try:
-                        output_summary = f"Response received. Choice 0: {response.choices[0].message.content[:100]}..."
+                        response_content = response.choices[0].message.content
+                        if response_content:
+                            # Check for common patterns in short responses
+                            response_lower = response_content.lower().strip()
+                            if "content reviewed, but not relevant" in response_lower:
+                                output_summary = "Content deemed not relevant"
+                            elif len(response_content) <= 50:
+                                # Short response - show the whole thing
+                                output_summary = f"Response: {response_content.strip()}"
+                            else:
+                                # Longer response - show preview
+                                output_summary = f"Response received ({len(response_content)} chars)"
+                        else:
+                            output_summary = "Empty response"
                     except Exception:
                         output_summary = "Response received, but summary failed."
+                elif log_status == "success":
+                    # For cost-only logging, just indicate success
+                    output_summary = "Response received"
 
                 context_manager = None
                 if hasattr(self, 'controller') and self.controller and hasattr(self.controller, 'context_manager'):
                     context_manager = self.controller.context_manager
 
                 if context_manager and mission_id and log_queue and update_callback:
-                    context_manager.log_execution_step(
+                    # Determine action text based on context
+                    completion_tokens = model_call_details.get('completion_tokens', 0) if model_call_details else 0
+                    prompt_tokens = model_call_details.get('prompt_tokens', 0) if model_call_details else 0
+                    
+                    # Try to extract more context from the prompt
+                    # Look at more of the prompt for better context extraction
+                    prompt_lower = user_prompt[:2000].lower() if user_prompt else ""
+                    
+                    # Special handling based on agent mode and context
+                    if agent_mode == "research" and completion_tokens <= 20:
+                        # These are likely relevance checks or yes/no responses
+                        # Extract context from the prompt to understand what's being evaluated
+                        
+                        # Check for various research operations
+                        if "content reviewed, but not relevant" in prompt_lower:
+                            # This is a note generation with relevance check
+                            action_text = "Note Generation & Relevance Check"
+                            
+                            # Try to extract the question being researched
+                            # IMPORTANT: Search in original case to maintain correct indices
+                            question_match = None
+                            if 'research question: "' in prompt_lower:
+                                # Find in original text with case-insensitive search
+                                import re
+                                match = re.search(r'research question:\s*"([^"]+)"', user_prompt[:2000], re.IGNORECASE)
+                                if match:
+                                    question_match = match.group(1)[:100]
+                            elif 'answering the specific research question: "' in prompt_lower:
+                                # Find in original text with case-insensitive search
+                                import re
+                                match = re.search(r'answering the specific research question:\s*"([^"]+)"', user_prompt[:2000], re.IGNORECASE)
+                                if match:
+                                    question_match = match.group(1)[:100]
+                            
+                            # Try to extract source being analyzed
+                            source_match = None
+                            if "source id:" in prompt_lower or "- id:" in prompt_lower:
+                                # Extract source ID using regex on original text
+                                import re
+                                match = re.search(r'(?:source id:|- id:)\s*([^\n\r,\-]+)', user_prompt[:2000], re.IGNORECASE)
+                                if match:
+                                    source_match = match.group(1).strip()[:50]
+                            
+                            if question_match:
+                                input_text = f"Q: {question_match}{'...' if len(question_match) >= 100 else ''}"
+                            elif source_match:
+                                input_text = f"Analyzing source: {source_match}"
+                            else:
+                                input_text = "Evaluating content relevance"
+                                
+                        elif "relevant" in prompt_lower or "irrelevant" in prompt_lower:
+                            action_text = "Content Relevance Check"
+                            input_text = "Evaluating if content is relevant to question"
+                        else:
+                            # Generic quick decision - try to extract more context
+                            action_text = "Quick Analysis"
+                            
+                            # Try to extract research question with better patterns
+                            import re
+                            question_match = None
+                            
+                            # Try various patterns to find the research question
+                            patterns = [
+                                r'research question:\s*"([^"]+)"',
+                                r'answering the (?:specific )?research question:\s*"([^"]+)"',
+                                r'question being (?:researched|explored):\s*"([^"]+)"',
+                                r'Task: Extract all information directly relevant to answering the specific research question:\s*"([^"]+)"',
+                            ]
+                            
+                            for pattern in patterns:
+                                match = re.search(pattern, user_prompt[:2000], re.IGNORECASE)
+                                if match:
+                                    question_match = match.group(1)[:150]
+                                    break
+                            
+                            if question_match:
+                                input_text = f"Q: {question_match}{'...' if len(question_match) >= 150 else ''}"
+                            elif "?" in user_prompt[:500]:
+                                # Fall back to finding first question mark
+                                question_end = user_prompt[:500].find("?")
+                                # Look for the start of the sentence containing the question mark
+                                sentence_starts = ['. ', '\n', ':', '"']
+                                question_start = 0
+                                for delimiter in sentence_starts:
+                                    pos = user_prompt[:question_end].rfind(delimiter)
+                                    if pos > 0:
+                                        question_start = pos + len(delimiter)
+                                        break
+                                
+                                question_text = user_prompt[question_start:question_end+1].strip()
+                                if len(question_text) > 20:
+                                    input_text = f"{question_text[:100]}{'...' if len(question_text) > 100 else ''}"
+                                else:
+                                    input_text = f"Analysis ({prompt_tokens} tokens → {completion_tokens} tokens)"
+                            else:
+                                input_text = f"Analysis ({prompt_tokens} tokens → {completion_tokens} tokens)"
+                    elif log_llm_call:
+                        # For regular LLM calls with full logging
+                        # Extract first line or question from prompt for better context
+                        prompt_lines = user_prompt.split('\n') if user_prompt else []
+                        first_question = next((line.strip() for line in prompt_lines if line.strip() and '?' in line), None)
+                        if first_question and len(first_question) > 20:
+                            input_text = f"{first_question[:100]}{'...' if len(first_question) > 100 else ''}"
+                        else:
+                            input_text = f"Prompt: {user_prompt[:150]}..."
+                        action_text = f"LLM Call ({agent_mode or 'general'})"
+                    
+                    # Only create log entry if log_llm_call is True
+                    # When False, higher-level code handles logging to prevent duplicates
+                    await context_manager.log_execution_step(
                         mission_id=mission_id,
                         agent_name=self.agent_name,
-                        action=f"LLM Call ({agent_mode or 'general'})",
-                        input_summary=f"Prompt: {user_prompt[:150]}...",
+                        action=action_text,
+                        input_summary=input_text,
                         output_summary=output_summary,
                         status=log_status,
                         model_details=model_call_details,
                         log_queue=log_queue,
                         update_callback=update_callback
                     )
-            # --- END CONDITIONAL LOGGING ---
+            # --- END LLM CALL AND COST LOGGING ---
 
             # Update mission stats if model_call_details is available
             # This ensures all agents update stats after LLM calls
@@ -138,11 +279,28 @@ class BaseAgent(ABC):
                     # Call the update_mission_stats method on the context_manager
                     # The context_manager.update_mission_stats method uses the queue and callback
                     # passed *to it*, not the ones from the agent's context.
-                    controller.context_manager.update_mission_stats(
-                        self.mission_id,
-                        model_call_details
-                        # Removed log_queue and update_callback arguments here
-                    )
+                    # Since update_mission_stats is now async, schedule it
+                    import asyncio
+                    try:
+                        loop = asyncio.get_running_loop()
+                        asyncio.create_task(controller.context_manager.update_mission_stats(
+                            self.mission_id,
+                            model_call_details,
+                            log_queue,  # Pass these now that we have them
+                            update_callback
+                        ))
+                    except RuntimeError:
+                        # We're in a sync context, run in a thread
+                        import threading
+                        def run_async_stats():
+                            asyncio.run(controller.context_manager.update_mission_stats(
+                                self.mission_id,
+                                model_call_details,
+                                log_queue,
+                                update_callback
+                            ))
+                        thread = threading.Thread(target=run_async_stats, daemon=True)
+                        thread.start()
 
             return response, model_call_details # Return the tuple
         except Exception as e:
@@ -158,7 +316,7 @@ class BaseAgent(ABC):
                 mission_id = getattr(self, 'mission_id', None)
 
                 if context_manager and mission_id and log_queue and update_callback:
-                    context_manager.log_execution_step(
+                    await context_manager.log_execution_step(
                         mission_id=mission_id,
                         agent_name=self.agent_name,
                         action=f"LLM Call ({agent_mode or 'general'})",
@@ -425,7 +583,7 @@ class BaseAgent(ABC):
                         query = tool_arguments['query']
                         action_text = f"Web Search: {query[:50]}{'...' if len(query) > 50 else ''}"
                 
-                context_manager.log_execution_step(
+                await context_manager.log_execution_step(
                      mission_id=self.mission_id, agent_name=self.agent_name,
                      action=action_text, status="failure", error_message=str(e),
                      tool_calls=[{"tool_name": tool_name, "arguments": tool_arguments, "error": str(e)}],

@@ -1284,6 +1284,85 @@ class ContextManager:
             f"Completion={stats['total_completion_tokens']:.0f}, Native={stats['total_native_tokens']:.0f}, "
             f"Web Searches={stats['total_web_search_calls']}"
         )
+        
+        # Create log entry for non-agent API calls that are MISSION-SPECIFIC
+        # These don't use base_agent so won't create their own logs
+        # We ONLY log mission-related activities, NOT application-level operations
+        # Skip if agent already logged this call
+        agent_logged = model_details.get("agent_logged", False) if model_details else False
+        
+        if cost_increment > 0 and mission_id and log_queue and update_callback and not agent_logged:
+            agent_mode = model_details.get("agent_mode", "unknown")
+            model_name = model_details.get("model_name", "unknown")
+            
+            # MISSION-SPECIFIC modes that need logging
+            # These are operations that are part of mission execution
+            # NOTE: "writing" mode removed - WritingAgent and report_generator handle their own logging
+            non_agent_modes = {
+                "query_preparation": ("QueryPreparer", "Query Preparation"),
+                "router": ("Router", "Routing Decision"),
+                "query_strategy": ("QueryStrategy", "Strategy Selection"),
+                # "writing" removed - handled by WritingAgent and report_generator
+            }
+            
+            # APPLICATION-LEVEL modes we explicitly IGNORE:
+            # - "messenger" from chat_title_service (UI chat titles)
+            # - "writing" from writing_controller (no mission context)
+            # - Any other non-mission operations
+            
+            if agent_mode in non_agent_modes:
+                agent_name, action = non_agent_modes[agent_mode]
+                
+                # Special handling for "writing" mode - only log if it's mission-related
+                if agent_mode == "writing":
+                    # Check if this is from report_generator (has mission context)
+                    # If no mission_id, it's probably from writing_controller (ignore)
+                    if not mission_id:
+                        return  # Skip logging for non-mission writing operations
+                
+                self.log_execution_step(
+                    mission_id=mission_id,
+                    agent_name=agent_name,
+                    action=action,
+                    input_summary=f"Model: {model_name}",
+                    output_summary=f"Tokens: {int(prompt_increment + completion_increment)}",
+                    status="success",
+                    model_details=model_details,
+                    log_queue=log_queue,
+                    update_callback=update_callback
+                )
+        
+        
+        # Update the mission context with the new stats and save to database
+        mission = self.get_mission_context(mission_id)
+        if mission:
+            # Update mission context fields with the accumulated stats
+            mission.total_cost = stats["total_cost"]
+            mission.total_tokens = {
+                "prompt": int(stats["total_prompt_tokens"]),
+                "completion": int(stats["total_completion_tokens"]),
+                "native": int(stats["total_native_tokens"])
+            }
+            mission.total_web_searches = stats["total_web_search_calls"]
+            mission.update_timestamp()
+            
+            # Save to database in a background thread to avoid blocking
+            logger.info(f"COST_DB_UPDATE: Scheduling stats save to DB for mission {mission_id}: Cost=${stats['total_cost']:.6f}")
+            
+            # Use a thread to avoid blocking the main execution
+            import threading
+            def save_stats_to_db():
+                db = self.db_session_factory()
+                try:
+                    crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
+                    logger.info(f"COST_DB_UPDATE: Successfully saved stats to database for mission {mission_id}: Total Cost=${stats['total_cost']:.6f}")
+                except Exception as e:
+                    logger.error(f"COST_DB_UPDATE: Failed to save stats to database for mission {mission_id}: {e}", exc_info=True)
+                finally:
+                    db.close()
+            
+            thread = threading.Thread(target=save_stats_to_db, daemon=True)
+            thread.start()
 
         if log_queue and update_callback and (
             cost_increment > 0 or prompt_increment > 0 or completion_increment > 0 or

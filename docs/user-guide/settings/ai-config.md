@@ -57,8 +57,13 @@ Used by: Fact-checking and validation tasks
 - **Local Ollama**: `http://host.docker.internal:11434/v1/` (or check your ollama config)
 - **Local vLLM**: `http://host.docker.internal:8000/v1/` (or check your vllm config)
 
+## Cost Tracking Note
+
+**Important**: Tracked costs in MAESTRO may differ from your API provider dashboard, especially with aggregator services like OpenRouter. This is because aggregators route to different backend providers with varying actual costs. For details, see [Cost Tracking Discrepancies](../../troubleshooting/common-issues/ai-models.md#cost-tracking-discrepancies).
+
 ## Related Documentation
 
 - [Complete AI Provider Guide](../../getting-started/configuration/ai-providers.md) - Detailed setup instructions
 - [Search Configuration](search-config.md) - Configure web search providers
 - [Research Configuration](research-config.md) - Optimize research parameters
+- [Cost Tracking Issues](../../troubleshooting/common-issues/ai-models.md#cost-tracking-discrepancies) - Understanding billing discrepancies

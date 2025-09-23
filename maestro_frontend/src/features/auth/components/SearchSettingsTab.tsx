@@ -39,7 +39,7 @@ export const SearchSettingsTab: React.FC = () => {
     setDraftSettings({ search: newSearch })
   }
 
-  const handleApiKeyChange = (field: string, value: string | boolean) => {
+  const handleApiKeyChange = (field: string, value: string | boolean | number) => {
     if (!draftSettings) return
     
     const newSearch = {
@@ -434,6 +434,55 @@ export const SearchSettingsTab: React.FC = () => {
           </CardContent>
         </Card>
       )}
+
+      {/* Query Length Configuration - appears for all providers */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Settings className="h-4 w-4" />
+            Query Length Configuration
+          </CardTitle>
+          <CardDescription className="text-sm">
+            Configure maximum query length for web searches.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="max-query-length" className="text-sm">Maximum Query Length</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="max-query-length"
+                type="text"
+                value={draftSettings.search.max_query_length || 350}
+                onChange={(e) => {
+                  const value = e.target.value
+                  const numValue = parseInt(value)
+                  // Just save whatever the user types if it's a number
+                  if (!isNaN(numValue)) {
+                    handleApiKeyChange('max_query_length', numValue)
+                  }
+                }}
+                onBlur={(e) => {
+                  // Only validate/clamp on blur when user is done typing
+                  const value = parseInt(e.target.value)
+                  if (isNaN(value) || value < 100) {
+                    handleApiKeyChange('max_query_length', 100)
+                  } else if (value > 400) {
+                    handleApiKeyChange('max_query_length', 400)
+                  }
+                }}
+                placeholder="350"
+                className="h-9 w-24"
+              />
+              <span className="text-sm text-muted-foreground">characters</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Maximum length for search queries (100-400 characters). Queries exceeding this limit will be intelligently refined to preserve search intent. 
+              Default is 350 to ensure compatibility with most search providers. Tavily has a hard limit of 400 characters.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

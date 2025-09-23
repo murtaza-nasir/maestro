@@ -72,6 +72,21 @@ async def web_search(query: str, max_results: Optional[int] = None, agent_contro
     # We are calling it from here.
     web_search_tool = agent_controller.tool_registry.get_tool('web_search')
     
+    # Safety check for query length using user-configured limit
+    from ai_researcher.dynamic_config import get_max_query_length
+    max_query_len = get_max_query_length()
+    if len(query) > max_query_len:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Web search query exceeds configured limit of {max_query_len} chars ({len(query)} chars). Truncating.")
+        # Simple truncation at word boundary
+        truncate_at = max_query_len - 5
+        query = query[:truncate_at] + "..."
+        last_space = query[:truncate_at].rfind(' ')
+        if last_space > truncate_at * 0.75:
+            query = query[:last_space] + "..."
+        logger.info(f"Truncated web search query to {len(query)} chars")
+    
     # Build parameters to pass to the web search tool
     search_params = {"query": query}
     if max_results is not None:

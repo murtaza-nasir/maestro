@@ -138,7 +138,7 @@ class ReflectionManager:
             
             # Update stats
             if model_details:
-                self.controller.context_manager.update_mission_stats(mission_id, model_details, log_queue, update_callback)
+                await self.controller.context_manager.update_mission_stats(mission_id, model_details, log_queue, update_callback)
                 
             # Store generated thought if available
             if reflection_output and reflection_output.generated_thought:
@@ -766,7 +766,7 @@ class ReflectionManager:
 
             # Update stats
             if model_details:
-                self.controller.context_manager.update_mission_stats(mission_id, model_details, log_queue, update_callback)
+                await self.controller.context_manager.update_mission_stats(mission_id, model_details, log_queue, update_callback)
 
             if log_status == "success":
                 return notes_to_keep_ids_section

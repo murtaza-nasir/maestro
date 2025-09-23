@@ -1,7 +1,7 @@
 import json
 import os
 import re
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any, Tuple, Callable
 from pydantic import ValidationError
 
 # Import the JSON utilities
@@ -613,17 +613,60 @@ Available Research Tools:
         # Update system prompt for the agent
         self.system_prompt = system_prompt
 
-        # Call the LLM - it now returns a tuple
-        llm_response, model_call_details = await self._call_llm( # Add await here
-            user_prompt=user_prompt,
-            response_format=response_format_pydantic,
-            agent_mode="planning", # <-- Pass agent_mode
-            log_queue=log_queue, # Pass log_queue for UI updates
-            update_callback=update_callback, # Pass update_callback for UI updates
-            log_llm_call=False # Disable duplicate LLM call logging since planning operations are logged by the research manager
-            # max_tokens is now handled by ModelDispatcher based on agent_mode ('planning')
-            # Use the planning model specified during init or the default planning model
-        )
+        # Try with json_schema first, with fallback to json_object if needed
+        use_json_object = False
+        max_format_attempts = 2  # Try json_schema, then json_object
+        
+        for format_attempt in range(max_format_attempts):
+            try:
+                # Use json_object format if this is a retry
+                if use_json_object:
+                    from ai_researcher.agentic_layer.utils.json_format_helper import (
+                        get_json_object_format,
+                        enhance_messages_for_json_object
+                    )
+                    response_format_pydantic = get_json_object_format()
+                    # Enhance the prompts with schema instructions
+                    messages = [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ]
+                    messages = enhance_messages_for_json_object(messages, response_schema)
+                    # Extract the enhanced prompts and update BOTH local and instance variables
+                    system_prompt = messages[0]["content"]
+                    user_prompt = messages[1]["content"]
+                    # CRITICAL: Update the instance variable so _call_llm uses the enhanced system prompt
+                    self.system_prompt = system_prompt
+                    logger.info(f"{self.agent_name}: Retrying with json_object format due to schema compatibility issue")
+                
+                # Call the LLM - it now returns a tuple
+                llm_response, model_call_details = await self._call_llm( # Add await here
+                    user_prompt=user_prompt,
+                    response_format=response_format_pydantic,
+                    agent_mode="planning", # <-- Pass agent_mode
+                    log_queue=log_queue, # Pass log_queue for UI updates
+                    update_callback=update_callback, # Pass update_callback for UI updates
+                    log_llm_call=False # Disable duplicate LLM call logging since planning operations are logged by the research manager
+                    # max_tokens is now handled by ModelDispatcher based on agent_mode ('planning')
+                    # Use the planning model specified during init or the default planning model
+                )
+                
+                # If we got a response, break out of the retry loop
+                if llm_response and llm_response.choices:
+                    break
+                    
+            except Exception as e:
+                # Check if we should retry with json_object format
+                from ai_researcher.agentic_layer.utils.json_format_helper import should_retry_with_json_object
+                
+                if not use_json_object and should_retry_with_json_object(e):
+                    logger.info(f"{self.agent_name}: Detected json_schema compatibility issue: {str(e)[:200]}")
+                    use_json_object = True
+                    continue  # Retry with json_object format
+                else:
+                    # Not a schema issue or already tried json_object, propagate the error
+                    logger.error(f"{self.agent_name} Error during LLM call: {e}", exc_info=True)
+                    return None, None, scratchpad_update
 
         if not llm_response or not llm_response.choices:
             logger.error(f"{self.agent_name} Error: Failed to get response from LLM.")
@@ -722,6 +765,8 @@ Available Research Tools:
                 plan_response = await self._validate_and_refine_outline_with_reflection(
                     plan_response,
                     mission_id=mission_id,
+                    log_queue=log_queue,
+                    update_callback=update_callback,
                     max_iterations=3
                 )
             
@@ -913,7 +958,9 @@ Available Research Tools:
         self,
         plan_response: SimplifiedPlanResponse,
         mission_id: Optional[str] = None,
-        max_iterations: int = 3
+        max_iterations: int = 3,
+        log_queue: Optional[Any] = None,
+        update_callback: Optional[Callable] = None
     ) -> SimplifiedPlanResponse:
         """
         Validates and refines the outline using a reflection loop with programmatic checks.
@@ -977,7 +1024,10 @@ Available Research Tools:
                 llm_response, _ = await self.model_dispatcher.dispatch(
                     messages=messages,
                     response_format={"type": "json_object"},
-                    agent_mode="planning"
+                    agent_mode="planning",
+                    mission_id=mission_id,
+                    log_queue=log_queue,
+                    update_callback=update_callback
                 )
                 
                 if not llm_response or not llm_response.choices:
@@ -1149,7 +1199,10 @@ Example of a hierarchical outline and appropriate strategies:
             llm_response, _ = await self.model_dispatcher.dispatch(
                 messages=messages,
                 response_format=response_format,
-                agent_mode="planning"  # Use planning model for this analysis
+                agent_mode="planning",  # Use planning model for this analysis
+                mission_id=getattr(self, 'mission_id', None),  # Get mission_id from instance if available
+                log_queue=getattr(self, 'log_queue', None),  # Get log_queue from instance if available
+                update_callback=getattr(self, 'update_callback', None)  # Get update_callback from instance if available
             )
             
             if not llm_response or not llm_response.choices or not llm_response.choices[0].message.content:

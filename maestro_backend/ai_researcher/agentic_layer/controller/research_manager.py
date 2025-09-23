@@ -442,7 +442,13 @@ Instructions:
         try:
             messages = [{"role": "user", "content": prompt_context}]
             async with self.controller.maybe_semaphore:
-                response, model_details = await self.controller.model_dispatcher.dispatch(messages=messages, agent_mode="planning")
+                response, model_details = await self.controller.model_dispatcher.dispatch(
+                    messages=messages, 
+                    agent_mode="planning",
+                    mission_id=mission_id,  # Pass mission_id for cost tracking
+                    log_queue=log_queue,  # Pass log_queue for UI updates
+                    update_callback=update_callback  # Pass update_callback for cost tracking
+                )
 
             if model_details:
                 model_details["initial_search_details"] = search_log_details
@@ -766,8 +772,8 @@ Instructions:
                     output_summary=f"Final outline has {len(final_plan_obj.report_outline)} sections.",
                     status="success",
                     full_output=final_plan_obj.model_dump(),
-                    # Pass details of the first model call from the batch processing
-                    model_details=model_call_details_list[0] if model_call_details_list else None,
+                    # Don't pass model_details - this is a summary log, not an LLM call
+                    model_details=None,
                     log_queue=log_queue, update_callback=update_callback
                 )
                 return final_plan_obj
@@ -777,8 +783,8 @@ Instructions:
                     mission_id, "AgentController", "Finalize Preliminary Outline",
                     input_summary="Converting final batched response.", status="failure", error_message=str(e),
                     full_input=plan_response.model_dump() if plan_response else None,
-                    # Pass details of the first model call from the batch processing
-                    model_details=model_call_details_list[0] if model_call_details_list else None,
+                    # Don't pass model_details - this is a summary log, not an LLM call
+                    model_details=None,
                     log_queue=log_queue, update_callback=update_callback
                 )
                 return None

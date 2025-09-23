@@ -220,10 +220,13 @@ Critically analyze the provided `formatted_history` against these principles, wi
         messages = [{"role": "user", "content": prompt}]
         response_format = {"type": "json_object"}
         
+        # Note: No mission_id here as this runs before mission creation
+        # These costs will be tracked as ORPHAN in the new comprehensive logging
         response, _ = await controller.model_dispatcher.dispatch(
             messages=messages,
             response_format=response_format,
-            agent_mode="planning"
+            agent_mode="planning",
+            mission_id=None  # Explicitly set to None - will be tracked as ORPHAN cost
         )
         
         if response and response.choices and response.choices[0].message.content:

@@ -7,6 +7,9 @@ import asyncio
 import random # <-- Import random for jitter
 import httpx # <-- Import httpx again for pricing fetch
 from decimal import Decimal, InvalidOperation # <-- Import Decimal for accurate cost calculation
+import json
+import os
+from pathlib import Path
 from ai_researcher import config # Use absolute import
 from ai_researcher.dynamic_config import get_model_name
 from ai_researcher.user_context import get_user_settings
@@ -28,7 +31,11 @@ class ModelDispatcher:
         self.semaphore = semaphore
         self.context_manager = context_manager
         self.model_pricing_cache: Dict[str, Dict[str, Decimal]] = {}
+        self.openai_pricing: Dict[str, Dict[str, Decimal]] = {}
         self.user_settings = user_settings
+        
+        # Load OpenAI pricing on initialization
+        self._load_openai_pricing()
 
         # Determine the providers to initialize based on user settings and system config
         providers_in_use = self._get_providers_from_settings()
@@ -140,6 +147,19 @@ class ModelDispatcher:
                     break
         
         return config_data if config_data else None
+
+    async def cleanup(self):
+        """Cleanup method to properly close all AsyncOpenAI clients."""
+        for provider_name, client in self.clients.items():
+            if client is not None:
+                try:
+                    # AsyncOpenAI clients have an httpx AsyncClient that needs to be closed
+                    if hasattr(client, '_client'):
+                        await client._client.aclose()
+                    logger.debug(f"Closed AsyncOpenAI client for provider: {provider_name}")
+                except Exception as e:
+                    logger.warning(f"Error closing AsyncOpenAI client for provider {provider_name}: {e}")
+        self.clients.clear()
 
     def _get_or_create_client(self, provider_name: str, current_user_settings: Optional[Dict[str, Any]]) -> Optional[AsyncOpenAI]:
         """
@@ -275,6 +295,45 @@ class ModelDispatcher:
         # Ensure the return type matches the async client
         return client, model_name, provider_name
 
+    def _load_openai_pricing(self):
+        """
+        Load OpenAI pricing from the JSON configuration file.
+        Converts prices from per-million to per-token for consistent calculation.
+        """
+        try:
+            # Get the path to the pricing file
+            current_dir = Path(__file__).parent.parent  # Go up to ai_researcher directory
+            pricing_file = current_dir / "openai_pricing.json"
+            
+            if not pricing_file.exists():
+                logger.warning(f"OpenAI pricing file not found at {pricing_file}")
+                return
+            
+            # Load the pricing data
+            with open(pricing_file, 'r') as f:
+                pricing_data = json.load(f)
+            
+            # Parse the pricing into our cache format
+            models = pricing_data.get("models", {})
+            per_tokens = pricing_data.get("per_tokens", 1000000)  # Default to per million
+            
+            for model_id, prices in models.items():
+                # Convert from per-million to per-token pricing
+                input_price = Decimal(str(prices.get("input", 0))) / Decimal(str(per_tokens))
+                output_price = Decimal(str(prices.get("output", 0))) / Decimal(str(per_tokens))
+                
+                self.openai_pricing[model_id] = {
+                    "prompt": input_price,
+                    "completion": output_price
+                }
+            
+            logger.info(f"Loaded OpenAI pricing for {len(self.openai_pricing)} models from {pricing_file}")
+            
+        except Exception as e:
+            logger.error(f"Failed to load OpenAI pricing: {e}", exc_info=True)
+            # Initialize with empty dict on failure
+            self.openai_pricing = {}
+
     async def _fetch_and_cache_pricing(self):
         """
         Fetches model pricing from OpenRouter /models endpoint and caches it.
@@ -370,7 +429,8 @@ class ModelDispatcher:
         response_format: Optional[Dict[str, str]] = None,
         log_queue: Optional[Any] = None, # <-- Add log_queue parameter
         update_callback: Optional[Any] = None, # <-- Add update_callback parameter (currently unused but added for consistency)
-        mission_id: Optional[str] = None # <-- Add mission_id parameter for status checking
+        mission_id: Optional[str] = None, # <-- Add mission_id parameter for status checking
+        **kwargs: Any  # Accept additional keyword arguments (like agent_logged)
     ) -> Tuple[Optional[Any], Optional[Dict[str, Any]]]: # Return type: (ChatCompletion, model_details_dict) or (None, None)
         """
         Selects the appropriate LLM client and model, sends the request with retry logic,
@@ -392,6 +452,17 @@ class ModelDispatcher:
             - The API response object (e.g., ChatCompletion) or None if selection or all retries fail.
             - A dictionary with model call details (provider, model_name, duration_sec) or None on failure.
         """
+        logger.info(f"DISPATCH_CALLED|agent_mode={agent_mode}|mission_id={mission_id}")
+        
+        # Log warning if cost tracking parameters are missing
+        if not mission_id or not log_queue or not update_callback:
+            logger.warning(
+                f"dispatch called without complete cost tracking params - "
+                f"agent_mode={agent_mode}, mission_id={bool(mission_id)}, "
+                f"log_queue={bool(log_queue)}, update_callback={bool(update_callback)}. "
+                f"Costs may not be properly tracked."
+            )
+        
         # Check mission status before proceeding with LLM call
         if self.context_manager and mission_id:
             try:
@@ -429,13 +500,48 @@ class ModelDispatcher:
         # --- END CRITICAL DEBUG LOGGING ---
 
 
-        request_params = {
-            "model": selected_model_name,
-            "messages": messages,
-            "max_tokens": max_tokens_for_call, # Use the value determined from config
-            "temperature": temperature_for_call, # <-- Use temperature from config
-            # Add other potential parameters from config if needed later (e.g., top_p)
-        }
+        # Check if this is a GPT-5 model that requires special handling
+        is_gpt5_model = any(x in selected_model_name.lower() for x in ['gpt-5', 'gpt5'])
+        
+        # Get thinking_level from user settings if available
+        thinking_level = None
+        if is_gpt5_model and provider_name == "openai":
+            # Try to get thinking level from user settings
+            ai_endpoints = self.user_settings.get("ai_endpoints", {})
+            advanced_models = ai_endpoints.get("advanced_models", {})
+            for model_config in advanced_models.values():
+                if model_config.get("model_name") == selected_model_name:
+                    thinking_level = model_config.get("thinking_level", "low")
+                    break
+            if not thinking_level:
+                thinking_level = "low"  # Default thinking level
+        
+        # Build request parameters based on model type
+        if is_gpt5_model and provider_name == "openai":
+            # GPT-5 models via OpenAI API require special parameters
+            request_params = {
+                "model": selected_model_name,
+                "messages": messages,
+                "max_completion_tokens": max_tokens_for_call,  # Use max_completion_tokens for GPT-5
+                # Don't set temperature unless it's 1 (default) for GPT-5
+            }
+            # Only add temperature if it's 1
+            if temperature_for_call == 1:
+                request_params["temperature"] = 1
+            
+            # Add reasoning_effort for GPT-5 models
+            if thinking_level:
+                request_params["extra_body"] = {"reasoning_effort": thinking_level}
+                logger.info(f"Using GPT-5 model {selected_model_name} with thinking_level: {thinking_level}")
+        else:
+            # Standard parameters for non-GPT-5 models or GPT-5 via OpenRouter
+            request_params = {
+                "model": selected_model_name,
+                "messages": messages,
+                "max_tokens": max_tokens_for_call, # Use the value determined from config
+                "temperature": temperature_for_call, # <-- Use temperature from config
+                # Add other potential parameters from config if needed later (e.g., top_p)
+            }
         
         # Only add OpenAI headers if the provider is OpenRouter
         if provider_name == "openrouter":
@@ -467,8 +573,20 @@ class ModelDispatcher:
         # --- DEBUGGING ADDITION END ---
 
         for attempt in range(self.max_retries):
+            # Generate unique attempt ID for tracking
+            import uuid
+            attempt_id = str(uuid.uuid4())[:8]  # Short ID for logging
+            
             try:
                 start_time = time.time()
+                
+                # Log attempt start
+                logger.info(
+                    f"API_ATTEMPT_START|attempt_id={attempt_id}|attempt={attempt+1}/{self.max_retries}|"
+                    f"model={selected_model_name}|mission_id={mission_id or 'NONE'}|"
+                    f"agent_mode={effective_agent_mode}|timestamp={start_time}"
+                )
+                
                 # Use the selected ASYNC client instance and await the call
                 # Apply BOTH user semaphore AND global semaphore to limit concurrent requests
                 # User semaphore limits per-user concurrency, global limits total server load
@@ -492,6 +610,12 @@ class ModelDispatcher:
                     response = await client.chat.completions.create(**request_params)
                 end_time = time.time()
                 duration = end_time - start_time
+                
+                # Log successful API call
+                logger.info(
+                    f"API_ATTEMPT_END|attempt_id={attempt_id}|success=True|duration={duration:.2f}|"
+                    f"timestamp={end_time}"
+                )
                 logger.info(f"Async LLM call successful using model '{selected_model_name}' in {duration:.2f}s (Attempt {attempt + 1}/{self.max_retries})")
 
                 model_call_details = {
@@ -517,7 +641,7 @@ class ModelDispatcher:
                     model_call_details["total_tokens"] = total_tokens
                     logger.info(f"Usage - Prompt: {prompt_tokens}, Completion: {completion_tokens}, Total: {total_tokens}")
 
-                    # Calculate cost if provider is OpenRouter and pricing is available
+                    # Calculate cost based on provider
                     if provider_name == "openrouter":
                         await self._ensure_pricing_loaded() # Ensure pricing is loaded (lazy load)
                         model_pricing = self.model_pricing_cache.get(selected_model_name)
@@ -535,16 +659,42 @@ class ModelDispatcher:
                         else:
                             logger.warning(f"Pricing information not found in cache for model: {selected_model_name}. Cost cannot be calculated.")
                             model_call_details["cost"] = 0.0 # Set cost to 0 if pricing not found
+                    elif provider_name == "openai":
+                        # Use loaded OpenAI pricing from configuration file
+                        model_pricing = self.openai_pricing.get(selected_model_name)
+                        if model_pricing:
+                            prompt_cost_per_token = model_pricing.get("prompt", Decimal("0"))
+                            completion_cost_per_token = model_pricing.get("completion", Decimal("0"))
+                            total_cost = (Decimal(prompt_tokens) * prompt_cost_per_token) + (Decimal(completion_tokens) * completion_cost_per_token)
+                            model_call_details["cost"] = float(total_cost)
+                            logger.info(f"Calculated OpenAI cost for {selected_model_name}: ${float(total_cost):.6f}")
+                        else:
+                            logger.warning(f"OpenAI pricing not found for model: {selected_model_name}. Cost set to $0.00. Please update openai_pricing.json")
+                            model_call_details["cost"] = 0.0
                     else:
-                         logger.info(f"Cost calculation skipped: Provider '{provider_name}' is not OpenRouter. Setting cost to $0.00.")
-                         model_call_details["cost"] = 0.0 # Set cost to 0 for non-OpenRouter
+                         logger.info(f"Cost calculation skipped: Provider '{provider_name}' is not OpenRouter or OpenAI. Setting cost to $0.00.")
+                         model_call_details["cost"] = 0.0 # Set cost to 0 for other providers
 
-                    # --- MOVE LOGGING HERE ---
-                    # Log the calculated cost (even if 0) AFTER it's determined for ANY provider
-                    # Ensure model_call_details["cost"] exists before logging
+                    # --- COMPREHENSIVE COST TRACKING LOGS ---
+                    # Log the calculated cost with detailed tracking info for analysis
                     final_cost_float = model_call_details.get("cost", 0.0)
                     logger.info(f"Calculated cost for {selected_model_name}: ${final_cost_float:.6f}")
-                    # --- END MOVED LOGGING ---
+                    
+                    # Special formatted log for cost analysis
+                    logger.info(
+                        f"COST_TRACK|"
+                        f"mission_id={mission_id or 'NONE'}|"
+                        f"agent_mode={agent_mode or 'NONE'}|"
+                        f"model={selected_model_name}|"
+                        f"provider={provider_name}|"
+                        f"prompt_tokens={prompt_tokens}|"
+                        f"completion_tokens={completion_tokens}|"
+                        f"cost=${final_cost_float:.6f}|"
+                        f"has_log_queue={bool(log_queue)}|"
+                        f"has_callback={bool(update_callback)}|"
+                        f"timestamp={time.time()}"
+                    )
+                    # --- END COMPREHENSIVE COST TRACKING ---
 
                 else:
                     logger.warning("Usage information not found in the response object. Cost cannot be calculated.")
@@ -574,6 +724,7 @@ class ModelDispatcher:
                           if has_valid_empty_response and not has_content:
                               logger.info(f"Router/query_strategy mode returned empty response (likely thinking model). Accepting as valid.")
                           # --- NEW: Log details to queue and call update_callback if provided ---
+                          cost_saved = False
                           if log_queue:
                               try:
                                   # Create a message with model call details
@@ -585,6 +736,7 @@ class ModelDispatcher:
                                           # Call update_callback with log_queue and the message
                                           update_callback(log_queue, model_details_message)
                                           logger.debug(f"Called update_callback with model_call_details for model {selected_model_name}")
+                                          cost_saved = True
                                       except Exception as cb_err:
                                           logger.error(f"Failed to call update_callback with model details: {cb_err}")
                                           # Fall back to direct queue.put_nowait if callback fails
@@ -594,6 +746,49 @@ class ModelDispatcher:
                                       log_queue.put_nowait(model_details_message)
                               except Exception as q_err:
                                   logger.error(f"Failed to log model details: {q_err}")
+                          
+                          # --- CRITICAL FIX: Call update_mission_stats for ALL LLM calls with costs ---
+                          # This ensures QueryPreparer and other non-agent components get logged
+                          # BUT avoid duplicate logging when agent already logs the call
+                          if self.context_manager and mission_id and model_call_details:
+                              # Check if agent is already handling the logging
+                              agent_logged = kwargs.get('agent_logged', False)
+                              
+                              # Add agent_mode to model_call_details for NON_AGENT_LOG code
+                              model_call_details_with_mode = model_call_details.copy()
+                              model_call_details_with_mode["agent_mode"] = effective_agent_mode
+                              
+                              # If agent is logging, mark it in model_details to prevent NON_AGENT_LOG
+                              if agent_logged:
+                                  model_call_details_with_mode["agent_logged"] = True
+                              
+                              # Call update_mission_stats to trigger NON_AGENT_LOG code
+                              logger.debug(f"ModelDispatcher calling update_mission_stats for {effective_agent_mode} with cost ${model_call_details.get('cost', 0):.6f} (agent_logged={agent_logged})")
+                              
+                              # Schedule the async update_mission_stats call
+                              asyncio.create_task(self.context_manager.update_mission_stats(
+                                  mission_id,
+                                  model_call_details_with_mode,
+                                  log_queue,
+                                  update_callback
+                              ))
+                          
+                          # Log whether cost was saved to database
+                          logger.info(
+                              f"COST_SAVE|mission_id={mission_id or 'NONE'}|"
+                              f"cost_saved={cost_saved}|"
+                              f"cost=${model_call_details.get('cost', 0.0):.6f}"
+                          )
+                          
+                          # Track orphan costs (without mission_id) separately
+                          if not mission_id and model_call_details.get('cost', 0) > 0:
+                              logger.warning(
+                                  f"ORPHAN_COST|agent_mode={effective_agent_mode}|"
+                                  f"model={selected_model_name}|cost=${model_call_details.get('cost', 0):.6f}|"
+                                  f"prompt_tokens={model_call_details.get('prompt_tokens', 0)}|"
+                                  f"completion_tokens={model_call_details.get('completion_tokens', 0)}|"
+                                  f"timestamp={time.time()}"
+                              )
                           # --- END NEW ---
                           return response, model_call_details
                      else:
@@ -612,6 +807,23 @@ class ModelDispatcher:
 
             # Catch specific async-related errors
             except openai.RateLimitError as e:
+                # Log failed attempt
+                logger.info(
+                    f"API_ATTEMPT_END|attempt_id={attempt_id}|success=False|error=RateLimitError|"
+                    f"timestamp={time.time()}"
+                )
+                
+                # Track estimated cost for failed attempt (OpenRouter still charges for rate limited calls)
+                # Estimate based on request size
+                if provider_name == "openrouter":
+                    estimated_prompt_tokens = sum(len(str(msg.get("content", ""))) for msg in messages) // 4
+                    estimated_cost = estimated_prompt_tokens * 0.000001  # Rough estimate
+                    logger.info(
+                        f"COST_TRACK_FAILED|attempt_id={attempt_id}|mission_id={mission_id or 'NONE'}|"
+                        f"agent_mode={effective_agent_mode}|model={selected_model_name}|"
+                        f"estimated_cost=${estimated_cost:.6f}|error_type=RateLimitError"
+                    )
+                
                 if attempt < self.max_retries - 1:
                     base_delay = self.retry_delay
                     backoff_delay = base_delay * (2 ** attempt)
@@ -623,6 +835,22 @@ class ModelDispatcher:
                     logger.error(f"LLM call failed after {self.max_retries} attempts due to RateLimitError: {e}")
                     return None, None # Failed after all retries
             except openai.APIConnectionError as e:
+                # Log failed attempt
+                logger.info(
+                    f"API_ATTEMPT_END|attempt_id={attempt_id}|success=False|error=APIConnectionError|"
+                    f"timestamp={time.time()}"
+                )
+                
+                # Track estimated cost for failed attempt
+                if provider_name == "openrouter":
+                    estimated_prompt_tokens = sum(len(str(msg.get("content", ""))) for msg in messages) // 4
+                    estimated_cost = estimated_prompt_tokens * 0.000001  # Rough estimate
+                    logger.info(
+                        f"COST_TRACK_FAILED|attempt_id={attempt_id}|mission_id={mission_id or 'NONE'}|"
+                        f"agent_mode={effective_agent_mode}|model={selected_model_name}|"
+                        f"estimated_cost=${estimated_cost:.6f}|error_type=APIConnectionError"
+                    )
+                
                 if attempt < self.max_retries - 1:
                     base_delay = self.retry_delay
                     backoff_delay = base_delay * (2 ** attempt)
@@ -634,10 +862,115 @@ class ModelDispatcher:
                      logger.error(f"LLM call failed after {self.max_retries} attempts due to APIConnectionError: {e}")
                      return None, None # Failed after all retries
             except openai.APIStatusError as e:
-                 logger.error(f"API status error (Attempt {attempt + 1}/{self.max_retries}): Status={e.status_code}, Response={e.response}. No retry for status errors.", exc_info=True)
-                 # Re-raise the exception so the calling code can handle it with proper error details
-                 raise e
+                # Log failed attempt
+                logger.info(
+                    f"API_ATTEMPT_END|attempt_id={attempt_id}|success=False|error=APIStatusError_{e.status_code}|"
+                    f"timestamp={time.time()}"
+                )
+                
+                # Track actual cost if available in error response, or estimate
+                if provider_name == "openrouter":
+                    # Try to extract token usage from error response if available
+                    estimated_prompt_tokens = sum(len(str(msg.get("content", ""))) for msg in messages) // 4
+                    estimated_cost = estimated_prompt_tokens * 0.000001  # Rough estimate
+                    logger.info(
+                        f"COST_TRACK_FAILED|attempt_id={attempt_id}|mission_id={mission_id or 'NONE'}|"
+                        f"agent_mode={effective_agent_mode}|model={selected_model_name}|"
+                        f"estimated_cost=${estimated_cost:.6f}|error_type=APIStatusError_{e.status_code}"
+                    )
+                
+                # Check for GPT-5 parameter errors and retry with correct parameters
+                error_msg = str(e)
+                if e.status_code == 400 and provider_name == "openai":
+                    # Check for max_tokens vs max_completion_tokens error
+                    if "max_tokens" in error_msg and "max_completion_tokens" in error_msg:
+                        logger.info(f"Detected GPT-5 parameter error, retrying with max_completion_tokens...")
+                        # Rebuild request params with max_completion_tokens
+                        if "max_tokens" in request_params:
+                            request_params["max_completion_tokens"] = request_params.pop("max_tokens")
+                        # GPT-5 models don't support custom temperature
+                        if "temperature" in request_params and request_params["temperature"] != 1:
+                            request_params.pop("temperature")
+                        # Add reasoning effort if not already present
+                        if "extra_body" not in request_params:
+                            request_params["extra_body"] = {"reasoning_effort": "low"}
+                        
+                        # Retry with corrected parameters
+                        try:
+                            if self.semaphore and global_semaphore:
+                                async with self.semaphore:
+                                    async with global_semaphore:
+                                        response = await client.chat.completions.create(**request_params)
+                            elif self.semaphore:
+                                async with self.semaphore:
+                                    response = await client.chat.completions.create(**request_params)
+                            elif global_semaphore:
+                                async with global_semaphore:
+                                    response = await client.chat.completions.create(**request_params)
+                            else:
+                                response = await client.chat.completions.create(**request_params)
+                            
+                            logger.info(f"GPT-5 fallback successful with max_completion_tokens")
+                            # Process the response as normal - jump to success handling
+                            end_time = time.time()
+                            duration = end_time - start_time
+                            
+                            # Continue with normal response processing (simplified here)
+                            model_call_details = {
+                                "provider": provider_name,
+                                "model_name": selected_model_name,
+                                "duration_sec": round(duration, 2),
+                                "cost": 0.0  # GPT-5 via OpenAI, cost tracking TBD
+                            }
+                            
+                            if response and response.choices and len(response.choices) > 0:
+                                if response.usage:
+                                    model_call_details["prompt_tokens"] = response.usage.prompt_tokens or 0
+                                    model_call_details["completion_tokens"] = response.usage.completion_tokens or 0
+                                    model_call_details["total_tokens"] = response.usage.total_tokens or 0
+                                
+                                return response, model_call_details
+                                
+                        except Exception as retry_error:
+                            logger.error(f"GPT-5 fallback failed: {retry_error}")
+                            # Continue with original error handling
+                    
+                    # Check for temperature not supported error
+                    elif "temperature" in error_msg and "does not support" in error_msg:
+                        logger.info(f"Detected GPT-5 temperature error, retrying without custom temperature...")
+                        # Remove temperature or set to 1
+                        if "temperature" in request_params:
+                            request_params["temperature"] = 1
+                        # Continue with retry logic below
+                
+                # Check if this is a schema-related error that might be fixed by fallback
+                from ai_researcher.agentic_layer.utils.json_format_helper import should_retry_with_json_object
+                
+                if e.status_code == 400 and should_retry_with_json_object(e):
+                    # This is likely a json_schema compatibility issue, re-raise so agent can handle fallback
+                    logger.warning(f"API status error appears to be schema-related (Status=400): {str(e)[:200]}... Re-raising for potential fallback.")
+                    raise e
+                else:
+                    logger.error(f"API status error (Attempt {attempt + 1}/{self.max_retries}): Status={e.status_code}, Response={e.response}. No retry for status errors.", exc_info=True)
+                    # Re-raise the exception so the calling code can handle it with proper error details
+                    raise e
             except Exception as e:
+                # Log failed attempt
+                logger.info(
+                    f"API_ATTEMPT_END|attempt_id={attempt_id}|success=False|error={type(e).__name__}|"
+                    f"timestamp={time.time()}"
+                )
+                
+                # Track estimated cost for failed attempt
+                if provider_name == "openrouter":
+                    estimated_prompt_tokens = sum(len(str(msg.get("content", ""))) for msg in messages) // 4
+                    estimated_cost = estimated_prompt_tokens * 0.000001  # Rough estimate
+                    logger.info(
+                        f"COST_TRACK_FAILED|attempt_id={attempt_id}|mission_id={mission_id or 'NONE'}|"
+                        f"agent_mode={effective_agent_mode}|model={selected_model_name}|"
+                        f"estimated_cost=${estimated_cost:.6f}|error_type={type(e).__name__}"
+                    )
+                
                 # Handle unexpected errors
                 if attempt < self.max_retries - 1:
                     base_delay = self.retry_delay

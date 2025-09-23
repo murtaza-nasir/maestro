@@ -1,0 +1,149 @@
+{
+  "last_updated": "2025-01-23",
+  "currency": "USD",
+  "per_tokens": 1000000,
+  "models": {
+    "gpt-5": {
+      "input": 1.25,
+      "output": 10.00,
+      "cached_input": 0.125,
+      "description": "Most capable GPT-5 model"
+    },
+    "gpt-5-2025-08-07": {
+      "input": 1.25,
+      "output": 10.00,
+      "cached_input": 0.125,
+      "description": "GPT-5 August 2025 version"
+    },
+    "gpt-5-chat-latest": {
+      "input": 1.25,
+      "output": 10.00,
+      "cached_input": 0.125,
+      "description": "Latest GPT-5 chat model"
+    },
+    "gpt-5-mini": {
+      "input": 0.25,
+      "output": 2.00,
+      "cached_input": 0.025,
+      "description": "Smaller, faster GPT-5 model (1/5 price)"
+    },
+    "gpt-5-mini-2025-08-07": {
+      "input": 0.25,
+      "output": 2.00,
+      "cached_input": 0.025,
+      "description": "GPT-5 Mini August 2025 version"
+    },
+    "gpt-5-nano": {
+      "input": 0.05,
+      "output": 0.40,
+      "cached_input": 0.005,
+      "description": "Smallest, most efficient GPT-5 model"
+    },
+    "gpt-5-nano-2025-08-07": {
+      "input": 0.05,
+      "output": 0.40,
+      "cached_input": 0.005,
+      "description": "GPT-5 Nano August 2025 version"
+    },
+    "gpt-4o": {
+      "input": 2.50,
+      "output": 10.00,
+      "description": "GPT-4o latest"
+    },
+    "gpt-4o-2024-11-20": {
+      "input": 2.50,
+      "output": 10.00,
+      "description": "GPT-4o November 2024"
+    },
+    "gpt-4o-2024-08-06": {
+      "input": 2.50,
+      "output": 10.00,
+      "description": "GPT-4o August 2024"
+    },
+    "gpt-4o-2024-05-13": {
+      "input": 5.00,
+      "output": 15.00,
+      "description": "GPT-4o May 2024"
+    },
+    "gpt-4o-mini": {
+      "input": 0.15,
+      "output": 0.60,
+      "description": "Small, fast GPT-4o model"
+    },
+    "gpt-4o-mini-2024-07-18": {
+      "input": 0.15,
+      "output": 0.60,
+      "description": "GPT-4o Mini July 2024"
+    },
+    "gpt-4-turbo": {
+      "input": 10.00,
+      "output": 30.00,
+      "description": "GPT-4 Turbo with 128K context"
+    },
+    "gpt-4-turbo-2024-04-09": {
+      "input": 10.00,
+      "output": 30.00,
+      "description": "GPT-4 Turbo April 2024"
+    },
+    "gpt-4-turbo-preview": {
+      "input": 10.00,
+      "output": 30.00,
+      "description": "GPT-4 Turbo preview"
+    },
+    "gpt-4-0125-preview": {
+      "input": 10.00,
+      "output": 30.00,
+      "description": "GPT-4 January 2024 preview"
+    },
+    "gpt-4-1106-preview": {
+      "input": 10.00,
+      "output": 30.00,
+      "description": "GPT-4 November 2023 preview"
+    },
+    "gpt-4": {
+      "input": 30.00,
+      "output": 60.00,
+      "description": "Original GPT-4 model"
+    },
+    "gpt-4-0613": {
+      "input": 30.00,
+      "output": 60.00,
+      "description": "GPT-4 June 2023"
+    },
+    "gpt-4-0314": {
+      "input": 30.00,
+      "output": 60.00,
+      "description": "GPT-4 March 2023"
+    },
+    "gpt-3.5-turbo": {
+      "input": 0.50,
+      "output": 1.50,
+      "description": "Fast, inexpensive model for simple tasks"
+    },
+    "gpt-3.5-turbo-0125": {
+      "input": 0.50,
+      "output": 1.50,
+      "description": "GPT-3.5 Turbo January 2024"
+    },
+    "gpt-3.5-turbo-1106": {
+      "input": 1.00,
+      "output": 2.00,
+      "description": "GPT-3.5 Turbo November 2023"
+    },
+    "o1": {
+      "input": 15.00,
+      "output": 60.00,
+      "description": "O1 reasoning model"
+    },
+    "o1-preview": {
+      "input": 15.00,
+      "output": 60.00,
+      "description": "O1 preview reasoning model"
+    },
+    "o1-mini": {
+      "input": 3.00,
+      "output": 12.00,
+      "description": "Smaller O1 reasoning model"
+    }
+  }
+}

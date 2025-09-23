@@ -7,7 +7,7 @@ from typing import Any, List, Dict, Optional, Literal, Tuple, Union
 # Use absolute imports
 from ai_researcher.agentic_layer.model_dispatcher import ModelDispatcher
 from ai_researcher import config # To get model types
-from ai_researcher.dynamic_config import get_model_name # To get actual model names
+from ai_researcher.dynamic_config import get_model_name, get_max_query_length # To get actual model names and max query length
 
 logger = logging.getLogger(__name__)
 
@@ -30,18 +30,29 @@ class QueryPreparer:
             
         logger.info(f"QueryPreparer initialized using rewriting model: {self.rewriting_model} (model_type: {self.rewriting_model_type})")
 
-    async def _call_rewriter_llm(self, prompt: str, max_tokens: int = 200, temperature: float = 0.1) -> Tuple[Optional[str], Optional[Dict[str, Any]]]: # <-- Make async
+    async def _call_rewriter_llm(
+        self, 
+        prompt: str, 
+        max_tokens: int = 200, 
+        temperature: float = 0.1,
+        mission_id: Optional[str] = None,  # Add cost tracking parameters
+        log_queue: Optional[Any] = None,
+        update_callback: Optional[Any] = None
+    ) -> Tuple[Optional[str], Optional[Dict[str, Any]]]: # <-- Make async
         """Helper to call the LLM asynchronously for rewriting tasks."""
         messages = [{"role": "user", "content": prompt}]
         try:
-            # Await the dispatcher's async method
+            # Await the dispatcher's async method with cost tracking
             response, model_call_details = await self.model_dispatcher.dispatch( # <-- Use await
                 messages=messages,
                 model=self.rewriting_model,
                 # max_tokens is handled by dispatcher based on agent_mode/config now
                 # max_tokens=max_tokens, # Remove this line
                 # temperature=temperature, # Removed as it's likely handled by dispatcher/config now
-                agent_mode="query_preparation" # <-- Use specific agent mode
+                agent_mode="query_preparation", # <-- Use specific agent mode
+                mission_id=mission_id,  # Pass cost tracking parameters
+                log_queue=log_queue,
+                update_callback=update_callback
             )
             if response and response.choices and response.choices[0].message.content:
                 return response.choices[0].message.content.strip(), model_call_details
@@ -52,7 +63,14 @@ class QueryPreparer:
             logger.error(f"Error calling async LLM for query rewriting: {e}", exc_info=True)
             return None, {"error": str(e)} # Return error details
 
-    async def rewrite_query_zero_shot(self, user_query: str, domain_context: Optional[str] = None) -> Tuple[str, Optional[Dict[str, Any]]]: # <-- Make async, add context
+    async def rewrite_query_zero_shot(
+        self, 
+        user_query: str, 
+        domain_context: Optional[str] = None,
+        mission_id: Optional[str] = None,  # Add cost tracking
+        log_queue: Optional[Any] = None,
+        update_callback: Optional[Any] = None
+    ) -> Tuple[str, Optional[Dict[str, Any]]]: # <-- Make async, add context
         """Rewrites the user query asynchronously using a zero-shot prompt with context and examples."""
         logger.debug(f"Rewriting query (Zero-shot) for: '{user_query}'")
 
@@ -103,7 +121,10 @@ Good Query: Applications in quantum computing, artificial intelligence, and biot
 Original Query: {user_query}
 
 Rewritten Query (with all vague references expanded):"""
-        rewritten_query, model_details = await self._call_rewriter_llm(prompt, max_tokens=150, temperature=0.2) # <-- Use await
+        rewritten_query, model_details = await self._call_rewriter_llm(
+            prompt, max_tokens=150, temperature=0.2,
+            mission_id=mission_id, log_queue=log_queue, update_callback=update_callback
+        ) # <-- Use await
 
         if not rewritten_query or rewritten_query.strip() == "":
             logger.warning("LLM failed to generate zero-shot rewrite. Using original query.")
@@ -114,7 +135,15 @@ Rewritten Query (with all vague references expanded):"""
         logger.debug(f"Zero-shot rewritten query: '{rewritten_query}'")
         return rewritten_query, model_details
 
-    async def decompose_into_subqueries(self, user_query: str, max_subqueries: int = 3, domain_context: Optional[str] = None) -> Tuple[List[str], Optional[Dict[str, Any]]]: # <-- Make async, add context
+    async def decompose_into_subqueries(
+        self, 
+        user_query: str, 
+        max_subqueries: int = 3, 
+        domain_context: Optional[str] = None,
+        mission_id: Optional[str] = None,  # Add cost tracking
+        log_queue: Optional[Any] = None,
+        update_callback: Optional[Any] = None
+    ) -> Tuple[List[str], Optional[Dict[str, Any]]]: # <-- Make async, add context
         """Decomposes a complex query into sub-queries asynchronously using an LLM with context and examples."""
         logger.debug(f"Decomposing query into sub-queries for: '{user_query}'")
 
@@ -171,7 +200,10 @@ Random forest algorithms strengths and weaknesses compared to other ensemble met
 Original Query: {user_query}
 
 Sub-queries (with all vague references expanded to specific names/terms):"""
-        response, model_details = await self._call_rewriter_llm(prompt, max_tokens=200 + (max_subqueries * 50), temperature=0.1) # <-- Use await
+        response, model_details = await self._call_rewriter_llm(
+            prompt, max_tokens=200 + (max_subqueries * 50), temperature=0.1,
+            mission_id=mission_id, log_queue=log_queue, update_callback=update_callback
+        ) # <-- Use await
 
         if not response:
             logger.warning("LLM failed to generate sub-queries. Using original query only.")
@@ -194,7 +226,14 @@ Sub-queries (with all vague references expanded to specific names/terms):"""
         logger.debug(f"Generated sub-queries: {final_subqueries}")
         return final_subqueries, model_details
 
-    async def generate_step_back_query(self, user_query: str, domain_context: Optional[str] = None) -> Tuple[List[str], Optional[Dict[str, Any]]]: # <-- Make async, add context
+    async def generate_step_back_query(
+        self, 
+        user_query: str, 
+        domain_context: Optional[str] = None,
+        mission_id: Optional[str] = None,  # Add cost tracking
+        log_queue: Optional[Any] = None,
+        update_callback: Optional[Any] = None
+    ) -> Tuple[List[str], Optional[Dict[str, Any]]]: # <-- Make async, add context
         """Generates a step-back query asynchronously using context and examples, returns it with the original query."""
         logger.debug(f"Generating step-back query for: '{user_query}'")
 
@@ -242,7 +281,10 @@ Step-back Question: What are the architectural principles and design philosophie
 Specific User Query: {user_query}
 
 Step-back Question (with specific names/terms preserved):"""
-        step_back_q, model_details = await self._call_rewriter_llm(prompt, max_tokens=150, temperature=0.2) # <-- Use await
+        step_back_q, model_details = await self._call_rewriter_llm(
+            prompt, max_tokens=150, temperature=0.2,
+            mission_id=mission_id, log_queue=log_queue, update_callback=update_callback
+        ) # <-- Use await
 
         if not step_back_q or len(step_back_q.strip()) < 10 :
             logger.warning("LLM failed to generate a step-back query. Using original query only.")
@@ -255,11 +297,104 @@ Step-back Question (with specific names/terms preserved):"""
         # Return a list containing both original and step-back
         return [user_query, step_back_q], model_details
 
+    async def refine_long_query(
+        self, 
+        query: str, 
+        max_length: Optional[int] = None, 
+        max_retries: int = 3,
+        mission_id: Optional[str] = None,  # Add cost tracking
+        log_queue: Optional[Any] = None,
+        update_callback: Optional[Any] = None
+    ) -> Tuple[str, Optional[Dict[str, Any]]]:
+        """
+        Refines a query if it's too long for web search APIs with retry mechanism.
+        
+        Args:
+            query: The query that needs refinement
+            max_length: Maximum desired length (if None, uses user-configured value)
+            max_retries: Maximum number of refinement attempts (default 3)
+            
+        Returns:
+            A tuple of (refined_query, model_details)
+        """
+        # Use user-configured max length if not specified
+        if max_length is None:
+            max_length = get_max_query_length(self.mission_id)
+            
+        # Only refine if query exceeds the limit
+        if len(query) <= max_length:
+            return query, None
+            
+        logger.info(f"Query too long ({len(query)} chars), refining to be under {max_length} chars")
+        
+        all_model_details = []
+        attempt = 0
+        current_query = query
+        
+        while attempt < max_retries:
+            attempt += 1
+            logger.info(f"Query refinement attempt {attempt}/{max_retries}")
+            
+            # Adjust prompt based on attempt number to be more aggressive
+            urgency = ""
+            if attempt > 1:
+                urgency = f"\nIMPORTANT: This is attempt {attempt}. The previous refinement was still too long. Be MORE aggressive in shortening.\n"
+            
+            prompt = f"""The following search query is too long for the web search API (max {max_length} characters).
+Please rewrite it to be more concise while preserving the essential search intent and key terms.
+{urgency}
+Rules:
+1. Keep the most important keywords and concepts
+2. Remove redundant phrases and verbose descriptions
+3. Use abbreviations where appropriate
+4. Focus on the core question
+5. The refined query MUST be under {max_length} characters
+6. Target {max_length - 20} characters to ensure you stay under the limit
+
+Original query ({len(current_query)} chars):
+{current_query}
+
+Concise query (under {max_length} chars):"""
+            
+            refined_query, model_details = await self._call_rewriter_llm(
+                prompt, max_tokens=200, temperature=0.1,
+                mission_id=mission_id, log_queue=log_queue, update_callback=update_callback
+            )
+            if model_details:
+                all_model_details.append({"attempt": attempt, **model_details})
+            
+            if not refined_query:
+                logger.warning(f"Attempt {attempt}: Failed to get refined query from LLM")
+                continue
+                
+            # Clean and validate the refined query
+            refined_query = refined_query.strip().strip('"')
+            
+            # Check if refinement succeeded
+            if len(refined_query) <= max_length:
+                logger.info(f"Successfully refined query from {len(query)} to {len(refined_query)} chars in {attempt} attempt(s)")
+                return refined_query, {"attempts": attempt, "model_calls": all_model_details}
+            
+            logger.warning(f"Attempt {attempt}: Refined query still too long ({len(refined_query)} chars)")
+            current_query = refined_query  # Use the partially refined query for next attempt
+        
+        # All retries failed, use fallback truncation with ellipsis
+        logger.warning(f"All {max_retries} refinement attempts failed, using truncation fallback")
+        truncated = query[:max_length - 3] + "..."
+        last_space = query[:max_length - 3].rfind(' ')
+        if last_space > max_length * 0.7:  # Keep at least 70% when truncating at word boundary
+            truncated = query[:last_space] + "..."
+        
+        return truncated, {"attempts": max_retries, "fallback": "truncation", "model_calls": all_model_details}
+
     async def prepare_queries( # <-- Make async
         self,
         original_query: str,
         techniques: List[QueryRewritingTechnique],
-        domain_context: Optional[str] = None # <-- Add domain_context parameter
+        domain_context: Optional[str] = None, # <-- Add domain_context parameter
+        mission_id: Optional[str] = None,  # Add cost tracking
+        log_queue: Optional[Any] = None,
+        update_callback: Optional[Any] = None
     ) -> Tuple[List[str], List[Dict[str, Any]]]:
         """
         Applies specified query rewriting techniques asynchronously to the original query,
@@ -281,13 +416,19 @@ Step-back Question (with specific names/terms preserved):"""
 
         # Apply techniques sequentially (order might matter)
         if "zero_shot_rewrite" in techniques:
-            rewritten_q, details = await self.rewrite_query_zero_shot(processed_query, domain_context) # <-- Pass context
+            rewritten_q, details = await self.rewrite_query_zero_shot(
+                processed_query, domain_context,
+                mission_id=mission_id, log_queue=log_queue, update_callback=update_callback
+            ) # <-- Pass context and cost tracking
             if details: all_model_details.append(details)
             processed_query = rewritten_q
             prepared_queries = [processed_query] # Replace original
 
         if "sub_query" in techniques:
-            sub_queries, details = await self.decompose_into_subqueries(processed_query, domain_context=domain_context) # <-- Pass context
+            sub_queries, details = await self.decompose_into_subqueries(
+                processed_query, domain_context=domain_context,
+                mission_id=mission_id, log_queue=log_queue, update_callback=update_callback
+            ) # <-- Pass context and cost tracking
             if details: all_model_details.append(details)
             if len(sub_queries) > 1 or (len(sub_queries) == 1 and sub_queries[0] != processed_query):
                 prepared_queries = sub_queries
@@ -296,7 +437,10 @@ Step-back Question (with specific names/terms preserved):"""
                     techniques = [t for t in techniques if t != "step_back"] # Filter out step_back
 
         if "step_back" in techniques:
-            step_back_list, details = await self.generate_step_back_query(processed_query, domain_context) # <-- Pass context
+            step_back_list, details = await self.generate_step_back_query(
+                processed_query, domain_context,
+                mission_id=mission_id, log_queue=log_queue, update_callback=update_callback
+            ) # <-- Pass context and cost tracking
             if details: all_model_details.append(details)
             if len(step_back_list) > 1:
                  # Add step-back query, keeping original/rewritten first
@@ -309,6 +453,30 @@ Step-back Question (with specific names/terms preserved):"""
             if q not in seen:
                 final_queries.append(q)
                 seen.add(q)
+        
+        # Check and refine any queries that are too long for web search APIs
+        # This ensures compatibility with Tavily and other search providers
+        # Get the user-configured max query length (defaults to 350)
+        max_query_length = get_max_query_length(self.mission_id)
+        
+        refined_queries = []
+        for query in final_queries:
+            if len(query) > max_query_length:
+                refined_query, refine_details = await self.refine_long_query(query, max_length=max_query_length)
+                if refine_details:
+                    all_model_details.append({
+                        "action": "query_refinement",
+                        "original_length": len(query),
+                        "refined_length": len(refined_query),
+                        "max_length_setting": max_query_length,
+                        **refine_details
+                    })
+                refined_queries.append(refined_query)
+            else:
+                refined_queries.append(query)
+        
+        # Use refined queries as final output
+        final_queries = refined_queries
 
         logger.info(f"Prepared queries for '{original_query}': {final_queries}")
         return final_queries, all_model_details

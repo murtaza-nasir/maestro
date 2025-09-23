@@ -12,6 +12,7 @@ interface AdvancedModelConfig {
   api_key: string | null
   base_url: string
   model_name: string
+  thinking_level?: string  // For GPT-5 models: "minimal", "low", "medium", "high"
 }
 
 interface AISettings {
@@ -42,6 +43,8 @@ interface SearchSettings {
   jina_read_full_content?: boolean
   jina_fetch_favicons?: boolean
   jina_bypass_cache?: boolean
+  // Query refinement settings
+  max_query_length?: number
 }
 
 export interface ResearchParameters {

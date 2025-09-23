@@ -66,6 +66,7 @@ class AdvancedModelConfig(BaseModel):
     api_key: Optional[str] = None
     base_url: Optional[str] = None
     model_name: Optional[str] = None
+    thinking_level: Optional[str] = None  # For GPT-5 models: "minimal", "low", "medium", "high"
 
 class AISettings(BaseModel):
     advanced_mode: Optional[bool] = False

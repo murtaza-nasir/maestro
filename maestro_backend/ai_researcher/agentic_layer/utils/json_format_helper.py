@@ -131,7 +131,20 @@ def should_retry_with_json_object(error: Exception) -> bool:
         "response_format",
         "not supported",
         "invalid parameter",
-        "unsupported format"
+        "unsupported format",
+        "moonshot flavored json schema",  # Moonshot/Kimi specific
+        "invalid moonshot",  # Moonshot variant
+        "this response_format type is unavailable",  # DeepSeek specific
+        "response_format type is unavailable",  # DeepSeek variant
+        "invalid_request_error",  # Common error code for unsupported features
+        "keyword 'default' is not allowed",  # Moonshot schema validation error
+        "not a valid moonshot",  # Another Moonshot variant
+        "structured outputs are not supported",  # Azure/older models
+        "json_object' is required",  # Some providers require json_object explicitly
+        "error resolving schema reference",  # Fireworks/DeepSeek recursive schema error
+        "recursionerror",  # Python recursion error in schema parsing
+        "maximum recursion depth exceeded",  # Specific recursion error
+        "provider returned error"  # Generic provider error that might be schema-related
     ]
     
     for pattern in json_schema_error_patterns:

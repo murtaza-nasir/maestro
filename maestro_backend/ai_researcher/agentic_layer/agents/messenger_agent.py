@@ -499,6 +499,7 @@ Output:
                             "strict": True
                         }
                     },  # Use Pydantic schema for structured output
+                    mission_id=mission_id, # Pass mission_id for cost tracking
                     log_queue=log_queue, # Pass log_queue for UI updates
                     update_callback=update_callback # Pass update_callback for UI updates
                 )

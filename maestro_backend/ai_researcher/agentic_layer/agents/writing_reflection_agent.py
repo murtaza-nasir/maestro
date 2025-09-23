@@ -181,7 +181,8 @@ Task: Output ONLY a JSON object conforming to the WritingReflectionOutput schema
                 agent_mode="reflection", # Use reflection model type
                 response_format={"type": "json_object"}, # Expect JSON output
                 log_queue=log_queue, # Pass log_queue for UI updates
-                update_callback=update_callback # Pass update_callback for UI updates
+                update_callback=update_callback, # Pass update_callback for UI updates
+                log_llm_call=False # Disable duplicate logging since WritingManager logs this operation
             )
 
             if response and response.choices and response.choices[0].message.content:

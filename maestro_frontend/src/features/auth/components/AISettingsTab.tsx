@@ -808,6 +808,29 @@ export const AISettingsTab: React.FC = () => {
                     placeholder="Select model"
                   />
                 </div>
+                {/* GPT-5 Thinking Level Selector */}
+                {draftSettings.ai_endpoints.advanced_models.fast.model_name && 
+                 draftSettings.ai_endpoints.advanced_models.fast.model_name.toLowerCase().includes('gpt-5') &&
+                 draftSettings.ai_endpoints.advanced_models.fast.provider === 'openai' && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Thinking Level</Label>
+                    <Select
+                      value={draftSettings.ai_endpoints.advanced_models.fast.thinking_level || 'low'}
+                      onValueChange={(value) => handleAdvancedModelChange('fast', 'thinking_level', value)}
+                    >
+                      <SelectTrigger className="h-8">
+                        <SelectValue placeholder="Select thinking level" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="minimal">Minimal</SelectItem>
+                        <SelectItem value="low">Low</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="high">High</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">Higher levels provide deeper reasoning but are slower</p>
+                  </div>
+                )}
                 <div className="space-y-1.5">
                   <Label className="text-xs">API Key</Label>
                   <Input
@@ -882,6 +905,29 @@ export const AISettingsTab: React.FC = () => {
                     placeholder="Select model"
                   />
                 </div>
+                {/* GPT-5 Thinking Level Selector */}
+                {draftSettings.ai_endpoints.advanced_models.mid.model_name && 
+                 draftSettings.ai_endpoints.advanced_models.mid.model_name.toLowerCase().includes('gpt-5') &&
+                 draftSettings.ai_endpoints.advanced_models.mid.provider === 'openai' && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Thinking Level</Label>
+                    <Select
+                      value={draftSettings.ai_endpoints.advanced_models.mid.thinking_level || 'low'}
+                      onValueChange={(value) => handleAdvancedModelChange('mid', 'thinking_level', value)}
+                    >
+                      <SelectTrigger className="h-8">
+                        <SelectValue placeholder="Select thinking level" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="minimal">Minimal</SelectItem>
+                        <SelectItem value="low">Low</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="high">High</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">Higher levels provide deeper reasoning but are slower</p>
+                  </div>
+                )}
                 <div className="space-y-1.5">
                   <Label className="text-xs">API Key</Label>
                   <Input
@@ -956,6 +1002,29 @@ export const AISettingsTab: React.FC = () => {
                     placeholder="Select model"
                   />
                 </div>
+                {/* GPT-5 Thinking Level Selector */}
+                {draftSettings.ai_endpoints.advanced_models.intelligent.model_name && 
+                 draftSettings.ai_endpoints.advanced_models.intelligent.model_name.toLowerCase().includes('gpt-5') &&
+                 draftSettings.ai_endpoints.advanced_models.intelligent.provider === 'openai' && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Thinking Level</Label>
+                    <Select
+                      value={draftSettings.ai_endpoints.advanced_models.intelligent.thinking_level || 'medium'}
+                      onValueChange={(value) => handleAdvancedModelChange('intelligent', 'thinking_level', value)}
+                    >
+                      <SelectTrigger className="h-8">
+                        <SelectValue placeholder="Select thinking level" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="minimal">Minimal</SelectItem>
+                        <SelectItem value="low">Low</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="high">High</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">Higher levels provide deeper reasoning but are slower</p>
+                  </div>
+                )}
                 <div className="space-y-1.5">
                   <Label className="text-xs">API Key</Label>
                   <Input
@@ -1030,6 +1099,29 @@ export const AISettingsTab: React.FC = () => {
                     placeholder="Select model"
                   />
                 </div>
+                {/* GPT-5 Thinking Level Selector */}
+                {draftSettings.ai_endpoints.advanced_models.verifier.model_name && 
+                 draftSettings.ai_endpoints.advanced_models.verifier.model_name.toLowerCase().includes('gpt-5') &&
+                 draftSettings.ai_endpoints.advanced_models.verifier.provider === 'openai' && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Thinking Level</Label>
+                    <Select
+                      value={draftSettings.ai_endpoints.advanced_models.verifier.thinking_level || 'low'}
+                      onValueChange={(value) => handleAdvancedModelChange('verifier', 'thinking_level', value)}
+                    >
+                      <SelectTrigger className="h-8">
+                        <SelectValue placeholder="Select thinking level" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="minimal">Minimal</SelectItem>
+                        <SelectItem value="low">Low</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="high">High</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">Higher levels provide deeper reasoning but are slower</p>
+                  </div>
+                )}
                 <div className="space-y-1.5">
                   <Label className="text-xs">API Key</Label>
                   <Input

@@ -623,6 +623,21 @@ class SimplifiedWritingAgent:
                 logger.info("Created new WebSearchTool instance (cached for reuse)")
             web_search_tool = self._web_search_tool
             
+            # Safety check for query length using user-configured limit
+            # Note: Ideally queries should be refined by QueryPreparer, but WritingAgent 
+            # generates its own queries, so we need this safety check
+            from ai_researcher.dynamic_config import get_max_query_length
+            max_query_len = get_max_query_length()
+            if len(enriched_query) > max_query_len:
+                logger.warning(f"Web search query exceeds configured limit of {max_query_len} chars ({len(enriched_query)} chars). Truncating.")
+                # Simple truncation at word boundary
+                truncate_at = max_query_len - 5
+                enriched_query = enriched_query[:truncate_at] + "..."
+                last_space = enriched_query[:truncate_at].rfind(' ')
+                if last_space > truncate_at * 0.75:
+                    enriched_query = enriched_query[:last_space] + "..."
+                logger.info(f"Truncated web search query to {len(enriched_query)} chars")
+            
             # Perform the search with enriched query
             logger.info(f"Executing web search for enriched query: {enriched_query}")
             result = await web_search_tool.execute(query=enriched_query, max_results=max_search_results)
@@ -1321,6 +1336,20 @@ class SimplifiedWritingAgent:
                         self._web_search_tool = WebSearchTool()
                         logger.info("Created new WebSearchTool instance (cached for reuse)")
                     web_search_tool = self._web_search_tool
+                    
+                    # Safety check for query length using user-configured limit
+                    from ai_researcher.dynamic_config import get_max_query_length
+                    max_query_len = get_max_query_length()
+                    if len(enriched_query) > max_query_len:
+                        logger.warning(f"Focused web search query exceeds configured limit of {max_query_len} chars ({len(enriched_query)} chars). Truncating.")
+                        # Simple truncation at word boundary
+                        truncate_at = max_query_len - 5
+                        enriched_query = enriched_query[:truncate_at] + "..."
+                        last_space = enriched_query[:truncate_at].rfind(' ')
+                        if last_space > truncate_at * 0.75:
+                            enriched_query = enriched_query[:last_space] + "..."
+                        logger.info(f"Truncated focused web search query to {len(enriched_query)} chars")
+                    
                     logger.info(f"Executing focused web search for enriched query: {enriched_query}")
                     result = await web_search_tool.execute(query=enriched_query, max_results=max_search_results)
                     
