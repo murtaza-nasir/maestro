@@ -302,11 +302,12 @@ After successful connection test:
 ### Important Note on Cost Tracking
 
 **Cost Discrepancies**: Tracked costs in MAESTRO may differ from your provider dashboard, especially with API aggregators like OpenRouter. This happens because:
+
 - Aggregators route to different backend providers with varying actual costs
 - Dynamic routing optimizes for speed/availability, not just price
 - Some providers count tokens differently for billing
 
-Tracked costs are typically 40-60% of dashboard charges. This is not a bug - MAESTRO calculates correctly based on advertised rates. For details and testing tools, see [Cost Tracking Discrepancies](../../troubleshooting/common-issues/ai-models.md#cost-tracking-discrepancies).
+Tracked costs are typically 40-60% of dashboard charges, especially with providers like openrouter. This is not a bug - MAESTRO calculates correctly based on advertised rates. For details and testing tools, see [Cost Tracking Discrepancies](../../troubleshooting/common-issues/ai-models.md#cost-tracking-discrepancies).
 
 ## Common Configurations
 

@@ -151,6 +151,7 @@ This is a known issue with some API providers' pricing and billing. MAESTRO corr
 #### The Problem
 
 Some API providers, particularly aggregators/routers, have inconsistent billing:
+
 1. **API aggregators route to different providers** - Each backend provider may have different actual costs
 2. **Dynamic routing affects pricing** - Aggregators choose providers based on availability and latency, not just price
 3. **API `usage.cost` field may be unreliable** - Sometimes returns values ~100x lower than actual charges
@@ -169,10 +170,10 @@ Here's actual data from testing with a popular model:
 | 64 | 124 | $0.000106 | $0.000002 | $0.000157 | **1.48x** |
 
 **Key Findings:**
-- Token counts are usually accurate across API and dashboard ✅
-- MAESTRO's pricing calculation is correct based on advertised rates ✅
-- Some providers' API `usage.cost` field may be broken ❌
-- Dashboard charges can be inconsistent with advertised rates ❌
+
+- Token counts are usually accurate across API and dashboard 
+- MAESTRO's pricing calculation is correct based on advertised rates 
+- Dashboard charges can be inconsistent with advertised rates 
 
 #### Testing Your Own Costs
 
@@ -212,6 +213,7 @@ python scripts/test_openrouter_pricing.py --api-key YOUR_API_KEY
 #### Technical Details
 
 The discrepancy may be caused by:
+
 - **Aggregator routing**: Services like OpenRouter route to different backend providers with varying costs
 - **Dynamic provider selection**: Aggregators optimize for availability and latency, not just price
 - **Hidden tokens**: Providers may count system prompts or special tokens not reported in API

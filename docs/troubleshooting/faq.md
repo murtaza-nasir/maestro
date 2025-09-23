@@ -10,7 +10,7 @@
 - Dynamic routing optimizes for speed/availability, not just price  
 - Some providers count hidden tokens not reported in their API
 
-Your tracked costs will typically be 40-60% of actual dashboard charges. This is not a bug in MAESTRO - we calculate correctly based on advertised rates. See [Cost Tracking Discrepancies](common-issues/ai-models.md#cost-tracking-discrepancies) for details and workarounds.
+Your tracked costs may typically be 40-60% of actual dashboard charges, especially with providers like Openrouter, that may route your calls to further providers with differing rates. This is not a bug in MAESTRO - we calculate correctly based on advertised rates. See [Cost Tracking Discrepancies](common-issues/ai-models.md#cost-tracking-discrepancies) for details and workarounds.
 
 ### Q: How can I reduce my API costs?
 
