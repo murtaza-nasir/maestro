@@ -740,6 +740,10 @@ Make sure to address the user's specific concerns and suggestions."""
                 # Update the outline in mission context
                 mission_context.plan.report_outline = response.report_outline
                 
+                # Store the updated plan to persist it and send to frontend via websocket
+                await self.context_manager.store_plan(mission_id, mission_context.plan)
+                logger.info(f"Stored revised outline with {len(response.report_outline)} sections to database and sent to frontend")
+                
                 # Update scratchpad if provided
                 if scratchpad_update:
                     await self.context_manager.update_scratchpad(mission_id, scratchpad_update)
@@ -886,73 +890,88 @@ Make sure to address the user's specific concerns and suggestions."""
                         logger.error(f"Error calling update_callback with feedback message: {e}", exc_info=True)
                 mission_feedback_callback = _feedback_callback_impl
 
-            # Phase 1: Initial Research Phase
+            # Phase 1: Initial Research Phase (Skip if resuming from structured_research)
             mission_context = self.context_manager.get_mission_context(mission_id)
             user_request = mission_context.user_request
             tool_selection = mission_context.metadata.get("tool_selection", {'local_rag': True, 'web_search': True})
-            final_questions = mission_context.metadata.get("final_questions")
-
-            if not final_questions:
-                logger.error(f"Cannot start research phase: Final questions not found in metadata for mission {mission_id}.")
-                await self.context_manager.update_mission_status(mission_id, "failed", "Final questions missing before research phase.")
-                return
-
-            # Check if mission was stopped or paused before starting research
-            mission_context = self.context_manager.get_mission_context(mission_id)
-            if mission_context and mission_context.status in ["stopped", "paused"]:
-                logger.info(f"Mission {mission_id} was {mission_context.status} before research phase. Aborting.")
-                return
-
-            logger.info(f"Starting initial research phase for mission {mission_id} with {len(final_questions)} questions.")
-            initial_notes, final_scratchpad = await self.research_manager.run_initial_research_phase(
-                mission_id=mission_id,
-                user_request=user_request,
-                log_queue=log_queue,
-                update_callback=update_callback,
-                feedback_callback=update_callback,
-                initial_questions_override=final_questions,
-                tool_selection=tool_selection
-            )
             
-            # Check if mission was stopped or paused during research
-            mission_context = self.context_manager.get_mission_context(mission_id)
-            if mission_context and mission_context.status in ["stopped", "paused"]:
-                logger.info(f"Mission {mission_id} was {mission_context.status} during initial research phase. Aborting.")
-                return
+            # Initialize preliminary_plan variable
+            preliminary_plan = None
+            
+            # Only run initial research and outline generation if NOT resuming from structured_research
+            if resume_from_phase != "structured_research":
+                final_questions = mission_context.metadata.get("final_questions")
+
+                if not final_questions:
+                    logger.error(f"Cannot start research phase: Final questions not found in metadata for mission {mission_id}.")
+                    await self.context_manager.update_mission_status(mission_id, "failed", "Final questions missing before research phase.")
+                    return
+
+                # Check if mission was stopped or paused before starting research
+                mission_context = self.context_manager.get_mission_context(mission_id)
+                if mission_context and mission_context.status in ["stopped", "paused"]:
+                    logger.info(f"Mission {mission_id} was {mission_context.status} before research phase. Aborting.")
+                    return
+
+                logger.info(f"Starting initial research phase for mission {mission_id} with {len(final_questions)} questions.")
+                initial_notes, final_scratchpad = await self.research_manager.run_initial_research_phase(
+                    mission_id=mission_id,
+                    user_request=user_request,
+                    log_queue=log_queue,
+                    update_callback=update_callback,
+                    feedback_callback=update_callback,
+                    initial_questions_override=final_questions,
+                    tool_selection=tool_selection
+                )
                 
-            logger.info(f"Initial research phase completed for mission {mission_id}. Found {len(initial_notes)} notes.")
+                # Check if mission was stopped or paused during research
+                mission_context = self.context_manager.get_mission_context(mission_id)
+                if mission_context and mission_context.status in ["stopped", "paused"]:
+                    logger.info(f"Mission {mission_id} was {mission_context.status} during initial research phase. Aborting.")
+                    return
+                    
+                logger.info(f"Initial research phase completed for mission {mission_id}. Found {len(initial_notes)} notes.")
 
-            # Phase 2: Preliminary Outline Generation
-            # Check if mission was stopped or paused before outline generation
-            mission_context = self.context_manager.get_mission_context(mission_id)
-            if mission_context and mission_context.status in ["stopped", "paused"]:
-                logger.info(f"Mission {mission_id} was {mission_context.status} before outline generation. Aborting.")
-                return
+                # Phase 2: Preliminary Outline Generation
+                # Check if mission was stopped or paused before outline generation
+                mission_context = self.context_manager.get_mission_context(mission_id)
+                if mission_context and mission_context.status in ["stopped", "paused"]:
+                    logger.info(f"Mission {mission_id} was {mission_context.status} before outline generation. Aborting.")
+                    return
 
-            active_goals = self.context_manager.get_active_goals(mission_id)
-            preliminary_plan = await self.research_manager.generate_preliminary_outline(
-                mission_id=mission_id,
-                user_request=user_request,
-                initial_notes=initial_notes,
-                initial_scratchpad=final_scratchpad,
-                tool_selection=tool_selection,
-                log_queue=log_queue,
-                update_callback=update_callback
-            )
+                active_goals = self.context_manager.get_active_goals(mission_id)
+                preliminary_plan = await self.research_manager.generate_preliminary_outline(
+                    mission_id=mission_id,
+                    user_request=user_request,
+                    initial_notes=initial_notes,
+                    initial_scratchpad=final_scratchpad,
+                    tool_selection=tool_selection,
+                    log_queue=log_queue,
+                    update_callback=update_callback
+                )
 
-            # Check if mission was stopped or paused during outline generation
-            mission_context = self.context_manager.get_mission_context(mission_id)
-            if mission_context and mission_context.status in ["stopped", "paused"]:
-                logger.info(f"Mission {mission_id} was {mission_context.status} during outline generation. Aborting.")
-                return
+                # Check if mission was stopped or paused during outline generation
+                mission_context = self.context_manager.get_mission_context(mission_id)
+                if mission_context and mission_context.status in ["stopped", "paused"]:
+                    logger.info(f"Mission {mission_id} was {mission_context.status} during outline generation. Aborting.")
+                    return
 
-            if not preliminary_plan:
-                logger.error(f"Failed to generate preliminary outline for mission {mission_id}. Aborting.")
-                await self.context_manager.update_mission_status(mission_id, "failed", "Preliminary outline generation failed.")
-                return
+                if not preliminary_plan:
+                    logger.error(f"Failed to generate preliminary outline for mission {mission_id}. Aborting.")
+                    await self.context_manager.update_mission_status(mission_id, "failed", "Preliminary outline generation failed.")
+                    return
+                else:
+                    await self.context_manager.store_plan(mission_id, preliminary_plan)
+                    logger.info(f"Successfully generated and stored preliminary outline for mission {mission_id}.")
             else:
-                await self.context_manager.store_plan(mission_id, preliminary_plan)
-                logger.info(f"Successfully generated and stored preliminary outline for mission {mission_id}.")
+                # We're resuming from structured_research - use the existing plan (which may have been revised)
+                logger.info(f"Resuming from structured_research phase - skipping initial research and using existing outline")
+                preliminary_plan = self.context_manager.get_plan(mission_id)
+                if not preliminary_plan:
+                    logger.error(f"No plan found for mission {mission_id} when resuming from structured_research")
+                    await self.context_manager.update_mission_status(mission_id, "failed", "No plan found when resuming")
+                    return
+                logger.info(f"Using existing outline with {len(preliminary_plan.report_outline)} sections for structured research")
 
             # Phase 2b: Execute Research Plan
             # Check if mission was stopped or paused before plan execution
