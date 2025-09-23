@@ -49,7 +49,7 @@ ReportSection.model_rebuild()
 
 # Simplified schemas for each planning phase
 class SimplifiedSection(BaseModel):
-    """Simplified section for initial outline generation (Phase 1)."""
+    """Simplified section for initial outline generation (Phase 1) and revision (Phase 3)."""
     model_config: ClassVar[ConfigDict] = ConfigDict(extra='forbid', json_schema_extra={
         "required": [
             "title",
@@ -58,12 +58,14 @@ class SimplifiedSection(BaseModel):
             "subsections"
         ]
     })
+    section_id: Optional[str] = Field(None, description="Unique identifier for the section (e.g., 'introduction', 'section_1').")
     title: str = Field(..., description="Human-readable title for the report section.")
     description: str = Field(..., description="Detailed description of what this section should cover, including specific subtopics and questions to address.")
     research_strategy: ResearchStrategy = Field(
         default="research_based",
         description="Defines how the research/writing for this section should be approached: 'research_based' for sections needing research, 'content_based' for intro/conclusion, 'synthesize_from_subsections' for parent sections."
     )
+    associated_note_ids: Optional[List[str]] = Field(None, description="List of note IDs associated with this section (for Phase 3 revision).")
     subsections: List['SimplifiedSection'] = Field(default_factory=list, description="List of subsections nested under this section (max depth of 2).")
 
 # Update forward references
