@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '../../../components/ui/select'
 import { useToast } from '../../../components/ui/toast'
-import { Send, Loader2, Bot, User, Sparkles, Settings } from 'lucide-react'
+import { Send, Loader2, Bot, User, Sparkles, Settings, FolderPlus } from 'lucide-react'
 import { buildApiUrl, API_CONFIG } from '../../../config/api'
 import { MissionSettingsDialog } from '../../mission/components/MissionSettingsDialog'
 import { formatChatMessageTime } from '../../../utils/timezone'
@@ -42,6 +42,11 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
   const [showMissionSettings, setShowMissionSettings] = useState(false)
   const [isLoadingSettings, setIsLoadingSettings] = useState(false)
   const [hasInitializedSettings, setHasInitializedSettings] = useState(false)
+  const [missionDocumentGroup, setMissionDocumentGroup] = useState<{
+    id: string
+    name: string
+    document_count: number
+  } | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const { addToast } = useToast()
   
@@ -93,6 +98,40 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
   useEffect(() => {
     scrollToBottom()
   }, [currentChat?.messages])
+
+  // Function to fetch mission document group
+  const fetchMissionDocumentGroup = useCallback(async (missionId: string) => {
+    try {
+      const response = await fetch(buildApiUrl(`/api/missions/${missionId}/document-group`), {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('access_token') || ''}`,
+        },
+        credentials: 'include',
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        if (data?.has_document_group && data?.document_group) {
+          setMissionDocumentGroup(data.document_group)
+        } else {
+          setMissionDocumentGroup(null)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch mission document group:', error)
+      setMissionDocumentGroup(null)
+    }
+  }, [])
+
+  // Fetch mission document group when mission changes
+  useEffect(() => {
+    if (currentChat?.missionId) {
+      fetchMissionDocumentGroup(currentChat.missionId)
+    } else {
+      setMissionDocumentGroup(null)
+    }
+  }, [currentChat?.missionId, fetchMissionDocumentGroup])
 
   // Set active chat when chatId changes and reset loading state
   useEffect(() => {
@@ -637,9 +676,20 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
       {/* Chat Header */}
       <PanelHeader
         title={currentChat.title}
-        subtitle={currentChat.messages.length === 0 
-          ? 'Start the conversation' 
-          : `${currentChat.messages.length} messages`
+        subtitle={
+          <div className="flex flex-col space-y-1">
+            <span>
+              {currentChat.messages.length === 0 
+                ? 'Start the conversation' 
+                : `${currentChat.messages.length} messages`}
+            </span>
+            {missionDocumentGroup && (
+              <span className="text-xs text-muted-foreground flex items-center">
+                <FolderPlus className="h-3 w-3 mr-1" />
+                Doc Group: {missionDocumentGroup.name} ({missionDocumentGroup.document_count} docs)
+              </span>
+            )}
+          </div>
         }
         actions={
           <div className="flex items-center space-x-4">

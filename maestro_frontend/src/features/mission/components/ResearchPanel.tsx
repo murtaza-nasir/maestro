@@ -11,7 +11,7 @@ import { useResearchWebSocket } from '../../../services/websocket'
 import { apiClient } from '../../../config/api'
 import { MissionHeaderStats } from '../../../components/mission'
 import { ensureDate } from '../../../utils/timezone'
-import { FileSearch, MessageSquare, Play, Square, RotateCcw } from 'lucide-react'
+import { FileSearch, MessageSquare, Play, Square, RotateCcw, FolderPlus, ExternalLink } from 'lucide-react'
 import { UnifiedResumeModal } from './UnifiedResumeModal'
 
 export const ResearchPanel: React.FC = () => {
@@ -23,6 +23,12 @@ export const ResearchPanel: React.FC = () => {
   const [isLoadingMoreLogs, setIsLoadingMoreLogs] = React.useState(false)
   const [totalLogsCount, setTotalLogsCount] = React.useState(0)
   const [isResumeModalOpen, setIsResumeModalOpen] = React.useState(false)
+  const [isCreatingDocGroup, setIsCreatingDocGroup] = React.useState(false)
+  const [missionDocumentGroup, setMissionDocumentGroup] = React.useState<{
+    id: string
+    name: string
+    document_count: number
+  } | null>(null)
   
   // Get panel controls - use try/catch to handle when not in SplitPaneLayout context
   let panelControls = null
@@ -180,6 +186,7 @@ export const ResearchPanel: React.FC = () => {
       // Reset pagination state when mission changes
       setHasMoreLogs(false)
       setTotalLogsCount(0)
+      setMissionDocumentGroup(null) // Reset document group state
     }
     
     if (activeChat?.missionId) {
@@ -190,6 +197,7 @@ export const ResearchPanel: React.FC = () => {
           // Only fetch initial logs if mission changed
           if (missionChanged) {
             await fetchInitialLogs()
+            await fetchMissionDocumentGroup(activeChat.missionId!)
           }
         } catch (error) {
           console.error('Failed to load mission:', error)
@@ -198,6 +206,13 @@ export const ResearchPanel: React.FC = () => {
       loadMission()
     }
   }, [activeChat?.missionId, fetchInitialLogs]) // Added fetchInitialLogs dependency
+
+  // Check for document group when mission completes
+  useEffect(() => {
+    if (currentMission?.status === 'completed' && activeChat?.missionId) {
+      fetchMissionDocumentGroup(activeChat.missionId)
+    }
+  }, [currentMission?.status, activeChat?.missionId])
 
   // Minimal polling - only for actively running missions, rely on WebSocket for most updates
   useEffect(() => {
@@ -292,6 +307,62 @@ export const ResearchPanel: React.FC = () => {
         message: 'Failed to resume the mission. Please try again.',
       })
     }
+  }
+
+  const fetchMissionDocumentGroup = async (missionId: string) => {
+    try {
+      const response = await apiClient.get(`/api/missions/${missionId}/document-group`)
+      if (response.data?.has_document_group && response.data?.document_group) {
+        setMissionDocumentGroup(response.data.document_group)
+      } else {
+        setMissionDocumentGroup(null)
+      }
+    } catch (error) {
+      console.error('Failed to fetch mission document group:', error)
+      setMissionDocumentGroup(null)
+    }
+  }
+
+  const handleCreateDocumentGroup = async () => {
+    if (!activeChat?.missionId) return
+    
+    setIsCreatingDocGroup(true)
+    try {
+      const response = await apiClient.post(`/api/missions/${activeChat.missionId}/create-document-group`, {
+        include_web_sources: true,
+        include_database_documents: true
+      })
+      
+      if (response.data) {
+        setMissionDocumentGroup({
+          id: response.data.document_group_id,
+          name: response.data.document_group_name,
+          document_count: response.data.document_count
+        })
+        
+        addToast({
+          type: 'success',
+          title: 'Document Group Created',
+          message: `Created document group "${response.data.document_group_name}" with ${response.data.document_count} documents.`,
+        })
+      }
+    } catch (error: any) {
+      console.error('Failed to create document group:', error)
+      const message = error?.response?.data?.detail || 'Failed to create document group'
+      addToast({
+        type: 'error',
+        title: 'Creation Failed',
+        message: message,
+      })
+    } finally {
+      setIsCreatingDocGroup(false)
+    }
+  }
+
+  const handleViewDocumentGroup = () => {
+    if (!missionDocumentGroup) return
+    // Navigate to documents page with the group selected
+    window.location.href = `/documents?group=${missionDocumentGroup.id}`
   }
 
   const getStatusColor = (status?: string) => {
@@ -425,17 +496,45 @@ export const ResearchPanel: React.FC = () => {
                     </Button>
                   )}
                   
-                  {/* Completed state: Show Restart and Revise */}
+                  {/* Completed state: Show multiple actions */}
                   {currentMission.status === 'completed' && (
-                    <Button
-                      onClick={() => setIsResumeModalOpen(true)}
-                      variant="outline"
-                      size="sm"
-                      className="text-xs"
-                    >
-                      <RotateCcw className="h-3 w-3 mr-1" />
-                      Restart and Revise
-                    </Button>
+                    <>
+                      <Button
+                        onClick={() => setIsResumeModalOpen(true)}
+                        variant="outline"
+                        size="sm"
+                        className="text-xs"
+                      >
+                        <RotateCcw className="h-3 w-3 mr-1" />
+                        Restart and Revise
+                      </Button>
+                      
+                      {/* Document Group button */}
+                      {missionDocumentGroup ? (
+                        <Button
+                          onClick={handleViewDocumentGroup}
+                          variant="outline"
+                          size="sm"
+                          className="text-xs"
+                          title={`View document group: ${missionDocumentGroup.name}`}
+                        >
+                          <FolderPlus className="h-3 w-3 mr-1" />
+                          View Docs ({missionDocumentGroup.document_count})
+                          <ExternalLink className="h-2.5 w-2.5 ml-1" />
+                        </Button>
+                      ) : (
+                        <Button
+                          onClick={handleCreateDocumentGroup}
+                          variant="outline"
+                          size="sm"
+                          className="text-xs"
+                          disabled={isCreatingDocGroup}
+                        >
+                          <FolderPlus className="h-3 w-3 mr-1" />
+                          {isCreatingDocGroup ? 'Creating...' : 'Create Doc Group'}
+                        </Button>
+                      )}
+                    </>
                   )}
                 </>
               )}
