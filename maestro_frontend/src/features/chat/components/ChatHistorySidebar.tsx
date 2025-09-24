@@ -84,6 +84,37 @@ export const ChatHistorySidebar: React.FC<ChatHistorySidebarProps> = React.memo(
     }
   }, [isLoading, hasMore, loadMoreChats])
 
+  // Check if we need to load more chats to fill the viewport
+  const checkAndLoadMore = useCallback(() => {
+    if (!scrollContainerRef.current || isLoading || !hasMore) return
+    
+    const { scrollHeight, clientHeight } = scrollContainerRef.current
+    // If content height is less than container height, load more
+    if (scrollHeight <= clientHeight) {
+      loadMoreChats()
+    }
+  }, [isLoading, hasMore, loadMoreChats])
+
+  // Check if we need to load more chats after initial load or updates
+  useEffect(() => {
+    // Use a small delay to ensure DOM is updated
+    const timer = setTimeout(() => {
+      checkAndLoadMore()
+    }, 100)
+    
+    return () => clearTimeout(timer)
+  }, [chats, checkAndLoadMore])
+
+  // Also check on window resize
+  useEffect(() => {
+    const handleResize = () => {
+      checkAndLoadMore()
+    }
+    
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [checkAndLoadMore])
+
   const handleNewChat = useCallback(async () => {
     try {
       await createChat()
