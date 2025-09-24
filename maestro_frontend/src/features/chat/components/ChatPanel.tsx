@@ -187,25 +187,33 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
       let groupId = null
       let webSearch = true
       
+      let autoSaveDocs = false
+      
       if (activeMission?.tool_selection) {
         // Use mission settings if available (takes priority)
         console.log('Using mission tool_selection:', activeMission.tool_selection)
         groupId = activeMission.document_group_id || null
         webSearch = activeMission.tool_selection.web_search ?? true
+        // For now, we can't get auto_create_document_group from mission since metadata isn't exposed
+        // Fall back to chat settings for this
+        autoSaveDocs = currentChat.settings?.auto_create_document_group ?? false
       } else {
         // Fall back to chat settings
         groupId = currentChat.settings?.document_group_id || null
         webSearch = currentChat.settings?.use_web_search !== undefined ? currentChat.settings.use_web_search : true
+        autoSaveDocs = currentChat.settings?.auto_create_document_group !== undefined ? currentChat.settings.auto_create_document_group : false
       }
       
-      console.log('Setting values - Group:', groupId, 'WebSearch:', webSearch)
+      console.log('Setting values - Group:', groupId, 'WebSearch:', webSearch, 'AutoSave:', autoSaveDocs)
       setSelectedGroupId(groupId)
       setUseWebSearch(webSearch)
+      setAutoCreateDocumentGroup(autoSaveDocs)
     } else {
       // Reset to defaults when no chat is selected
       console.log('No chat selected, resetting to defaults')
       setSelectedGroupId(null)
       setUseWebSearch(true)
+      setAutoCreateDocumentGroup(false)
     }
     
     // Mark that we've initialized settings for this chat after a delay

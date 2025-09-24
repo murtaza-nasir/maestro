@@ -2059,6 +2059,11 @@ async def start_mission_execution(
             # Get existing metadata
             existing_metadata = mission_context.metadata or {}
             
+            # Preserve auto_create_document_group if it was already set
+            existing_research_params = existing_metadata.get("research_params", {})
+            if "auto_create_document_group" in existing_research_params:
+                current_research_params["auto_create_document_group"] = existing_research_params["auto_create_document_group"]
+            
             # Update research_params with current settings
             existing_metadata["research_params"] = current_research_params
             existing_metadata["settings_captured_at_start"] = True
@@ -2327,7 +2332,15 @@ async def start_mission_execution(
                         logger.error(f"Error in websocket_update_callback for mission {mission_id}: {e}")
                 
                 # Create document group if auto_create_document_group is enabled
-                if current_research_params and current_research_params.get("auto_create_document_group"):
+                # Check both current_research_params and mission metadata for the flag
+                mission_metadata = mission_context.metadata or {}
+                mission_research_params = mission_metadata.get("research_params", {})
+                auto_create_flag = (
+                    (current_research_params and current_research_params.get("auto_create_document_group")) or
+                    mission_research_params.get("auto_create_document_group")
+                )
+                logger.info(f"Checking auto_create_document_group for mission {mission_id}: current_params={current_research_params}, mission_params={mission_research_params}, flag={auto_create_flag}")
+                if auto_create_flag:
                     logger.info(f"auto_create_document_group is enabled for mission {mission_id}, creating document group...")
                     
                     # Get database session

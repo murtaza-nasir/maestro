@@ -765,6 +765,16 @@ class AsyncContextManager:
             
             # Process notes for auto-created document group if enabled
             for note in notes:
+                # Log note details for debugging
+                if hasattr(note, 'source_type') and note.source_type == 'web':
+                    metadata = note.source_metadata if hasattr(note, 'source_metadata') else None
+                    if metadata:
+                        if isinstance(metadata, dict):
+                            has_full = metadata.get('fetched_full_content', False)
+                            logger.info(f"Processing web note {note.note_id}: fetched_full_content={has_full}, source={note.source_id if hasattr(note, 'source_id') else 'unknown'}")
+                        else:
+                            has_full = getattr(metadata, 'fetched_full_content', False)
+                            logger.info(f"Processing web note {note.note_id}: fetched_full_content={has_full}, source={note.source_id if hasattr(note, 'source_id') else 'unknown'}")
                 await self._process_note_for_document_group(mission_id, note)
             
             async with get_async_db() as db:
@@ -1582,22 +1592,40 @@ class AsyncContextManager:
                 
                 # Check if the note has fetched_full_content flag in metadata
                 if hasattr(note, 'source_metadata') and note.source_metadata:
-                    if hasattr(note.source_metadata, 'fetched_full_content') and note.source_metadata.fetched_full_content:
+                    # source_metadata might be a dict or an object
+                    metadata = note.source_metadata
+                    fetched_full = False
+                    
+                    if isinstance(metadata, dict):
+                        fetched_full = metadata.get('fetched_full_content', False)
+                        logger.debug(f"Web note metadata (dict): fetched_full_content={fetched_full}, keys={metadata.keys() if metadata else 'None'}")
+                    else:
+                        fetched_full = getattr(metadata, 'fetched_full_content', False)
+                        logger.debug(f"Web note metadata (obj): fetched_full_content={fetched_full}")
+                    
+                    if fetched_full:
                         # We have full content, save it as a document
                         db = next(get_db())
                         try:
-                            # Generate a consistent document ID based on URL hash (not mission-specific)
+                            # Generate a consistent UUID based on URL hash (not mission-specific)
                             # This ensures the same URL always maps to the same document ID
-                            url_hash = hashlib.sha256(source_id.encode()).hexdigest()[:16]
-                            doc_id = f"web_{url_hash}"
+                            # Use UUID v5 with URL namespace to generate deterministic UUID from URL
+                            import uuid
+                            url_namespace = uuid.UUID('6ba7b811-9dad-11d1-80b4-00c04fd430c8')  # URL namespace
+                            doc_id = str(uuid.uuid5(url_namespace, source_id))
+                            
+                            # Also generate a content hash for deduplication
+                            url_hash = hashlib.sha256(source_id.encode()).hexdigest()
                             
                             # Get user_id from the mission's chat
-                            mission_db = crud.get_mission(db, mission_id=mission_id, user_id=None)
+                            # We need to query the mission directly without user_id filter since we don't have it yet
+                            mission_db = db.query(models.Mission).filter(models.Mission.id == mission_id).first()
                             if not mission_db:
                                 logger.error(f"Mission {mission_id} not found in database")
                                 return
                             
-                            chat_db = crud.get_chat(db, chat_id=mission_db.chat_id, user_id=None)
+                            # Get the chat to find the user_id
+                            chat_db = db.query(models.Chat).filter(models.Chat.id == mission_db.chat_id).first()
                             if not chat_db:
                                 logger.error(f"Chat {mission_db.chat_id} not found in database")
                                 return
@@ -1605,20 +1633,28 @@ class AsyncContextManager:
                             user_id = chat_db.user_id
                             
                             # Check if document already exists
-                            existing_doc = crud.get_document_by_id(db, doc_id=doc_id, user_id=user_id)
+                            existing_doc = crud.get_document(db, doc_id=doc_id, user_id=user_id)
                             if not existing_doc:
                                 # Create document entry
-                                title = note.source_metadata.title if hasattr(note.source_metadata, 'title') else f"Web: {source_id[:50]}"
+                                # Get title from metadata
+                                if isinstance(metadata, dict):
+                                    title = metadata.get('title', f"Web: {source_id[:50]}")
+                                else:
+                                    title = getattr(metadata, 'title', f"Web: {source_id[:50]}")
                                 
                                 # Get the full content - check if we have the full fetched content in metadata
                                 # The note.content is the synthesized/summarized version
                                 # We want the actual full page content if available
                                 content = note.content if hasattr(note, 'content') else ""
                                 
-                                # Check if we have the full page text stored somewhere in metadata
-                                # Note: We may need to pass this through from the research agent
-                                if hasattr(note.source_metadata, 'full_text'):
-                                    content = note.source_metadata.full_text
+                                # Check if we have the full page text stored in metadata
+                                if isinstance(metadata, dict):
+                                    full_text = metadata.get('full_text', None)
+                                else:
+                                    full_text = getattr(metadata, 'full_text', None)
+                                
+                                if full_text:
+                                    content = full_text
                                     logger.info(f"Using full fetched text for document {doc_id} ({len(content)} chars)")
                                 
                                 # Create markdown file with the content
@@ -1637,20 +1673,20 @@ class AsyncContextManager:
                                 web_doc = models.Document(
                                     id=doc_id,
                                     user_id=user_id,
-                                    title=title,
+                                    filename=title,  # Use filename instead of title
                                     original_filename=source_id,
-                                    content_hash=url_hash,
-                                    source_type="web",
                                     file_path=str(markdown_path),
+                                    markdown_path=str(markdown_path),
                                     processing_status="completed",
                                     created_at=now,
                                     updated_at=now,
-                                    metadata={
+                                    metadata_={  # Use metadata_ field name
                                         "url": source_id,
                                         "source": "mission_web_search",
                                         "mission_id": mission_id,
                                         "auto_captured": True,
-                                        "first_captured_by_mission": mission_id
+                                        "first_captured_by_mission": mission_id,
+                                        "content_hash": url_hash  # Store hash in metadata
                                     }
                                 )
                                 db.add(web_doc)
@@ -1663,6 +1699,37 @@ class AsyncContextManager:
                                 
                                 db.commit()
                                 logger.info(f"Created and saved web document {doc_id} for URL {source_id}")
+                                
+                                # Process the document through the document processor pipeline
+                                # We need to create chunks and embeddings for it
+                                try:
+                                    from ai_researcher.core_rag.processor import DocumentProcessor
+                                    from ai_researcher.core_rag.vector_store_singleton import get_vector_store
+                                    
+                                    # Initialize processor
+                                    processor = DocumentProcessor()
+                                    
+                                    # Process the markdown file to create chunks and embeddings
+                                    # The processor expects a file path
+                                    markdown_path_str = str(markdown_path)
+                                    result = processor.process_document(markdown_path, doc_id=doc_id)
+                                    
+                                    if result:
+                                        logger.info(f"Successfully processed web document {doc_id} through document pipeline")
+                                        # Update document status to completed
+                                        web_doc.status = 'completed'
+                                        db.commit()
+                                    else:
+                                        logger.warning(f"Document processor returned no result for {doc_id}")
+                                        web_doc.status = 'processing_error' 
+                                        web_doc.processing_error = "No result from processor"
+                                        db.commit()
+                                except Exception as proc_error:
+                                    logger.error(f"Failed to process web document {doc_id} through pipeline: {proc_error}", exc_info=True)
+                                    # Update document status to indicate processing failed
+                                    web_doc.status = 'processing_error'
+                                    web_doc.processing_error = str(proc_error)
+                                    db.commit()
                             else:
                                 logger.info(f"Web document {doc_id} already exists for URL {source_id}, reusing it")
                                 
@@ -1682,7 +1749,9 @@ class AsyncContextManager:
                         finally:
                             db.close()
                     else:
-                        logger.debug(f"Web note for {source_id} doesn't have full content fetched yet")
+                        logger.warning(f"Web note for {source_id} doesn't have fetched_full_content=True flag, skipping document creation")
+                else:
+                    logger.warning(f"Web note for {source_id} has no source_metadata, skipping document creation")
                         
             elif source_type == "document":
                 # For database documents, just add them to the group
@@ -1701,18 +1770,20 @@ class AsyncContextManager:
                     db = next(get_db())
                     try:
                         # Get user_id from the mission's chat
-                        mission_db = crud.get_mission(db, mission_id=mission_id, user_id=None)
+                        # We need to query the mission directly without user_id filter since we don't have it yet
+                        mission_db = db.query(models.Mission).filter(models.Mission.id == mission_id).first()
                         if not mission_db:
                             return
                         
-                        chat_db = crud.get_chat(db, chat_id=mission_db.chat_id, user_id=None)
+                        # Get the chat to find the user_id
+                        chat_db = db.query(models.Chat).filter(models.Chat.id == mission_db.chat_id).first()
                         if not chat_db:
                             return
                         
                         user_id = chat_db.user_id
                         
                         # Get the document and add to group
-                        document = crud.get_document_by_id(db, doc_id=doc_id, user_id=user_id)
+                        document = crud.get_document(db, doc_id=doc_id, user_id=user_id)
                         if document:
                             document_group = crud.get_document_group(db, group_id=group_id, user_id=user_id)
                             if document_group:

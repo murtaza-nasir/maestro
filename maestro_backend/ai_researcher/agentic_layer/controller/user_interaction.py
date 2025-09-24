@@ -229,7 +229,8 @@ Output ONLY a single JSON object conforming EXACTLY to the RequestAnalysisOutput
         log_queue: Optional[queue.Queue] = None,
         update_callback: Optional[Callable[[queue.Queue, Any], None]] = None,
         use_web_search: Optional[bool] = True,
-        document_group_id: Optional[str] = None
+        document_group_id: Optional[str] = None,
+        auto_create_document_group: Optional[bool] = False
     ) -> Dict[str, Any]:
         """
         Handles a user message using the MessengerAgent.
@@ -323,7 +324,10 @@ Output ONLY a single JSON object conforming EXACTLY to the RequestAnalysisOutput
                     # Update mission metadata with tool selection and document group
                     await self.controller.context_manager.update_mission_metadata(mission_id, {
                         "tool_selection": tool_selection,
-                        "document_group_id": document_group_id
+                        "document_group_id": document_group_id,
+                        "research_params": {
+                            "auto_create_document_group": auto_create_document_group
+                        }
                     })
                 else:
                     # Create mission if no existing mission_id
@@ -331,10 +335,13 @@ Output ONLY a single JSON object conforming EXACTLY to the RequestAnalysisOutput
                     mission_id = mission_context.mission_id
                     logger.info(f"Created new mission with ID: {mission_id}")
                     
-                    # Store tool selection and document group in mission metadata
+                    # Set initial metadata with tool selection and document group
                     await self.controller.context_manager.update_mission_metadata(mission_id, {
                         "tool_selection": tool_selection,
-                        "document_group_id": document_group_id
+                        "document_group_id": document_group_id,
+                        "research_params": {
+                            "auto_create_document_group": auto_create_document_group
+                        }
                     })
                 
                 # Now check if there were formatting preferences in the agent output

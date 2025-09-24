@@ -141,7 +141,8 @@ async def chat_with_ai(
                 log_queue=log_queue,
                 update_callback=websocket_update_callback if request.mission_id else None,
                 use_web_search=request.use_web_search,
-                document_group_id=request.document_group_id
+                document_group_id=request.document_group_id,
+                auto_create_document_group=request.auto_create_document_group
             )
         except Exception as agent_error:
             logger.error(f"AgentController error: {agent_error}", exc_info=True)

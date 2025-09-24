@@ -1395,10 +1395,11 @@ Make sure to address the user's specific concerns and suggestions."""
                                  log_queue: Optional[queue.Queue] = None,
                                  update_callback: Optional[Callable[[queue.Queue, Any], None]] = None,
                                  use_web_search: Optional[bool] = True,
-                                 document_group_id: Optional[str] = None) -> Dict[str, Any]:
+                                 document_group_id: Optional[str] = None,
+                                 auto_create_document_group: Optional[bool] = False) -> Dict[str, Any]:
         return await self.user_interaction_manager.handle_user_message(
             user_message, chat_history, chat_id, mission_id, log_queue, update_callback,
-            use_web_search, document_group_id
+            use_web_search, document_group_id, auto_create_document_group
         )
 
     def get_final_report(self, mission_id: str) -> Optional[str]:
