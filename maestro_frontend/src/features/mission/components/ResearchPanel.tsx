@@ -12,6 +12,7 @@ import { apiClient } from '../../../config/api'
 import { MissionHeaderStats } from '../../../components/mission'
 import { ensureDate } from '../../../utils/timezone'
 import { FileSearch, MessageSquare, Play, Square, RotateCcw } from 'lucide-react'
+import { UnifiedResumeModal } from './UnifiedResumeModal'
 
 export const ResearchPanel: React.FC = () => {
   const { activeChat } = useChatStore()
@@ -21,6 +22,7 @@ export const ResearchPanel: React.FC = () => {
   const [hasMoreLogs, setHasMoreLogs] = React.useState(false)
   const [isLoadingMoreLogs, setIsLoadingMoreLogs] = React.useState(false)
   const [totalLogsCount, setTotalLogsCount] = React.useState(0)
+  const [isResumeModalOpen, setIsResumeModalOpen] = React.useState(false)
   
   // Get panel controls - use try/catch to handle when not in SplitPaneLayout context
   let panelControls = null
@@ -363,12 +365,15 @@ export const ResearchPanel: React.FC = () => {
       <PanelHeader
         title="Research Mission"
         subtitle={
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2 px-2 py-0.5 bg-muted/50 rounded-md">
+          <div className="flex flex-col space-y-2">
+            {/* First row: Status badge */}
+            <div className="flex items-center space-x-2 px-2 py-0.5 bg-muted/50 rounded-md w-fit">
               <div className={`w-2.5 h-2.5 rounded-full ${getStatusColor(currentMission?.status)}`}></div>
               <span className="text-sm font-medium">{getStatusText(currentMission?.status)}</span>
             </div>
+            {/* Second row: Stats - shown below status */}
             <MissionHeaderStats 
+              missionId={activeChat?.missionId}
               logs={activeChat?.missionId ? (missionLogs[activeChat.missionId] || []) : []} 
               missionStatus={currentMission?.status} 
             />
@@ -407,17 +412,29 @@ export const ResearchPanel: React.FC = () => {
                     </Button>
                   )}
                   
-                  {/* Paused, Stopped, Completed, or Failed state: Show Resume/Retry */}
-                  {(currentMission.status === 'paused' || currentMission.status === 'stopped' || currentMission.status === 'completed' || currentMission.status === 'failed') && (
+                  {/* Paused, Stopped, or Failed state: Show Resume/Retry */}
+                  {(currentMission.status === 'paused' || currentMission.status === 'stopped' || currentMission.status === 'failed') && (
                     <Button
                       onClick={handleResumeMission}
                       variant="outline"
                       size="sm"
                       className="text-xs"
-                      disabled={currentMission.status === 'completed'}
                     >
                       <RotateCcw className="h-3 w-3 mr-1" />
                       {currentMission.status === 'failed' ? 'Retry' : 'Resume'}
+                    </Button>
+                  )}
+                  
+                  {/* Completed state: Show Restart and Revise */}
+                  {currentMission.status === 'completed' && (
+                    <Button
+                      onClick={() => setIsResumeModalOpen(true)}
+                      variant="outline"
+                      size="sm"
+                      className="text-xs"
+                    >
+                      <RotateCcw className="h-3 w-3 mr-1" />
+                      Restart and Revise
                     </Button>
                   )}
                 </>
@@ -455,6 +472,19 @@ export const ResearchPanel: React.FC = () => {
           />
         </div>
       </div>
+      
+      {/* Unified Resume Modal */}
+      {isResumeModalOpen && activeChat?.missionId && (
+        <UnifiedResumeModal
+          isOpen={isResumeModalOpen}
+          onClose={() => setIsResumeModalOpen(false)}
+          missionId={activeChat.missionId}
+          onSuccess={() => {
+            setIsResumeModalOpen(false)
+            fetchMissionStatus(activeChat.missionId)
+          }}
+        />
+      )}
     </div>
   )
 }

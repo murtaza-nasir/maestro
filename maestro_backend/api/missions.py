@@ -635,7 +635,7 @@ async def get_mission_stats(
     current_user: User = Depends(get_current_user_from_cookie),
     context_mgr: AsyncContextManager = Depends(get_context_manager)
 ):
-    """Get mission statistics including cost and token usage."""
+    """Get mission statistics including cost and token usage from in-memory context."""
     try:
         mission_context = context_mgr.get_mission_context(mission_id)
         if not mission_context:
@@ -661,6 +661,78 @@ async def get_mission_stats(
         raise HTTPException(
             status_code=500,
             detail="Failed to get mission stats"
+        )
+
+@router.get("/missions/{mission_id}/complete-stats", response_model=MissionStats)
+async def get_complete_mission_stats(
+    mission_id: str,
+    current_user: User = Depends(get_current_user_from_cookie)
+):
+    """Get complete mission statistics by calculating from all database logs."""
+    try:
+        # Get all logs from database
+        from database.async_database import get_async_db_session
+        from database import async_crud
+        
+        async_db = await get_async_db_session()
+        try:
+            # Fetch ALL logs for this mission (no limit)
+            logs = await async_crud.get_mission_execution_logs(
+                async_db, 
+                mission_id, 
+                current_user.id,
+                skip=0, 
+                limit=10000  # High limit to get all logs
+            )
+            
+            # Calculate stats from logs
+            total_cost = 0.0
+            total_prompt_tokens = 0
+            total_completion_tokens = 0
+            total_native_tokens = 0
+            total_web_search_calls = 0
+            
+            for log in logs:
+                # Add cost
+                if hasattr(log, 'cost') and log.cost:
+                    total_cost += log.cost
+                    
+                # Add tokens
+                if hasattr(log, 'prompt_tokens') and log.prompt_tokens:
+                    total_prompt_tokens += log.prompt_tokens
+                if hasattr(log, 'completion_tokens') and log.completion_tokens:
+                    total_completion_tokens += log.completion_tokens
+                if hasattr(log, 'native_tokens') and log.native_tokens:
+                    total_native_tokens += log.native_tokens
+                
+                # Count web searches from tool calls
+                if hasattr(log, 'tool_calls') and log.tool_calls:
+                    for tool_call in log.tool_calls:
+                        if isinstance(tool_call, dict):
+                            tool_name = tool_call.get('tool_name', '').lower()
+                        else:
+                            tool_name = getattr(tool_call, 'tool_name', '').lower() if hasattr(tool_call, 'tool_name') else ''
+                        
+                        if 'search' in tool_name or 'web' in tool_name or 'tavily' in tool_name:
+                            total_web_search_calls += 1
+            
+            return MissionStats(
+                mission_id=mission_id,
+                total_cost=total_cost,
+                total_prompt_tokens=float(total_prompt_tokens),
+                total_completion_tokens=float(total_completion_tokens),
+                total_native_tokens=float(total_native_tokens),
+                total_web_search_calls=total_web_search_calls
+            )
+            
+        finally:
+            await async_db.close()
+            
+    except Exception as e:
+        logger.error(f"Failed to get complete mission stats: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to get complete mission stats"
         )
 
 @router.get("/missions/{mission_id}/plan", response_model=MissionPlan)
