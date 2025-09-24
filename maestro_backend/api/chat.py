@@ -31,6 +31,7 @@ class ChatRequest(BaseModel):
     mission_id: Optional[str] = None  # Associate chat with a mission
     document_group_id: Optional[str] = None  # Selected document group for local RAG
     use_web_search: Optional[bool] = True  # Enable/disable web search
+    auto_create_document_group: Optional[bool] = False  # Auto-save documents during research
 
 class ChatResponse(BaseModel):
     response: str

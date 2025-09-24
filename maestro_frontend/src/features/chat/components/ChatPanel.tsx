@@ -39,6 +39,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
   const [documentGroups, setDocumentGroups] = useState<DocumentGroup[]>([])
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
   const [useWebSearch, setUseWebSearch] = useState<boolean>(true)
+  const [autoCreateDocumentGroup, setAutoCreateDocumentGroup] = useState<boolean>(false)
   const [showMissionSettings, setShowMissionSettings] = useState(false)
   const [isLoadingSettings, setIsLoadingSettings] = useState(false)
   const [hasInitializedSettings, setHasInitializedSettings] = useState(false)
@@ -253,7 +254,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
     
     const settingsToSave = {
       document_group_id: selectedGroupId,
-      use_web_search: useWebSearch
+      use_web_search: useWebSearch,
+      auto_create_document_group: autoCreateDocumentGroup
     }
     
     console.log('Saving settings for chat', currentChatId, ':', settingsToSave)
@@ -266,7 +268,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
       addToast({
         type: 'success',
         title: 'Settings Saved',
-        message: `Document group: ${selectedGroupId || 'None'}, Web search: ${useWebSearch ? 'On' : 'Off'}`,
+        message: `Document group: ${selectedGroupId || 'None'}, Web search: ${useWebSearch ? 'On' : 'Off'}, Auto-save: ${autoCreateDocumentGroup ? 'On' : 'Off'}`,
         duration: 2000
       })
       
@@ -280,9 +282,9 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
         duration: 5000
       })
     }
-  }, [chatId, activeChat?.id, selectedGroupId, useWebSearch, updateChatInStore, addToast])
+  }, [chatId, activeChat?.id, selectedGroupId, useWebSearch, autoCreateDocumentGroup, updateChatInStore, addToast])
 
-  // Save settings when selectedGroupId or useWebSearch changes
+  // Save settings when selectedGroupId, useWebSearch, or autoCreateDocumentGroup changes
   useEffect(() => {
     // Skip if we're still loading settings or haven't initialized yet
     if (isLoadingSettings || !hasInitializedSettings) {
@@ -303,7 +305,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
       return
     }
     
-    console.log('Settings changed - Group:', selectedGroupId, 'WebSearch:', useWebSearch, 'ChatId:', targetChatId)
+    console.log('Settings changed - Group:', selectedGroupId, 'WebSearch:', useWebSearch, 'AutoSave:', autoCreateDocumentGroup, 'ChatId:', targetChatId)
     
     // Debounce the save operation
     const timer = setTimeout(() => {
@@ -312,7 +314,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
     }, 500)
     
     return () => clearTimeout(timer)
-  }, [selectedGroupId, useWebSearch, isLoadingSettings, hasInitializedSettings, saveSettings, currentChat?.missionId])
+  }, [selectedGroupId, useWebSearch, autoCreateDocumentGroup, isLoadingSettings, hasInitializedSettings, saveSettings, currentChat?.missionId])
 
   const handleSendMessage = async () => {
     if (!message.trim() || isLoading) return
@@ -343,7 +345,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
         await updateChatInStore(newChat.id, {
           settings: {
             document_group_id: selectedGroupId,
-            use_web_search: useWebSearch
+            use_web_search: useWebSearch,
+            auto_create_document_group: autoCreateDocumentGroup
           }
         })
       } catch (error) {
@@ -406,7 +409,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
           conversation_history: conversationHistory,
           mission_id: updatedCurrentChat?.missionId || null, // Pass existing mission ID if available
           document_group_id: selectedGroupId,
-          use_web_search: useWebSearch
+          use_web_search: useWebSearch,
+          auto_create_document_group: autoCreateDocumentGroup
         })
       })
 
@@ -951,6 +955,28 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
                       </button>
                       <span className={`text-xs ${useWebSearch ? 'text-primary' : 'text-muted-foreground'}`}>
                         {useWebSearch ? 'On' : 'Off'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center space-x-1.5">
+                      <label className="text-xs text-muted-foreground whitespace-nowrap">Auto-save Docs:</label>
+                      <button
+                        type="button"
+                        onClick={() => setAutoCreateDocumentGroup(!autoCreateDocumentGroup)}
+                        disabled={isChatDisabled}
+                        className={`relative inline-flex h-3.5 w-6 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 ${
+                          autoCreateDocumentGroup ? 'bg-primary' : 'bg-secondary'
+                        } ${isChatDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                        title="Automatically save all relevant documents from research into a document group"
+                      >
+                        <span
+                          className={`inline-block h-2 w-2 transform rounded-full bg-white transition-transform ${
+                            autoCreateDocumentGroup ? 'translate-x-3' : 'translate-x-0.5'
+                          }`}
+                        />
+                      </button>
+                      <span className={`text-xs ${autoCreateDocumentGroup ? 'text-primary' : 'text-muted-foreground'}`}>
+                        {autoCreateDocumentGroup ? 'On' : 'Off'}
                       </span>
                     </div>
 

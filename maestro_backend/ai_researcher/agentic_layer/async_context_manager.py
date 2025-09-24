@@ -716,6 +716,9 @@ class AsyncContextManager:
             mission.notes.append(note)
             mission.update_timestamp()
             
+            # Process note for auto-created document group if enabled
+            await self._process_note_for_document_group(mission_id, note)
+            
             async with get_async_db() as db:
                 try:
                     await crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
@@ -759,6 +762,10 @@ class AsyncContextManager:
         if mission:
             mission.notes.extend(notes)
             mission.update_timestamp()
+            
+            # Process notes for auto-created document group if enabled
+            for note in notes:
+                await self._process_note_for_document_group(mission_id, note)
             
             async with get_async_db() as db:
                 try:
@@ -1512,3 +1519,223 @@ class AsyncContextManager:
                 logger.error(f"Failed to send stats_update message via callback: {e}", exc_info=True)
 
     # --- End Stats Management Methods ---
+
+    # Track processed documents per mission to avoid re-processing
+    _processed_documents_per_mission = {}
+
+    async def _process_note_for_document_group(self, mission_id: str, note: Note):
+        """
+        Process a note to save web content as a document if auto_create_document_group is enabled.
+        For database documents, add them to the document group.
+        """
+        try:
+            mission = self.get_mission_context(mission_id)
+            if not mission or not mission.metadata:
+                return
+            
+            # Check if auto_create_document_group is enabled
+            metadata = mission.metadata
+            research_params = metadata.get("research_params", {})
+            if not research_params.get("auto_create_document_group"):
+                return
+            
+            # Get the document group ID
+            group_id = metadata.get("generated_document_group_id")
+            if not group_id:
+                logger.warning(f"auto_create_document_group is enabled but no document group ID found for mission {mission_id}")
+                return
+            
+            # Only process relevant notes
+            if hasattr(note, 'is_relevant') and not note.is_relevant:
+                return
+            
+            source_type = note.source_type if hasattr(note, 'source_type') else None
+            source_id = note.source_id if hasattr(note, 'source_id') else None
+            
+            if not source_type or not source_id:
+                return
+            
+            # Initialize processed documents set for this mission if needed
+            if mission_id not in self._processed_documents_per_mission:
+                self._processed_documents_per_mission[mission_id] = set()
+            
+            # Create a unique key for this source
+            source_key = f"{source_type}:{source_id}"
+            
+            # Check if we've already processed this document in this mission
+            if source_key in self._processed_documents_per_mission[mission_id]:
+                logger.debug(f"Already processed {source_key} in mission {mission_id}, skipping")
+                return
+            
+            # Mark as processed
+            self._processed_documents_per_mission[mission_id].add(source_key)
+            
+            # Import database modules
+            from database.database import get_db
+            from database import crud, models
+            import hashlib
+            import uuid as uuid_lib
+            
+            if source_type == "web":
+                # For web sources, save the full content as a document
+                logger.info(f"Processing web note for document group: {source_id}")
+                
+                # Check if the note has fetched_full_content flag in metadata
+                if hasattr(note, 'source_metadata') and note.source_metadata:
+                    if hasattr(note.source_metadata, 'fetched_full_content') and note.source_metadata.fetched_full_content:
+                        # We have full content, save it as a document
+                        db = next(get_db())
+                        try:
+                            # Generate a consistent document ID based on URL hash (not mission-specific)
+                            # This ensures the same URL always maps to the same document ID
+                            url_hash = hashlib.sha256(source_id.encode()).hexdigest()[:16]
+                            doc_id = f"web_{url_hash}"
+                            
+                            # Get user_id from the mission's chat
+                            mission_db = crud.get_mission(db, mission_id=mission_id, user_id=None)
+                            if not mission_db:
+                                logger.error(f"Mission {mission_id} not found in database")
+                                return
+                            
+                            chat_db = crud.get_chat(db, chat_id=mission_db.chat_id, user_id=None)
+                            if not chat_db:
+                                logger.error(f"Chat {mission_db.chat_id} not found in database")
+                                return
+                            
+                            user_id = chat_db.user_id
+                            
+                            # Check if document already exists
+                            existing_doc = crud.get_document_by_id(db, doc_id=doc_id, user_id=user_id)
+                            if not existing_doc:
+                                # Create document entry
+                                title = note.source_metadata.title if hasattr(note.source_metadata, 'title') else f"Web: {source_id[:50]}"
+                                
+                                # Get the full content - check if we have the full fetched content in metadata
+                                # The note.content is the synthesized/summarized version
+                                # We want the actual full page content if available
+                                content = note.content if hasattr(note, 'content') else ""
+                                
+                                # Check if we have the full page text stored somewhere in metadata
+                                # Note: We may need to pass this through from the research agent
+                                if hasattr(note.source_metadata, 'full_text'):
+                                    content = note.source_metadata.full_text
+                                    logger.info(f"Using full fetched text for document {doc_id} ({len(content)} chars)")
+                                
+                                # Create markdown file with the content
+                                import pathlib
+                                markdown_dir = pathlib.Path("/app/data/markdown_files")
+                                markdown_dir.mkdir(parents=True, exist_ok=True)
+                                markdown_path = markdown_dir / f"{doc_id}.md"
+                                
+                                with open(markdown_path, 'w', encoding='utf-8') as f:
+                                    f.write(f"# {title}\n\n")
+                                    f.write(f"Source: {source_id}\n\n")
+                                    f.write(content)
+                                
+                                # Create document record
+                                now = crud.get_current_time()
+                                web_doc = models.Document(
+                                    id=doc_id,
+                                    user_id=user_id,
+                                    title=title,
+                                    original_filename=source_id,
+                                    content_hash=url_hash,
+                                    source_type="web",
+                                    file_path=str(markdown_path),
+                                    processing_status="completed",
+                                    created_at=now,
+                                    updated_at=now,
+                                    metadata={
+                                        "url": source_id,
+                                        "source": "mission_web_search",
+                                        "mission_id": mission_id,
+                                        "auto_captured": True,
+                                        "first_captured_by_mission": mission_id
+                                    }
+                                )
+                                db.add(web_doc)
+                                
+                                # Add to document group
+                                document_group = crud.get_document_group(db, group_id=group_id, user_id=user_id)
+                                if document_group:
+                                    document_group.documents.append(web_doc)
+                                    logger.info(f"Added new web document {doc_id} to document group {group_id}")
+                                
+                                db.commit()
+                                logger.info(f"Created and saved web document {doc_id} for URL {source_id}")
+                            else:
+                                logger.info(f"Web document {doc_id} already exists for URL {source_id}, reusing it")
+                                
+                                # Document already exists, just add to group if not already there
+                                document_group = crud.get_document_group(db, group_id=group_id, user_id=user_id)
+                                if document_group:
+                                    # Check if document is already in the group
+                                    if existing_doc not in document_group.documents:
+                                        document_group.documents.append(existing_doc)
+                                        db.commit()
+                                        logger.info(f"Added existing web document {doc_id} to document group {group_id}")
+                                    else:
+                                        logger.debug(f"Web document {doc_id} is already in document group {group_id}, skipping")
+                        except Exception as e:
+                            logger.error(f"Failed to save web document for {source_id}: {e}", exc_info=True)
+                            db.rollback()
+                        finally:
+                            db.close()
+                    else:
+                        logger.debug(f"Web note for {source_id} doesn't have full content fetched yet")
+                        
+            elif source_type == "document":
+                # For database documents, just add them to the group
+                logger.info(f"Processing document note for document group: {source_id}")
+                
+                # Extract document ID from source_id or metadata
+                doc_id = None
+                if hasattr(note, 'source_metadata') and note.source_metadata:
+                    if hasattr(note.source_metadata, 'doc_id') and note.source_metadata.doc_id:
+                        doc_id = note.source_metadata.doc_id
+                    elif '_' in source_id:
+                        # Try to extract doc_id from chunk_id format
+                        doc_id = source_id.split('_')[0]
+                
+                if doc_id:
+                    db = next(get_db())
+                    try:
+                        # Get user_id from the mission's chat
+                        mission_db = crud.get_mission(db, mission_id=mission_id, user_id=None)
+                        if not mission_db:
+                            return
+                        
+                        chat_db = crud.get_chat(db, chat_id=mission_db.chat_id, user_id=None)
+                        if not chat_db:
+                            return
+                        
+                        user_id = chat_db.user_id
+                        
+                        # Get the document and add to group
+                        document = crud.get_document_by_id(db, doc_id=doc_id, user_id=user_id)
+                        if document:
+                            document_group = crud.get_document_group(db, group_id=group_id, user_id=user_id)
+                            if document_group:
+                                # Check if document is already in the group
+                                if document not in document_group.documents:
+                                    document_group.documents.append(document)
+                                    db.commit()
+                                    logger.info(f"Added document {doc_id} to document group {group_id}")
+                                else:
+                                    logger.debug(f"Document {doc_id} is already in document group {group_id}, skipping")
+                        else:
+                            logger.warning(f"Document {doc_id} not found for user {user_id}")
+                    except Exception as e:
+                        logger.error(f"Failed to add document {doc_id} to group: {e}", exc_info=True)
+                        db.rollback()
+                    finally:
+                        db.close()
+                        
+        except Exception as e:
+            logger.error(f"Error processing note for document group: {e}", exc_info=True)
+    
+    def cleanup_mission_document_cache(self, mission_id: str):
+        """Clean up the processed documents cache for a mission when it completes."""
+        if mission_id in self._processed_documents_per_mission:
+            del self._processed_documents_per_mission[mission_id]
+            logger.debug(f"Cleaned up document processing cache for mission {mission_id}")

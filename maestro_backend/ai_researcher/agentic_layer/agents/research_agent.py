@@ -2368,6 +2368,7 @@ Task: Extract all key information relevant to the section goal (and focus questi
                     full_content_metadata["title"] = fetched_title # Update title with potentially better one from fetcher
                     full_content_metadata["fetched_full_content"] = True
                     full_content_metadata["original_snippet"] = content_to_process # Keep original snippet
+                    full_content_metadata["full_text"] = full_text # Store the actual full page text for document saving
 
                     # --- Merge extracted metadata from the fetcher tool ---
                     fetched_metadata = fetch_result.get("metadata") # Get the metadata dict returned by the fetcher
