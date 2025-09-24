@@ -616,8 +616,9 @@ class AsyncContextManager:
         else:
             logger.error(f"Cannot store report section for non-existent mission ID: {mission_id}")
 
-    async def store_final_report(self, mission_id: str, report_text: str):
-        """Stores the final report, updates status, and persists the context to the database."""
+    async def store_final_report(self, mission_id: str, report_text: str, revision_notes: Optional[str] = None):
+        """Stores the final report, updates status, and persists the context to the database.
+        Creates a new version in the research_reports table if this is a revision."""
         mission = self.get_mission_context(mission_id)
         if mission:
             mission.final_report = report_text
@@ -626,8 +627,37 @@ class AsyncContextManager:
             
             async with get_async_db() as db:
                 try:
+                    # Update mission status and context
                     await crud.update_mission_status(db, mission_id=mission_id, status="completed")
                     await crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
+                    
+                    # Create a versioned research report
+                    from database.crud_research_reports import create_research_report
+                    
+                    # Extract title from report if available
+                    title = None
+                    if report_text:
+                        lines = report_text.split('\n')
+                        for line in lines:
+                            if line.strip().startswith('# '):
+                                title = line.strip()[2:].strip()
+                                break
+                    
+                    # Create the versioned report in a sync context
+                    # Note: This is a synchronous operation wrapped in async context
+                    import asyncio
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(
+                        None,
+                        create_research_report,
+                        db,
+                        mission_id,
+                        report_text,
+                        title,
+                        revision_notes,
+                        True  # make_current
+                    )
+                    
                     logger.info(f"Stored final report and set status to 'completed' for mission '{mission_id}' in DB.")
                     
                     # Send WebSocket update for final report

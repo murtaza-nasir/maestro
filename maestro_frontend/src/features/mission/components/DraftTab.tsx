@@ -4,7 +4,14 @@ import { Card, CardContent } from '../../../components/ui/card'
 import { Button } from '../../../components/ui/button'
 import { useMissionStore } from '../store'
 import { useToast } from '../../../components/ui/toast'
-import { FileText, RefreshCw, Copy, Edit3, X, Save, CheckCheck } from 'lucide-react'
+import { FileText, RefreshCw, Copy, Edit3, X, Save, CheckCheck, ChevronLeft, ChevronRight, Clock } from 'lucide-react'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../../components/ui/select'
 // import {
 //   DropdownMenu,
 //   DropdownMenuContent,
@@ -17,6 +24,17 @@ interface DraftTabProps {
   missionId: string
 }
 
+interface ReportVersion {
+  id: string
+  version: number
+  title?: string
+  content: string
+  is_current: boolean
+  revision_notes?: string
+  created_at: string
+  updated_at?: string
+}
+
 export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
   const { activeMission, setMissionDraft, updateMissionReport } = useMissionStore()
   const { addToast } = useToast()
@@ -25,6 +43,49 @@ export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
   const [isLoading, setIsLoading] = useState(false)
   const [wordCount, setWordCount] = useState(0)
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'success' | 'error'>('idle')
+  const [reportVersions, setReportVersions] = useState<ReportVersion[]>([])
+  const [currentVersion, setCurrentVersion] = useState<number>(1)
+  const [selectedVersion, setSelectedVersion] = useState<number>(1)
+
+  // Fetch available report versions
+  const fetchReportVersions = useCallback(async () => {
+    if (!missionId || activeMission?.status !== 'completed') return
+    
+    try {
+      const response = await apiClient.get(`/api/missions/${missionId}/reports`)
+      if (response.data) {
+        setReportVersions(response.data.reports || [])
+        setCurrentVersion(response.data.current_version || 1)
+        setSelectedVersion(response.data.current_version || 1)
+      }
+    } catch (error) {
+      // Silently fail - versions might not be available for older missions
+      console.log('Report versions not available')
+    }
+  }, [missionId, activeMission?.status])
+
+  // Fetch specific version of the report
+  const fetchReportVersion = useCallback(async (version: number) => {
+    if (!missionId) return
+    setIsLoading(true)
+    try {
+      const response = await apiClient.get(`/api/missions/${missionId}/reports/${version}`)
+      if (response.data && response.data.content) {
+        // Update the displayed content but don't save it as the active mission report
+        setEditedReport(response.data.content)
+        setSelectedVersion(version)
+      }
+    } catch (error) {
+      console.error('Failed to fetch report version:', error)
+      addToast({
+        type: 'error',
+        title: 'Failed to load version',
+        message: 'Could not load the selected report version'
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }, [missionId, addToast])
 
   const fetchDraft = useCallback(async (showLoading = true) => {
     if (!missionId) return
@@ -45,12 +106,17 @@ export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
       if (draftResponse.status === 'fulfilled' && draftResponse.value.data?.draft) {
         setMissionDraft(missionId, draftResponse.value.data.draft)
       }
+      
+      // Fetch versions if mission is completed
+      if (activeMission?.status === 'completed') {
+        fetchReportVersions()
+      }
     } catch (error) {
       console.error('Failed to fetch mission content:', error)
     } finally {
       if (showLoading) setIsLoading(false)
     }
-  }, [missionId, setMissionDraft, updateMissionReport])
+  }, [missionId, setMissionDraft, updateMissionReport, activeMission?.status, fetchReportVersions])
 
   // WebSocket updates are now handled by ResearchPanel
   // Initial fetch only
@@ -60,8 +126,12 @@ export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
     }
   }, [fetchDraft, activeMission?.draft, activeMission?.report])
 
-  // Get the current content (prioritize report over draft)
+  // Get the current content (prioritize selected version over default)
   const getCurrentContent = () => {
+    // If we have a selected version that's different from current and we have the content
+    if (selectedVersion !== currentVersion && editedReport && !isEditing) {
+      return editedReport
+    }
     return activeMission?.report || activeMission?.draft || ''
   }
 
@@ -403,6 +473,39 @@ export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
           </div>
           {wordCount > 0 && (
             <span className="text-xs text-muted-foreground">• {wordCount.toLocaleString()} words</span>
+          )}
+          
+          {/* Version selector for completed missions with multiple versions */}
+          {reportVersions.length > 1 && activeMission?.status === 'completed' && !isEditing && (
+            <div className="flex items-center space-x-2 ml-2">
+              <Clock className="h-3 w-3 text-muted-foreground" />
+              <Select
+                value={selectedVersion.toString()}
+                onValueChange={(value) => fetchReportVersion(parseInt(value))}
+                disabled={isLoading}
+              >
+                <SelectTrigger className="h-7 w-32 text-xs">
+                  <SelectValue placeholder="Select version" />
+                </SelectTrigger>
+                <SelectContent>
+                  {reportVersions.map((version) => (
+                    <SelectItem key={version.id} value={version.version.toString()}>
+                      <div className="flex items-center justify-between w-full">
+                        <span>Version {version.version}</span>
+                        {version.is_current && (
+                          <span className="text-xs text-muted-foreground ml-2">(current)</span>
+                        )}
+                      </div>
+                      {version.revision_notes && (
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {version.revision_notes.substring(0, 50)}...
+                        </div>
+                      )}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           )}
         </div>
         

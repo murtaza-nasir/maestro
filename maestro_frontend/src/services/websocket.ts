@@ -190,13 +190,39 @@ class ResearchWebSocketService {
     }
 
     // Handler for status updates
-    const statusHandler = (message: any) => {
+    const statusHandler = async (message: any) => {
       if (message.mission_id !== missionId) return
       // Backend sends status directly in message.status, not message.data.status
       if (message.status) {
-        const { updateMissionStatus } = useMissionStore.getState()
+        const { updateMissionStatus, setActiveTab } = useMissionStore.getState()
         updateMissionStatus(missionId, message.status)
         console.log(`Updated mission ${missionId} status to: ${message.status}`)
+        
+        // When mission completes, switch to draft tab and add a completion message
+        if (message.status === 'completed') {
+          setActiveTab('draft')
+          console.log('Mission completed - switching to draft tab')
+          
+          // Add completion message to the chat
+          try {
+            // Import chat store dynamically to avoid circular dependencies
+            const { useChatStore } = await import('../features/chat/store')
+            const chatStore = useChatStore.getState()
+            
+            // Find the chat associated with this mission
+            const chat = chatStore.chats.find(c => c.missionId === missionId)
+            if (chat) {
+              const completionMessage = `✅ **Research mission completed!**\n\nYour research report has been generated and is available in the [Draft tab](#draft). You can:\n- Review and edit the report\n- Download it as Markdown or Word document\n- Use "Restart and Revise" to refine the research with additional feedback`
+              
+              await chatStore.addMessage(chat.id, {
+                content: completionMessage,
+                role: 'assistant'
+              })
+            }
+          } catch (error) {
+            console.error('Failed to add completion message to chat:', error)
+          }
+        }
       }
     }
 

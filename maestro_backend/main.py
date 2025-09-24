@@ -7,7 +7,7 @@ import asyncio
 
 from database.database import SessionLocal, test_connection, init_db
 from database import crud
-from api import auth, missions, system, chat, chats, documents, websockets, settings, writing, dashboard, admin
+from api import auth, missions, system, chat, chats, documents, websockets, settings, writing, dashboard, admin, research_reports
 from middleware import user_context_middleware
 
 # Configure reduced logging to minimize console noise
@@ -100,6 +100,7 @@ app.include_router(dashboard.router, prefix="/api/dashboard", tags=["dashboard"]
 app.include_router(writing.router, tags=["writing"])
 app.include_router(websockets.router, tags=["websockets"])
 app.include_router(admin.router)
+app.include_router(research_reports.router, tags=["research_reports"])
 
 @app.on_event("startup")
 async def startup_event():
