@@ -14,6 +14,7 @@ from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import UUID, JSONB
+import sqlalchemy
 import uuid
 from database.database import Base
 from database.uuid_type import StringUUID
@@ -96,6 +97,7 @@ class Mission(Base):
     mission_context = Column(JSONB, nullable=True)  # Store the full mission context as JSONB
     error_info = Column(Text, nullable=True)
     generated_document_group_id = Column(StringUUID, ForeignKey("document_groups.id"), nullable=True, index=True)  # Document group created from this mission
+    current_report_version = Column(Integer, default=1)  # Track current version of the research report
     created_at = Column(DateTime(timezone=True))
     updated_at = Column(DateTime(timezone=True))
     
@@ -311,6 +313,33 @@ class DocumentChunk(Base):
     
     # Relationship to Document
     document = relationship("Document", back_populates="chunks")
+
+class ResearchReport(Base):
+    """
+    Stores versioned research reports for missions.
+    Each mission can have multiple report versions.
+    """
+    __tablename__ = "research_reports"
+    
+    id = Column(StringUUID, primary_key=True, default=uuid.uuid4, index=True)
+    mission_id = Column(StringUUID, ForeignKey("missions.id"), nullable=False, index=True)
+    version = Column(Integer, nullable=False, default=1)
+    title = Column(String, nullable=True)
+    content = Column(Text, nullable=False)
+    is_current = Column(Boolean, default=True, index=True)
+    revision_notes = Column(Text, nullable=True)  # Notes about what was revised
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    mission = relationship("Mission", backref="research_reports")
+    
+    __table_args__ = (
+        # Ensure unique version numbers per mission
+        sqlalchemy.UniqueConstraint('mission_id', 'version', name='uq_mission_version'),
+        # Index for finding current report quickly
+        sqlalchemy.Index('idx_mission_current', 'mission_id', 'is_current'),
+    )
 
 class SystemSetting(Base):
     __tablename__ = "system_settings"

@@ -23,6 +23,7 @@ type MissionSettings = {
   max_notes_for_assignment_reranking?: number
   max_concurrent_requests?: number
   skip_final_replanning?: boolean
+  auto_create_document_group?: boolean
 }
 
 interface MissionSettingsResponse {
@@ -418,6 +419,13 @@ export const MissionSettingsDialog: React.FC<MissionSettingsDialogProps> = ({
                       'Skip Final Replanning',
                       'Skip final outline refinement for faster completion'
                     )}
+                    <div className="mt-3">
+                      {renderBooleanInput(
+                        'auto_create_document_group',
+                        'Auto-create Document Group',
+                        'Automatically save and organize all relevant documents from web searches and database into a document group'
+                      )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
