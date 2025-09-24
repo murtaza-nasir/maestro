@@ -15,6 +15,7 @@ import { apiClient } from '../../../config/api'
 import { useToast } from '../../../components/ui/toast'
 
 interface OutlineHistory {
+  id?: string  // Unique ID for each outline
   round: number
   timestamp: string
   outline: any[]
@@ -39,7 +40,7 @@ export const UnifiedResumeModal: React.FC<UnifiedResumeModalProps> = ({
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [outlineHistory, setOutlineHistory] = useState<OutlineHistory[]>([])
-  const [selectedRound, setSelectedRound] = useState<number | null>(null)
+  const [selectedOutlineId, setSelectedOutlineId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const { addToast } = useToast()
 
@@ -57,10 +58,12 @@ export const UnifiedResumeModal: React.FC<UnifiedResumeModalProps> = ({
       const response = await apiClient.get(`/api/missions/${missionId}/outline-history`)
       if (response.data && response.data.outline_history) {
         setOutlineHistory(response.data.outline_history)
-        // Auto-select the highest round (should be 100 for current outline, or the latest available)
+        // Auto-select the latest outline (highest round or last in list)
         if (response.data.outline_history.length > 0) {
-          const latestRound = Math.max(...response.data.outline_history.map((h: OutlineHistory) => h.round))
-          setSelectedRound(latestRound)
+          const latestOutline = response.data.outline_history.reduce((latest: OutlineHistory, current: OutlineHistory) => {
+            return current.round > latest.round ? current : latest
+          }, response.data.outline_history[0])
+          setSelectedOutlineId(latestOutline.id || `round-${latestOutline.round}`)
         }
       }
     } catch (error) {
@@ -77,18 +80,33 @@ export const UnifiedResumeModal: React.FC<UnifiedResumeModalProps> = ({
   }
 
   const handleSubmit = async () => {
-    if (selectedRound === null) {
+    if (!selectedOutlineId) {
       addToast({
         type: 'error',
-        title: 'No Round Selected',
-        message: 'Please select a round to resume from'
+        title: 'No Outline Selected',
+        message: 'Please select an outline to resume from'
+      })
+      return
+    }
+
+    // Find the selected outline
+    const selectedOutline = outlineHistory.find(h => 
+      (h.id && h.id === selectedOutlineId) || 
+      (!h.id && `round-${h.round}` === selectedOutlineId)
+    )
+    
+    if (!selectedOutline) {
+      addToast({
+        type: 'error',
+        title: 'Invalid Selection',
+        message: 'Selected outline not found'
       })
       return
     }
 
     // Map special round numbers to valid values
-    let actualRoundNum = selectedRound
-    if (selectedRound === 999) {
+    let actualRoundNum = selectedOutline.round
+    if (selectedOutline.round === 999) {
       // Final outline - find the highest real round number
       const realRounds = outlineHistory.filter(h => h.round > 0 && h.round < 999)
       actualRoundNum = realRounds.length > 0 ? Math.max(...realRounds.map(h => h.round)) : 1
@@ -99,12 +117,14 @@ export const UnifiedResumeModal: React.FC<UnifiedResumeModalProps> = ({
     try {
       const response = await apiClient.post(`/api/missions/${missionId}/unified-resume`, {
         round_num: actualRoundNum,
-        feedback: feedback.trim() || null
+        feedback: feedback.trim() || null,
+        outline_id: selectedOutline.id || null,
+        outline_data: selectedOutline.id ? { outline: selectedOutline.outline } : null
       })
 
       const message = feedback.trim() 
-        ? `Outline is being revised and mission will resume from round ${selectedRound}`
-        : `Mission is resuming from round ${selectedRound}`
+        ? `Outline is being revised and mission will resume from ${selectedOutline.action || `round ${actualRoundNum}`}`
+        : `Mission is resuming from ${selectedOutline.action || `round ${actualRoundNum}`}`
 
       addToast({
         type: 'success',
@@ -131,7 +151,7 @@ export const UnifiedResumeModal: React.FC<UnifiedResumeModalProps> = ({
   const handleClose = () => {
     if (!isLoading) {
       setFeedback('')
-      setSelectedRound(null)
+      setSelectedOutlineId(null)
       setOutlineHistory([])
       setError(null)
       onClose()
@@ -139,8 +159,11 @@ export const UnifiedResumeModal: React.FC<UnifiedResumeModalProps> = ({
   }
 
   const getSelectedOutline = () => {
-    if (selectedRound === null) return null
-    return outlineHistory.find(h => h.round === selectedRound)
+    if (!selectedOutlineId) return null
+    return outlineHistory.find(h => 
+      (h.id && h.id === selectedOutlineId) || 
+      (!h.id && `round-${h.round}` === selectedOutlineId)
+    )
   }
 
   const selectedOutline = getSelectedOutline()
@@ -181,38 +204,42 @@ export const UnifiedResumeModal: React.FC<UnifiedResumeModalProps> = ({
             ) : (
               <div className="flex-1 border rounded-lg p-2 overflow-y-auto min-h-0">
                 <div className="space-y-2">
-                  {outlineHistory.map((history) => (
-                    <button
-                      key={history.round}
-                      onClick={() => setSelectedRound(history.round)}
-                      className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                        selectedRound === history.round
-                          ? 'border-primary bg-primary/10'
-                          : 'border-border hover:bg-secondary/50'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <CheckCircle className={`h-4 w-4 ${
-                              selectedRound === history.round ? 'text-primary' : 'text-muted-foreground'
-                            }`} />
-                            <span className="font-medium text-sm">
-                              {history.action || (history.round === 999 ? 'Final Outline' : `Round ${history.round} Outline`)}
-                            </span>
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            {new Date(history.timestamp).toLocaleString()}
-                          </p>
-                          {history.outline && (
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {history.outline.length} sections
+                  {outlineHistory.map((history) => {
+                    const outlineId = history.id || `round-${history.round}`
+                    const isSelected = selectedOutlineId === outlineId
+                    return (
+                      <button
+                        key={outlineId}
+                        onClick={() => setSelectedOutlineId(outlineId)}
+                        className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                          isSelected
+                            ? 'border-primary bg-primary/10'
+                            : 'border-border hover:bg-secondary/50'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <CheckCircle className={`h-4 w-4 ${
+                                isSelected ? 'text-primary' : 'text-muted-foreground'
+                              }`} />
+                              <span className="font-medium text-sm">
+                                {history.action || (history.round === 999 ? 'Final Outline' : `Round ${history.round} Outline`)}
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              {new Date(history.timestamp).toLocaleString()}
                             </p>
-                          )}
+                            {history.outline && (
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {history.outline.length} sections
+                              </p>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </button>
-                  ))}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -288,7 +315,7 @@ export const UnifiedResumeModal: React.FC<UnifiedResumeModalProps> = ({
 - Focus more on Z aspect
 - Reorganize sections to flow better"
             className="min-h-[80px] resize-none text-sm"
-            disabled={isLoading || selectedRound === null}
+            disabled={isLoading || !selectedOutlineId}
           />
           <p className="text-xs text-muted-foreground">
             {feedback.trim() 
@@ -307,7 +334,7 @@ export const UnifiedResumeModal: React.FC<UnifiedResumeModalProps> = ({
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={isLoading || selectedRound === null || isLoadingHistory}
+            disabled={isLoading || !selectedOutlineId || isLoadingHistory}
           >
             {isLoading ? 'Processing...' : (feedback.trim() ? 'Revise & Resume' : 'Resume')}
           </Button>

@@ -1311,12 +1311,16 @@ class ReviseOutlineRequest(BaseModel):
     """Request body for outline revision."""
     feedback: str = Field(..., min_length=1, description="User feedback for outline revision")
     round_num: int = Field(..., ge=1, description="Round number to resume from")
+    outline_id: Optional[str] = Field(None, description="Specific outline ID to use (overrides round_num)")
+    outline_data: Optional[Dict] = Field(None, description="The actual outline data if provided")
 
 
 class UnifiedResumeRequest(BaseModel):
     """Request body for unified resume/revise endpoint."""
     round_num: int = Field(..., ge=1, description="Round number to resume from")
     feedback: Optional[str] = Field(None, description="Optional user feedback for outline revision")
+    outline_id: Optional[str] = Field(None, description="Specific outline ID to use (overrides round_num)")
+    outline_data: Optional[Dict] = Field(None, description="The actual outline data if provided")
 
 
 @router.post("/missions/{mission_id}/revise-outline")
@@ -1336,6 +1340,28 @@ async def revise_and_resume(
                 status_code=404,
                 detail="Mission not found"
             )
+        
+        # If a specific outline is provided, use it instead of the current one
+        if revision_request.outline_data and 'outline' in revision_request.outline_data:
+            # Parse the provided outline data
+            from ai_researcher.agentic_layer.schemas.planning import ReportSection
+            outline_data = revision_request.outline_data['outline']
+            
+            # Convert outline data to ReportSection objects
+            new_outline = []
+            for section_data in outline_data:
+                if isinstance(section_data, dict):
+                    # Recursively convert subsections if they exist
+                    if 'subsections' in section_data:
+                        section_data['subsections'] = [
+                            ReportSection(**subsec) if isinstance(subsec, dict) else subsec
+                            for subsec in section_data['subsections']
+                        ]
+                    new_outline.append(ReportSection(**section_data) if isinstance(section_data, dict) else section_data)
+            
+            # Update the mission context with the specific outline
+            mission_context.plan.report_outline = new_outline
+            logger.info(f"Using specific outline with ID {revision_request.outline_id} for mission {mission_id}")
         
         # Check if mission has an outline
         if not mission_context.plan or not mission_context.plan.report_outline:
@@ -1641,32 +1667,71 @@ async def get_outline_history(
         # Clean up and renumber rounds for display
         final_history = []
         round_counter = 1
+        version_counters = {}  # Track versions per round
         
         for item in sorted(unique_outlines, key=lambda x: x['timestamp']):
             # Skip "Finalize Preliminary Outline" entries as they're usually duplicates
             if "Finalize" in item.get('action', '') and not item.get('is_current', False):
                 continue
                 
-            # Assign clean round numbers
+            # Generate a unique ID for this outline entry
+            # Use timestamp + first 8 chars of content hash
+            import hashlib
+            content_str = str(item.get('outline', []))
+            content_hash = hashlib.md5(content_str.encode()).hexdigest()[:8]
+            unique_id = f"{item['timestamp']}_{content_hash}"
+            item['id'] = unique_id
+            
+            # Assign clean round numbers and better action labels
             if item.get('is_current', False) or item['round'] == 999:
                 # This is the final/current outline
                 item['round'] = 999
                 item['action'] = 'Final Outline'
             elif item['round'] in [0, 1] or "Batch 1" in item.get('action', ''):
+                # Track versions for Round 1
+                if 1 not in version_counters:
+                    version_counters[1] = 0
+                version_counters[1] += 1
+                
                 item['round'] = 1
-                item['action'] = 'Round 1 Outline'
+                # Add version info if there are multiple versions
+                if version_counters[1] == 1:
+                    item['action'] = 'Round 1 Outline'
+                else:
+                    item['action'] = f'Round 1 Outline (v{version_counters[1]})'
             elif item['round'] == 2 or "Batch 2" in item.get('action', ''):
+                # Track versions for Round 2
+                if 2 not in version_counters:
+                    version_counters[2] = 0
+                version_counters[2] += 1
+                
                 item['round'] = 2
-                item['action'] = 'Round 2 Outline'
+                # Add version info if there are multiple versions
+                if version_counters[2] == 1:
+                    item['action'] = 'Round 2 Outline'
+                else:
+                    item['action'] = f'Round 2 Outline (v{version_counters[2]})'
             elif item['round'] == 98 or "Inter-Pass" in item.get('action', '') or "Inter-Round" in item.get('action', ''):
                 # This is a revised outline after research
                 item['round'] = round_counter + 1
                 item['action'] = f'Round {round_counter + 1} Outline (Revised)'
                 round_counter += 1
             else:
-                item['round'] = round_counter
-                item['action'] = f'Round {round_counter} Outline'
-                round_counter += 1
+                # Track versions for other rounds
+                round_num = item['round'] if item['round'] > 0 else round_counter
+                if round_num not in version_counters:
+                    version_counters[round_num] = 0
+                version_counters[round_num] += 1
+                
+                item['round'] = round_num
+                # Add version info if there are multiple versions
+                if version_counters[round_num] == 1:
+                    item['action'] = f'Round {round_num} Outline'
+                else:
+                    item['action'] = f'Round {round_num} Outline (v{version_counters[round_num]})'
+                
+                if round_num == round_counter:
+                    round_counter += 1
             
             final_history.append(item)
         
@@ -1758,6 +1823,31 @@ async def unified_resume(
             "round_num": resume_request.round_num,
             "message": f"Clearing logs and notes after round {resume_request.round_num - 1}"
         })
+        
+        # If a specific outline is provided, use it instead of the current one
+        if resume_request.outline_data and 'outline' in resume_request.outline_data:
+            # Parse the provided outline data
+            from ai_researcher.agentic_layer.schemas.planning import ReportSection
+            outline_data = resume_request.outline_data['outline']
+            
+            # Convert outline data to ReportSection objects
+            new_outline = []
+            for section_data in outline_data:
+                if isinstance(section_data, dict):
+                    # Recursively convert subsections if they exist
+                    if 'subsections' in section_data:
+                        section_data['subsections'] = [
+                            ReportSection(**subsec) if isinstance(subsec, dict) else subsec
+                            for subsec in section_data['subsections']
+                        ]
+                    new_outline.append(ReportSection(**section_data) if isinstance(section_data, dict) else section_data)
+            
+            # Update the mission context with the specific outline
+            if mission_context.plan:
+                mission_context.plan.report_outline = new_outline
+                # Store the updated plan to persist it
+                await controller.context_manager.store_plan(mission_id, mission_context.plan)
+                logger.info(f"Using specific outline with ID {resume_request.outline_id} for mission {mission_id}")
         
         # Update mission status to running
         await controller.context_manager.update_mission_status(mission_id, "running")
