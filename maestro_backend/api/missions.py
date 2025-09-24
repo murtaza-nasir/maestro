@@ -693,17 +693,17 @@ async def get_complete_mission_stats(
             total_web_search_calls = 0
             
             for log in logs:
-                # Add cost
+                # Add cost (convert Decimal to float)
                 if hasattr(log, 'cost') and log.cost:
-                    total_cost += log.cost
+                    total_cost += float(log.cost)
                     
-                # Add tokens
+                # Add tokens (convert to int/float as needed)
                 if hasattr(log, 'prompt_tokens') and log.prompt_tokens:
-                    total_prompt_tokens += log.prompt_tokens
+                    total_prompt_tokens += int(log.prompt_tokens) if log.prompt_tokens else 0
                 if hasattr(log, 'completion_tokens') and log.completion_tokens:
-                    total_completion_tokens += log.completion_tokens
+                    total_completion_tokens += int(log.completion_tokens) if log.completion_tokens else 0
                 if hasattr(log, 'native_tokens') and log.native_tokens:
-                    total_native_tokens += log.native_tokens
+                    total_native_tokens += int(log.native_tokens) if log.native_tokens else 0
                 
                 # Count web searches from tool calls
                 if hasattr(log, 'tool_calls') and log.tool_calls:

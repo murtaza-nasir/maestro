@@ -307,7 +307,7 @@ Provide ONLY a single JSON object conforming EXACTLY to the ReflectionOutput sch
                     # Don't pass mission_id - _call_llm gets it from self.mission_id
                     log_queue=log_queue, # Pass log_queue for UI updates
                     update_callback=update_callback, # Pass update_callback for UI updates
-                    log_llm_call=True # Enable logging for cost tracking
+                    log_llm_call=False # Disable logging here to prevent duplicate logs (handled by reflection_manager)
                 )
 
                 if response and response.choices and response.choices[0].message.content:
