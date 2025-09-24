@@ -95,12 +95,14 @@ class Mission(Base):
     status = Column(String, nullable=False, default="pending", index=True)  # pending, running, completed, stopped, failed
     mission_context = Column(JSONB, nullable=True)  # Store the full mission context as JSONB
     error_info = Column(Text, nullable=True)
+    generated_document_group_id = Column(StringUUID, ForeignKey("document_groups.id"), nullable=True, index=True)  # Document group created from this mission
     created_at = Column(DateTime(timezone=True))
     updated_at = Column(DateTime(timezone=True))
     
     # Relationships
     chat = relationship("Chat", back_populates="missions")
     execution_logs = relationship("MissionExecutionLog", back_populates="mission", cascade="all, delete-orphan", order_by="MissionExecutionLog.created_at")
+    generated_document_group = relationship("DocumentGroup", foreign_keys=[generated_document_group_id], backref="source_missions")
 
 class MissionExecutionLog(Base):
     __tablename__ = "mission_execution_logs"
@@ -195,6 +197,8 @@ class DocumentGroup(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
+    source_mission_id = Column(StringUUID, ForeignKey("missions.id"), nullable=True, index=True)  # Mission this group was generated from
+    auto_generated = Column(Boolean, default=False)  # Whether this group was auto-generated
     created_at = Column(DateTime(timezone=True))
     updated_at = Column(DateTime(timezone=True))
 

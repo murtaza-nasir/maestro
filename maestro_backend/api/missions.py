@@ -8,6 +8,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import queue
 import time
+import uuid
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
@@ -38,6 +39,12 @@ from ai_researcher.user_context import set_current_user
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+class CreateDocumentGroupRequest(BaseModel):
+    """Request to create a document group from mission documents."""
+    include_web_sources: bool = Field(True, description="Include documents fetched from web searches")
+    include_database_documents: bool = Field(True, description="Include documents from the document database")
+    group_name: Optional[str] = Field(None, description="Custom name for the document group")
 
 async def transform_note_for_frontend_batch(note, code_to_filename: dict) -> dict:
     """
@@ -2695,3 +2702,227 @@ async def download_report_as_docx(
     except Exception as e:
         logger.error(f"Failed to convert report to DOCX for mission {mission_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to convert report to DOCX: {str(e)}")
+
+@router.post("/{mission_id}/create-document-group")
+async def create_document_group_from_mission(
+    mission_id: str,
+    request: CreateDocumentGroupRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_from_cookie)
+):
+    """
+    Create a document group from all relevant documents used in a mission.
+    This includes documents from web searches and the document database that were deemed relevant.
+    """
+    import hashlib
+    
+    try:
+        # Get the mission
+        mission = crud.get_mission(db, mission_id=mission_id, user_id=current_user.id)
+        if not mission:
+            raise HTTPException(status_code=404, detail="Mission not found")
+        
+        # Check if a document group was already generated for this mission
+        if mission.generated_document_group_id:
+            existing_group = crud.get_document_group(db, group_id=str(mission.generated_document_group_id), user_id=current_user.id)
+            if existing_group:
+                return {
+                    "message": "Document group already exists for this mission",
+                    "document_group_id": str(existing_group.id),
+                    "document_group_name": existing_group.name,
+                    "document_count": len(existing_group.documents)
+                }
+        
+        # Get mission context to extract notes
+        context_manager = AsyncContextManager()
+        mission_context = context_manager.get_mission_context(mission_id)
+        
+        if not mission_context:
+            raise HTTPException(status_code=404, detail="Mission context not found")
+        
+        # Collect unique document IDs and web sources
+        document_ids = set()
+        web_sources = []
+        
+        # Extract documents from notes
+        notes = mission_context.notes if hasattr(mission_context, 'notes') and mission_context.notes else []
+        
+        for note in notes:
+            # Only include relevant notes
+            if hasattr(note, 'is_relevant') and not note.is_relevant:
+                continue
+                
+            source_type = note.source_type if hasattr(note, 'source_type') else None
+            source_id = note.source_id if hasattr(note, 'source_id') else None
+            
+            if source_type == "document" and request.include_database_documents and source_id:
+                # Extract document ID from source_id (might be chunk_id)
+                if hasattr(note, 'source_metadata') and note.source_metadata:
+                    if hasattr(note.source_metadata, 'doc_id') and note.source_metadata.doc_id:
+                        document_ids.add(note.source_metadata.doc_id)
+                    elif '_' in source_id:
+                        # Try to extract doc_id from chunk_id format
+                        doc_id = source_id.split('_')[0]
+                        document_ids.add(doc_id)
+                        
+            elif source_type == "web" and request.include_web_sources and source_id:
+                # Collect web source info
+                web_source = {
+                    "url": source_id,
+                    "title": None,
+                    "content": note.content if hasattr(note, 'content') else None
+                }
+                
+                if hasattr(note, 'source_metadata') and note.source_metadata:
+                    if hasattr(note.source_metadata, 'title'):
+                        web_source["title"] = note.source_metadata.title
+                    if hasattr(note.source_metadata, 'url'):
+                        web_source["url"] = note.source_metadata.url or source_id
+                        
+                web_sources.append(web_source)
+        
+        # Create documents for web sources if needed
+        created_doc_ids = []
+        if request.include_web_sources and web_sources:
+            # Group web sources by URL to avoid duplicates
+            unique_web_sources = {}
+            for source in web_sources:
+                url = source["url"]
+                if url not in unique_web_sources:
+                    unique_web_sources[url] = source
+                elif source.get("title") and not unique_web_sources[url].get("title"):
+                    # Update title if we found a better one
+                    unique_web_sources[url]["title"] = source["title"]
+            
+            # Create document entries for web sources
+            for url, source in unique_web_sources.items():
+                # Generate a hash for the URL to use as doc ID
+                url_hash = hashlib.sha256(url.encode()).hexdigest()[:12]
+                doc_id = f"web_{url_hash}"
+                
+                # Check if document already exists
+                existing_doc = crud.get_document_by_id(db, doc_id=doc_id, user_id=current_user.id)
+                if not existing_doc:
+                    # Create a new document entry for web source
+                    title = source.get("title") or f"Web Source: {url[:50]}..."
+                    now = crud.get_current_time()
+                    
+                    web_doc = models.Document(
+                        id=doc_id,
+                        user_id=current_user.id,
+                        title=title,
+                        original_filename=url,
+                        content_hash=url_hash,
+                        source_type="web",
+                        processing_status="completed",
+                        created_at=now,
+                        updated_at=now,
+                        metadata={
+                            "url": url,
+                            "source": "mission_web_search",
+                            "mission_id": mission_id
+                        }
+                    )
+                    db.add(web_doc)
+                    created_doc_ids.append(doc_id)
+                else:
+                    created_doc_ids.append(existing_doc.id)
+        
+        # Combine all document IDs
+        all_doc_ids = list(document_ids) + created_doc_ids
+        
+        if not all_doc_ids:
+            raise HTTPException(status_code=400, detail="No relevant documents found in mission")
+        
+        # Create document group
+        group_name = request.group_name or f"Research: {mission.user_request[:50]}..."
+        group_id = str(uuid.uuid4())
+        
+        document_group = crud.create_document_group(
+            db=db,
+            group_id=group_id,
+            user_id=current_user.id,
+            name=group_name,
+            description=f"Documents from research mission: {mission.user_request}"
+        )
+        
+        # Update document group with additional fields
+        document_group.source_mission_id = mission_id
+        document_group.auto_generated = True
+        
+        # Add documents to the group
+        for doc_id in all_doc_ids:
+            document = crud.get_document_by_id(db, doc_id=doc_id, user_id=current_user.id)
+            if document:
+                document_group.documents.append(document)
+        
+        # Update mission to reference the generated document group
+        mission.generated_document_group_id = group_id
+        
+        # Commit all changes
+        db.commit()
+        db.refresh(document_group)
+        
+        logger.info(f"Created document group {group_id} with {len(all_doc_ids)} documents for mission {mission_id}")
+        
+        return {
+            "message": "Document group created successfully",
+            "document_group_id": group_id,
+            "document_group_name": document_group.name,
+            "document_count": len(document_group.documents),
+            "web_sources_count": len(created_doc_ids),
+            "database_documents_count": len(document_ids)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to create document group for mission {mission_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to create document group: {str(e)}")
+
+@router.get("/{mission_id}/document-group")
+async def get_mission_document_group(
+    mission_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_from_cookie)
+):
+    """
+    Get the document group that was generated from this mission, if any.
+    """
+    try:
+        # Get the mission
+        mission = crud.get_mission(db, mission_id=mission_id, user_id=current_user.id)
+        if not mission:
+            raise HTTPException(status_code=404, detail="Mission not found")
+        
+        if not mission.generated_document_group_id:
+            return {
+                "has_document_group": False,
+                "document_group": None
+            }
+        
+        # Get the document group
+        document_group = crud.get_document_group(db, group_id=str(mission.generated_document_group_id), user_id=current_user.id)
+        if not document_group:
+            return {
+                "has_document_group": False,
+                "document_group": None
+            }
+        
+        return {
+            "has_document_group": True,
+            "document_group": {
+                "id": str(document_group.id),
+                "name": document_group.name,
+                "description": document_group.description,
+                "document_count": len(document_group.documents),
+                "created_at": document_group.created_at.isoformat() if document_group.created_at else None,
+                "auto_generated": document_group.auto_generated if hasattr(document_group, 'auto_generated') else False
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get document group for mission {mission_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get document group: {str(e)}")
