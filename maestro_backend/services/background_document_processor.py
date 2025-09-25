@@ -88,7 +88,7 @@ class BackgroundDocumentProcessor:
                         doc_id=document.id,
                         user_id=document.user_id,
                         file_path=Path(document.file_path),
-                        original_filename=document.filename,  # Changed to use filename field
+                        original_filename=document.original_filename or document.filename,  # Use original_filename for file type detection
                         created_at=document.created_at
                     )
                     self.current_job = job

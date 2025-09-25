@@ -23,7 +23,7 @@ export const ResearchPanel: React.FC = () => {
   const [isLoadingMoreLogs, setIsLoadingMoreLogs] = React.useState(false)
   const [totalLogsCount, setTotalLogsCount] = React.useState(0)
   const [isResumeModalOpen, setIsResumeModalOpen] = React.useState(false)
-  const [isCreatingDocGroup, setIsCreatingDocGroup] = React.useState(false)
+  // Removed isCreatingDocGroup - no longer needed since we auto-create
   const [missionDocumentGroup, setMissionDocumentGroup] = React.useState<{
     id: string
     name: string
@@ -323,41 +323,7 @@ export const ResearchPanel: React.FC = () => {
     }
   }
 
-  const handleCreateDocumentGroup = async () => {
-    if (!activeChat?.missionId) return
-    
-    setIsCreatingDocGroup(true)
-    try {
-      const response = await apiClient.post(`/api/missions/${activeChat.missionId}/create-document-group`, {
-        include_web_sources: true,
-        include_database_documents: true
-      })
-      
-      if (response.data) {
-        setMissionDocumentGroup({
-          id: response.data.document_group_id,
-          name: response.data.document_group_name,
-          document_count: response.data.document_count
-        })
-        
-        addToast({
-          type: 'success',
-          title: 'Document Group Created',
-          message: `Created document group "${response.data.document_group_name}" with ${response.data.document_count} documents.`,
-        })
-      }
-    } catch (error: any) {
-      console.error('Failed to create document group:', error)
-      const message = error?.response?.data?.detail || 'Failed to create document group'
-      addToast({
-        type: 'error',
-        title: 'Creation Failed',
-        message: message,
-      })
-    } finally {
-      setIsCreatingDocGroup(false)
-    }
-  }
+  // Removed handleCreateDocumentGroup - document groups are now auto-created during mission
 
   const handleViewDocumentGroup = () => {
     if (!missionDocumentGroup) return
@@ -509,8 +475,8 @@ export const ResearchPanel: React.FC = () => {
                         Restart and Revise
                       </Button>
                       
-                      {/* Document Group button */}
-                      {missionDocumentGroup ? (
+                      {/* Document Group button - only show View if auto-created */}
+                      {missionDocumentGroup && (
                         <Button
                           onClick={handleViewDocumentGroup}
                           variant="outline"
@@ -521,17 +487,6 @@ export const ResearchPanel: React.FC = () => {
                           <FolderPlus className="h-3 w-3 mr-1" />
                           View Docs ({missionDocumentGroup.document_count})
                           <ExternalLink className="h-2.5 w-2.5 ml-1" />
-                        </Button>
-                      ) : (
-                        <Button
-                          onClick={handleCreateDocumentGroup}
-                          variant="outline"
-                          size="sm"
-                          className="text-xs"
-                          disabled={isCreatingDocGroup}
-                        >
-                          <FolderPlus className="h-3 w-3 mr-1" />
-                          {isCreatingDocGroup ? 'Creating...' : 'Create Doc Group'}
                         </Button>
                       )}
                     </>

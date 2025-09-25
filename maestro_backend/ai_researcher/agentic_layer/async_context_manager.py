@@ -9,6 +9,7 @@ import queue
 import time 
 import json 
 import asyncio
+import re
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import models
 from database import async_crud as crud  # Use async CRUD operations
@@ -206,6 +207,29 @@ class MissionContext(BaseModel):
         """Get the original UUID from a simple reference ID."""
         return self.reverse_reference_map.get(simple_id)
 
+
+def sanitize_for_jsonb(obj: Any) -> Any:
+    """
+    Recursively sanitize an object to remove null characters and other 
+    problematic Unicode characters that PostgreSQL JSONB cannot handle.
+    """
+    if isinstance(obj, str):
+        # Remove null characters and other control characters
+        # Keep tabs, newlines, and carriage returns (0x09, 0x0A, 0x0D)
+        # Remove other control characters (0x00-0x08, 0x0B, 0x0C, 0x0E-0x1F)
+        cleaned = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F]', '', obj)
+        return cleaned
+    elif isinstance(obj, dict):
+        return {k: sanitize_for_jsonb(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_for_jsonb(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(sanitize_for_jsonb(item) for item in obj)
+    else:
+        # Return other types as-is (numbers, booleans, None, etc.)
+        return obj
+
+
 class AsyncContextManager:
     """
     Async version of ContextManager.
@@ -340,12 +364,13 @@ class AsyncContextManager:
         
         async with get_async_db() as db:
             try:
+                sanitized_context = sanitize_for_jsonb(mission.model_dump(mode='json'))
                 await crud.create_mission(
                     db=db,
                     mission_id=mission.mission_id,
                     chat_id=chat_id,
                     user_request=user_request,
-                    mission_context=mission.model_dump(mode='json')
+                    mission_context=sanitized_context
                 )
                 logger.info(f"Started and saved new mission: {mission.mission_id} for chat: {chat_id}")
             except Exception as e:
@@ -383,7 +408,8 @@ class AsyncContextManager:
             async with get_async_db() as db:
                 try:
                     await crud.update_mission_status(db, mission_id=mission_id, status=status, error_info=error_info)
-                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
+                    sanitized_context = sanitize_for_jsonb(mission.model_dump(mode='json'))
+                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=sanitized_context)
                     logger.info(f"Updated mission '{mission_id}' status to '{status}' in DB.")
                     
                     # Send WebSocket update to frontend
@@ -418,7 +444,8 @@ class AsyncContextManager:
             # Save to database
             async with get_async_db() as db:
                 try:
-                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
+                    sanitized_context = sanitize_for_jsonb(mission.model_dump(mode='json'))
+                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=sanitized_context)
                     logger.info(f"Updated mission {mission_id} to phase: {phase}")
                 except Exception as e:
                     logger.error(f"Failed to update execution phase in database: {e}")
@@ -434,7 +461,8 @@ class AsyncContextManager:
                 # Save to database
                 async with get_async_db() as db:
                     try:
-                        await crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
+                        sanitized_context = sanitize_for_jsonb(mission.model_dump(mode='json'))
+                        await crud.update_mission_context(db, mission_id=mission_id, mission_context=sanitized_context)
                         logger.info(f"Marked phase '{phase}' as completed for mission {mission_id}")
                     except Exception as e:
                         logger.error(f"Failed to mark phase as completed in database: {e}")
@@ -531,7 +559,8 @@ class AsyncContextManager:
             
             async with get_async_db() as db:
                 try:
-                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
+                    sanitized_context = sanitize_for_jsonb(mission.model_dump(mode='json'))
+                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=sanitized_context)
                     logger.debug(f"Saved checkpoint for phase '{phase}' in mission {mission_id}")
                 except Exception as e:
                     logger.error(f"Failed to save phase checkpoint: {e}", exc_info=True)
@@ -547,7 +576,8 @@ class AsyncContextManager:
             async with get_async_db() as db:
                 try:
                     # Persist the entire updated context
-                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
+                    sanitized_context = sanitize_for_jsonb(mission.model_dump(mode='json'))
+                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=sanitized_context)
                     # Also update the status explicitly in the main mission table
                     await crud.update_mission_status(db, mission_id=mission_id, status="running")
                     logger.info(f"Stored plan and updated context for mission '{mission_id}' in DB.")
@@ -574,7 +604,8 @@ class AsyncContextManager:
             
             async with get_async_db() as db:
                 try:
-                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
+                    sanitized_context = sanitize_for_jsonb(mission.model_dump(mode='json'))
+                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=sanitized_context)
                     logger.info(f"Stored result for step '{step_id}' in mission '{mission_id}' and updated DB.")
                 except Exception as e:
                     logger.error(f"Database error storing step result for mission {mission_id}: {e}", exc_info=True)
@@ -600,7 +631,8 @@ class AsyncContextManager:
             
             async with get_async_db() as db:
                 try:
-                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
+                    sanitized_context = sanitize_for_jsonb(mission.model_dump(mode='json'))
+                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=sanitized_context)
                     logger.info(f"Stored report section '{section_id}' for mission '{mission_id}' and updated DB.")
                     
                     # Send WebSocket update for draft
@@ -629,7 +661,8 @@ class AsyncContextManager:
                 try:
                     # Update mission status and context
                     await crud.update_mission_status(db, mission_id=mission_id, status="completed")
-                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
+                    sanitized_context = sanitize_for_jsonb(mission.model_dump(mode='json'))
+                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=sanitized_context)
                     
                     # Create a versioned research report
                     from database.crud_research_reports import create_research_report
@@ -691,7 +724,8 @@ class AsyncContextManager:
             
             async with get_async_db() as db:
                 try:
-                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
+                    sanitized_context = sanitize_for_jsonb(mission.model_dump(mode='json'))
+                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=sanitized_context)
                     logger.debug(f"Updated writing suggestions for mission {mission_id} with {len(suggestions)} suggestions.")
                 except Exception as e:
                     logger.error(f"Error updating writing suggestions in DB: {e}")
@@ -721,7 +755,8 @@ class AsyncContextManager:
             
             async with get_async_db() as db:
                 try:
-                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
+                    sanitized_context = sanitize_for_jsonb(mission.model_dump(mode='json'))
+                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=sanitized_context)
                     logger.debug(f"Added note {note.note_id} to mission {mission_id} and updated DB.")
                 except Exception as e:
                     logger.error(f"Database error adding note for mission {mission_id}: {e}", exc_info=True)
@@ -779,7 +814,8 @@ class AsyncContextManager:
             
             async with get_async_db() as db:
                 try:
-                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
+                    sanitized_context = sanitize_for_jsonb(mission.model_dump(mode='json'))
+                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=sanitized_context)
                     logger.info(f"Added {len(notes)} notes to mission {mission_id} and updated DB.")
                 except Exception as e:
                     logger.error(f"Database error adding notes for mission {mission_id}: {e}", exc_info=True)
@@ -842,7 +878,8 @@ class AsyncContextManager:
                 mission.update_timestamp()
                 async with get_async_db() as db:
                     try:
-                        await crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
+                        sanitized_context = sanitize_for_jsonb(mission.model_dump(mode='json'))
+                        await crud.update_mission_context(db, mission_id=mission_id, mission_context=sanitized_context)
                         logger.info(f"Removed {removed_count} notes from mission {mission_id} and updated DB.")
                     except Exception as e:
                         logger.error(f"Database error removing notes for mission {mission_id}: {e}", exc_info=True)
@@ -863,7 +900,8 @@ class AsyncContextManager:
                 
                 async with get_async_db() as db:
                     try:
-                        await crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
+                        sanitized_context = sanitize_for_jsonb(mission.model_dump(mode='json'))
+                        await crud.update_mission_context(db, mission_id=mission_id, mission_context=sanitized_context)
                         logger.debug(f"Updated scratchpad for mission {mission_id} and updated DB.")
                         
                         # Send WebSocket update for scratchpad
@@ -904,7 +942,8 @@ class AsyncContextManager:
             
             async with get_async_db() as db:
                 try:
-                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
+                    sanitized_context = sanitize_for_jsonb(mission.model_dump(mode='json'))
+                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=sanitized_context)
                     logger.debug(f"Updated metadata for mission {mission_id} with keys: {list(metadata_update.keys())} and updated DB.")
                 except Exception as e:
                     logger.error(f"Database error updating metadata for mission {mission_id}: {e}", exc_info=True)
@@ -1048,7 +1087,8 @@ class AsyncContextManager:
                         logger.error(f"Could not find mission {mission_id} in database to persist execution log")
                     
                     # Also update the mission context (for backward compatibility)
-                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
+                    sanitized_context = sanitize_for_jsonb(mission.model_dump(mode='json'))
+                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=sanitized_context)
                 except Exception as e:
                     logger.error(f"Database error saving execution log for mission {mission_id}: {e}", exc_info=True)
             
@@ -1104,7 +1144,8 @@ class AsyncContextManager:
                 
                 async with get_async_db() as db:
                     try:
-                        await crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
+                        sanitized_context = sanitize_for_jsonb(mission.model_dump(mode='json'))
+                        await crud.update_mission_context(db, mission_id=mission_id, mission_context=sanitized_context)
                         logger.info(f"Added goal '{new_goal.goal_id}' to mission {mission_id} and updated DB.")
                         
                         # Send WebSocket update for goal pad
@@ -1156,7 +1197,8 @@ class AsyncContextManager:
         if should_update_db:
             async with get_async_db() as db:
                 try:
-                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
+                    sanitized_context = sanitize_for_jsonb(mission.model_dump(mode='json'))
+                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=sanitized_context)
                 except Exception as e:
                     logger.error(f"Database error updating goal status for mission {mission_id}: {e}", exc_info=True)
         
@@ -1190,7 +1232,8 @@ class AsyncContextManager:
         if should_update_db:
             async with get_async_db() as db:
                 try:
-                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
+                    sanitized_context = sanitize_for_jsonb(mission.model_dump(mode='json'))
+                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=sanitized_context)
                 except Exception as e:
                     logger.error(f"Database error editing goal text for mission {mission_id}: {e}", exc_info=True)
 
@@ -1230,7 +1273,8 @@ class AsyncContextManager:
 
                 async with get_async_db() as db:
                     try:
-                        await crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
+                        sanitized_context = sanitize_for_jsonb(mission.model_dump(mode='json'))
+                        await crud.update_mission_context(db, mission_id=mission_id, mission_context=sanitized_context)
                         logger.info(f"Added thought '{new_thought.thought_id}' from agent '{agent_name}' to mission {mission_id} and updated DB.")
                         
                         # Send WebSocket update for thought pad
@@ -1494,7 +1538,8 @@ class AsyncContextManager:
             async def save_stats_to_db():
                 async with get_async_db() as db:
                     try:
-                        await crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
+                        sanitized_context = sanitize_for_jsonb(mission.model_dump(mode='json'))
+                        await crud.update_mission_context(db, mission_id=mission_id, mission_context=sanitized_context)
                         logger.info(f"COST_DB_UPDATE: Successfully saved stats to database for mission {mission_id}: Total Cost=${stats['total_cost']:.6f}")
                     except Exception as e:
                         logger.error(f"COST_DB_UPDATE: Failed to save stats to database for mission {mission_id}: {e}", exc_info=True)
@@ -1670,23 +1715,28 @@ class AsyncContextManager:
                                 
                                 # Create document record
                                 now = crud.get_current_time()
+                                # For original_filename, use a .md extension so processor knows it's markdown
+                                # Store the actual URL in metadata
+                                original_filename_for_processor = f"{doc_id}_web_document.md"
                                 web_doc = models.Document(
                                     id=doc_id,
                                     user_id=user_id,
                                     filename=title,  # Use filename instead of title
-                                    original_filename=source_id,
+                                    original_filename=original_filename_for_processor,  # Use .md extension for processor
                                     file_path=str(markdown_path),
                                     markdown_path=str(markdown_path),
-                                    processing_status="completed",
+                                    processing_status="pending",  # Set to pending so background processor picks it up
                                     created_at=now,
                                     updated_at=now,
                                     metadata_={  # Use metadata_ field name
-                                        "url": source_id,
+                                        "url": source_id,  # Store actual URL in metadata
                                         "source": "mission_web_search",
                                         "mission_id": mission_id,
                                         "auto_captured": True,
                                         "first_captured_by_mission": mission_id,
-                                        "content_hash": url_hash  # Store hash in metadata
+                                        "content_hash": url_hash,  # Store hash in metadata
+                                        "title": title,  # Store the extracted title
+                                        "original_url": source_id  # Also store URL here for clarity
                                     }
                                 )
                                 db.add(web_doc)
@@ -1699,37 +1749,7 @@ class AsyncContextManager:
                                 
                                 db.commit()
                                 logger.info(f"Created and saved web document {doc_id} for URL {source_id}")
-                                
-                                # Process the document through the document processor pipeline
-                                # We need to create chunks and embeddings for it
-                                try:
-                                    from ai_researcher.core_rag.processor import DocumentProcessor
-                                    from ai_researcher.core_rag.vector_store_singleton import get_vector_store
-                                    
-                                    # Initialize processor
-                                    processor = DocumentProcessor()
-                                    
-                                    # Process the markdown file to create chunks and embeddings
-                                    # The processor expects a file path
-                                    markdown_path_str = str(markdown_path)
-                                    result = processor.process_document(markdown_path, doc_id=doc_id)
-                                    
-                                    if result:
-                                        logger.info(f"Successfully processed web document {doc_id} through document pipeline")
-                                        # Update document status to completed
-                                        web_doc.status = 'completed'
-                                        db.commit()
-                                    else:
-                                        logger.warning(f"Document processor returned no result for {doc_id}")
-                                        web_doc.status = 'processing_error' 
-                                        web_doc.processing_error = "No result from processor"
-                                        db.commit()
-                                except Exception as proc_error:
-                                    logger.error(f"Failed to process web document {doc_id} through pipeline: {proc_error}", exc_info=True)
-                                    # Update document status to indicate processing failed
-                                    web_doc.status = 'processing_error'
-                                    web_doc.processing_error = str(proc_error)
-                                    db.commit()
+                                logger.info(f"Document {doc_id} queued for background processing (status=pending)")
                             else:
                                 logger.info(f"Web document {doc_id} already exists for URL {source_id}, reusing it")
                                 

@@ -212,7 +212,7 @@ class ResearchWebSocketService {
             // Find the chat associated with this mission
             const chat = chatStore.chats.find(c => c.missionId === missionId)
             if (chat) {
-              const completionMessage = `✅ **Research mission completed!**\n\nYour research report has been generated and is available in the [Draft tab](#draft). You can:\n- Review and edit the report\n- Download it as Markdown or Word document\n- Use "Restart and Revise" to refine the research with additional feedback`
+              const completionMessage = `✅ **Research mission completed!**\n\nYour research report has been generated and is available in the Draft tab. You can:\n- Review and edit the report\n- Download it as Markdown or Word document\n- Use "Restart and Revise" to refine the research with additional feedback`
               
               await chatStore.addMessage(chat.id, {
                 content: completionMessage,

@@ -502,6 +502,12 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
                         {doc.file_size && (
                           <span>{formatFileSize(doc.file_size)}</span>
                         )}
+                        {/* Show chunk count for processed documents */}
+                        {doc.chunk_count !== undefined && doc.chunk_count > 0 && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-primary font-medium">{doc.chunk_count} chunks</span>
+                          </div>
+                        )}
                       </div>
                       
                       {/* Action buttons - show for all documents that are not actively processing */}
@@ -538,7 +544,7 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
                       </div>
                     )}
 
-                    {/* Processing Status */}
+                    {/* Processing Status - only show for non-completed statuses */}
                     {doc.processing_status && doc.processing_status !== 'completed' && (
                       <div className="mt-2">
                         <div className="flex items-center space-x-2">

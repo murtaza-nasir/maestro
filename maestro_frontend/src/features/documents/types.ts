@@ -24,6 +24,7 @@ export interface Document {
   processing_error?: string;
   file_size?: number;
   file_path?: string;
+  chunk_count?: number;  // Number of chunks created during processing
   metadata_?: {
     title?: string;
     authors?: string[];

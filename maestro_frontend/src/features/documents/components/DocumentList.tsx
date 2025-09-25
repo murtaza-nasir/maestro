@@ -125,11 +125,39 @@ const DocumentList: React.FC<DocumentListProps> = ({ documents, onUpload, onDele
                       )}
                     </div>
                     
-                    {/* Bottom Row: Date and Action Buttons */}
+                    {/* Bottom Row: Date, Chunks, and Action Buttons */}
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Calendar className="h-3 w-3" />
-                        <span>{new Date(doc.created_at).toLocaleDateString()}</span>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <div className="flex items-center gap-1">
+                          <Calendar className="h-3 w-3" />
+                          <span>{new Date(doc.created_at).toLocaleDateString()}</span>
+                        </div>
+                        {/* Show chunk count if available */}
+                        {doc.chunk_count !== undefined && doc.chunk_count > 0 && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-primary">•</span>
+                            <span className="text-primary font-medium">{doc.chunk_count} chunks</span>
+                          </div>
+                        )}
+                        {/* Show processing status if not completed */}
+                        {doc.processing_status === 'pending' && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-yellow-500">•</span>
+                            <span className="text-yellow-500">Queued</span>
+                          </div>
+                        )}
+                        {doc.processing_status === 'processing' && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-blue-500">•</span>
+                            <span className="text-blue-500">Processing...</span>
+                          </div>
+                        )}
+                        {doc.processing_status === 'failed' && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-destructive">•</span>
+                            <span className="text-destructive">Failed</span>
+                          </div>
+                        )}
                       </div>
                       
                       {/* Action buttons */}

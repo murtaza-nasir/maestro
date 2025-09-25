@@ -396,6 +396,7 @@ class Document(DocumentBase):
     upload_progress: Optional[int] = None
     file_size: Optional[int] = None
     processing_error: Optional[str] = None
+    chunk_count: Optional[int] = None  # Number of chunks created during processing
 
     class Config:
         from_attributes = True
