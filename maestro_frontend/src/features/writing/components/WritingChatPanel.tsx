@@ -103,41 +103,47 @@ export const WritingChatPanel: React.FC = () => {
   // Track if we're loading settings from a chat to prevent saving during load
   const [isLoadingChatSettings, setIsLoadingChatSettings] = useState(false)
   
-  // Load saved tool settings when activeChat changes
+  // Load saved tool settings when activeChat or currentSession changes
   useEffect(() => {
-    if (activeChat) {
-      setIsLoadingChatSettings(true)
-      
-      if (activeChat.settings?.tools) {
-        const tools = activeChat.settings.tools
-        setSelectedGroupId(tools.documentGroupId || null)
-        setSearchSettings({
-          useWebSearch: tools.useWebSearch ?? false,
-          deepSearch: tools.deepSearch ?? false,
-          maxIterations: tools.maxIterations ?? userParams?.writing_search_max_iterations ?? 1,
-          maxQueries: tools.maxQueries ?? userParams?.writing_search_max_queries ?? 3,
-          deepSearchIterations: tools.deepSearchIterations ?? userParams?.writing_deep_search_iterations ?? 3,
-          deepSearchQueries: tools.deepSearchQueries ?? userParams?.writing_deep_search_queries ?? 5,
-        })
-      } else {
-        // No saved settings, use defaults
-        setSelectedGroupId(null)
-        setSearchSettings({
-          useWebSearch: false,
-          deepSearch: false,
-          maxIterations: userParams?.writing_search_max_iterations ?? 1,
-          maxQueries: userParams?.writing_search_max_queries ?? 3,
-          deepSearchIterations: userParams?.writing_deep_search_iterations ?? 3,
-          deepSearchQueries: userParams?.writing_deep_search_queries ?? 5,
-        })
-      }
-      
-      // Allow saving after a short delay
-      setTimeout(() => {
-        setIsLoadingChatSettings(false)
-      }, 100)
+    setIsLoadingChatSettings(true)
+    
+    // Prioritize currentSession's document_group_id over chat settings
+    if (currentSession && currentSession.document_group_id) {
+      console.log('Setting document group from currentSession:', currentSession.document_group_id)
+      setSelectedGroupId(currentSession.document_group_id)
+      setSearchSettings(prev => ({
+        ...prev,
+        useWebSearch: currentSession.web_search_enabled ?? false
+      }))
+    } else if (activeChat && activeChat.settings?.tools) {
+      const tools = activeChat.settings.tools
+      setSelectedGroupId(tools.documentGroupId || null)
+      setSearchSettings({
+        useWebSearch: tools.useWebSearch ?? false,
+        deepSearch: tools.deepSearch ?? false,
+        maxIterations: tools.maxIterations ?? userParams?.writing_search_max_iterations ?? 1,
+        maxQueries: tools.maxQueries ?? userParams?.writing_search_max_queries ?? 3,
+        deepSearchIterations: tools.deepSearchIterations ?? userParams?.writing_deep_search_iterations ?? 3,
+        deepSearchQueries: tools.deepSearchQueries ?? userParams?.writing_deep_search_queries ?? 5,
+      })
+    } else {
+      // No saved settings, use defaults
+      setSelectedGroupId(null)
+      setSearchSettings({
+        useWebSearch: false,
+        deepSearch: false,
+        maxIterations: userParams?.writing_search_max_iterations ?? 1,
+        maxQueries: userParams?.writing_search_max_queries ?? 3,
+        deepSearchIterations: userParams?.writing_deep_search_iterations ?? 3,
+        deepSearchQueries: userParams?.writing_deep_search_queries ?? 5,
+      })
     }
-  }, [activeChat?.id]) // Only trigger when chat ID changes
+    
+    // Allow saving after a short delay
+    setTimeout(() => {
+      setIsLoadingChatSettings(false)
+    }, 100)
+  }, [activeChat?.id, currentSession?.id, currentSession?.document_group_id]) // Trigger when chat ID or session changes
   
   // Save tool settings when they change (but not during initial load)
   const saveToolSettings = async () => {
@@ -465,7 +471,11 @@ export const WritingChatPanel: React.FC = () => {
                         disabled={isLoading}
                       >
                         <SelectTrigger className="text-xs h-6 w-[110px]">
-                          <SelectValue placeholder="None" />
+                          <span className="truncate block w-full text-left">
+                            {selectedGroupId && selectedGroupId !== '' 
+                              ? documentGroups.find(g => g.id === selectedGroupId)?.name || 'None'
+                              : 'None'}
+                          </span>
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="none">None</SelectItem>

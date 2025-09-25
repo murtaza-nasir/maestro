@@ -264,44 +264,31 @@ export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
     try {
       // Get the mission to find its document group
       const mission = missions.find(m => m.id === missionId)
-      console.log('Mission for transition:', mission)
       
       // Get the document group ID from the mission
       // First try to get the generated_document_group_id
       let documentGroupId = mission?.generated_document_group_id || null
-      console.log('Initial document group ID from mission:', documentGroupId)
       
       // If not found, fetch fresh status from backend to get the latest data
       if (!documentGroupId) {
         try {
           const statusResponse = await apiClient.get(`/api/missions/${missionId}/status`)
-          console.log('Mission status response:', statusResponse.data)
           documentGroupId = statusResponse.data.generated_document_group_id || null
         } catch (err) {
           console.error('Could not fetch mission status for document group:', err)
         }
       }
       
-      console.log('Final document group ID to use:', documentGroupId)
-      
       // Extract title from the draft content
       const titleMatch = content.match(/^#\s+(.+)$/m)
       const draftTitle = titleMatch ? titleMatch[1].trim() : `Draft from Research ${missionId.slice(0, 8)}`
       
       // Create a new writing session with the document group if it exists
-      console.log('Creating writing session with:', { 
-        name: `Writing: ${draftTitle}`,
-        document_group_id: documentGroupId,
-        web_search_enabled: true
-      })
-      
       const newSession = await createSession({
         name: `Writing: ${draftTitle}`,
         document_group_id: documentGroupId,
         web_search_enabled: true
       })
-      
-      console.log('Created new writing session:', newSession)
       
       // Get the draft (which will be created automatically if it doesn't exist)
       const draftResponse = await apiClient.get(`/api/writing/sessions/${newSession.id}/draft`)
