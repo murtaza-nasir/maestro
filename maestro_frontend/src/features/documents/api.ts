@@ -147,6 +147,11 @@ export const updateDocumentMetadata = async (docId: string, metadata: DocumentMe
   return response.data;
 };
 
+export const getDocument = async (docId: string): Promise<Document> => {
+  const response = await apiClient.get(`/api/documents/${docId}`);
+  return response.data;
+};
+
 export const getDocumentContent = async (docId: string): Promise<DocumentViewResponse> => {
   const response = await apiClient.get(`/api/documents/${docId}/view`);
   return response.data;
