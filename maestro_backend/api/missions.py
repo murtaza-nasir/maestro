@@ -983,6 +983,74 @@ async def get_mission_report(
             detail="Failed to get mission report"
         )
 
+@router.get("/missions/{mission_id}/reports")
+async def get_mission_reports(
+    mission_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_from_cookie)
+):
+    """Get all report versions for a mission."""
+    # Import models here to avoid circular import
+    from database import models
+    
+    # Verify mission belongs to user through chat
+    mission = db.query(models.Mission).join(
+        models.Chat, models.Mission.chat_id == models.Chat.id
+    ).filter(
+        models.Mission.id == mission_id,
+        models.Chat.user_id == current_user.id
+    ).first()
+    
+    if not mission:
+        raise HTTPException(status_code=404, detail="Mission not found")
+    
+    # Get all report versions
+    reports = db.query(models.ResearchReport).filter(
+        models.ResearchReport.mission_id == mission_id
+    ).order_by(models.ResearchReport.version.desc()).all()
+    
+    # Find current version
+    current_report = next((r for r in reports if r.is_current), None)
+    current_version = current_report.version if current_report else 1
+    
+    return {
+        "reports": reports,
+        "current_version": current_version
+    }
+
+@router.get("/missions/{mission_id}/reports/{version}")
+async def get_mission_report_version(
+    mission_id: str,
+    version: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_from_cookie)
+):
+    """Get a specific version of a mission report."""
+    # Import models here to avoid circular import
+    from database import models
+    
+    # Verify mission belongs to user through chat
+    mission = db.query(models.Mission).join(
+        models.Chat, models.Mission.chat_id == models.Chat.id
+    ).filter(
+        models.Mission.id == mission_id,
+        models.Chat.user_id == current_user.id
+    ).first()
+    
+    if not mission:
+        raise HTTPException(status_code=404, detail="Mission not found")
+    
+    # Get specific report version
+    report = db.query(models.ResearchReport).filter(
+        models.ResearchReport.mission_id == mission_id,
+        models.ResearchReport.version == version
+    ).first()
+    
+    if not report:
+        raise HTTPException(status_code=404, detail="Report version not found")
+    
+    return report
+
 @router.put("/missions/{mission_id}/report")
 async def update_mission_report(
     mission_id: str,
@@ -1028,6 +1096,37 @@ async def update_mission_report(
             logger.info(f"Updated report content for mission {mission_id} without updating chat timestamp")
         finally:
             await async_db.close()
+        
+        # Save report version if mission is completed
+        if mission_context.status == "completed":
+            from database import models
+            import uuid
+            
+            # Mark all existing reports for this mission as not current
+            db.query(models.ResearchReport).filter(
+                models.ResearchReport.mission_id == mission_id
+            ).update({"is_current": False})
+            
+            # Get the next version number
+            existing_reports = db.query(models.ResearchReport).filter(
+                models.ResearchReport.mission_id == mission_id
+            ).order_by(models.ResearchReport.version.desc()).first()
+            
+            next_version = 1 if not existing_reports else existing_reports.version + 1
+            
+            # Create new report version
+            new_report = models.ResearchReport(
+                id=str(uuid.uuid4()),
+                mission_id=mission_id,
+                version=next_version,
+                title=f"Report Version {next_version}",
+                content=report_content,
+                is_current=True,
+                revision_notes="Manual edit"
+            )
+            db.add(new_report)
+            db.commit()
+            logger.info(f"Created report version {next_version} for mission {mission_id}")
         
         return MissionReport(
             mission_id=mission_id,

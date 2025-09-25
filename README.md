@@ -5,16 +5,16 @@
 # MAESTRO: Your Self-Hosted AI Research Assistant
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-0.1.5--alpha-green.svg)](https://github.com/murtaza-nasir/maestro.git)
+[![Version](https://img.shields.io/badge/Version-0.1.7--alpha-green.svg)](https://github.com/murtaza-nasir/maestro.git)
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://hub.docker.com/r/murtaza-nasir/maestro)
 [![Documentation](https://img.shields.io/badge/Docs-Available-brightgreen.svg)](https://murtaza-nasir.github.io/maestro/)
 
-> **Version 0.1.5-alpha (Sep 2, 2025) - Major Update**
+> **Version 0.1.7-alpha (Jan 25, 2025) - Intelligent Document Management**
 > 
-> - **Performance**: Complete async backend migration (2-3x faster)
-> - **Stability**: 50+ bug fixes and mission recovery improvements
-> - **Documentation**: Complete overhaul with example reports and guides
-> - **UI/UX**: Enhanced interface with LaTeX support and better navigation 
+> - **Auto-Create Document Groups**: Automatically preserve web sources from research into a document group
+> - **Research to Writing**: Seamlessly send the prepared report from research mode to writing mode with document group preservation
+> - **Enhanced References**: Clickable document sources open in viewer
+> - **Mission Improvements**: Restart and revise with better outline handling 
 
 MAESTRO is an AI-powered research platform you can host on your own hardware. It's designed to manage complex research tasks from start to finish in a collaborative research environment. Plan your research, let AI agents carry it out, and watch as they generate detailed reports based on your documents and sources from the web.
 
@@ -143,6 +143,29 @@ For detailed installation instructions, see the [Installation Guide](https://mur
 - **Network Access**: Configure via setup script options
 
 For troubleshooting and advanced configuration, see the [documentation](https://murtaza-nasir.github.io/maestro/).
+
+## Recent Releases
+
+### Version 0.1.7-alpha (January 25, 2025)
+**Intelligent Document Management & Enhanced Research**
+- Auto-create document groups from discovered web sources
+- Seamless transition from research to writing workspace
+- Report versioning with multiple version tracking
+- Clickable document references in writing mode
+- Improved mission restart and revise functionality
+
+### Version 0.1.6-alpha (January 23, 2025)
+**Model Support & Cost Tracking**
+- GPT-5 support with configurable thinking levels
+- Comprehensive cost tracking across all API calls
+- Enhanced DeepSeek compatibility
+- Improved error handling and retry logic
+
+### Version 0.1.5-alpha (September 2, 2025)
+**Major Performance Update**
+- Complete async backend migration (2-3x faster)
+- 50+ bug fixes and stability improvements
+- Enhanced UI/UX with LaTeX support
 
 ## Core Features
 

@@ -7,7 +7,7 @@
   
   <div style="margin-top: 1rem;">
     <a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="License: AGPL v3"/></a>
-    <a href="https://github.com/murtaza-nasir/maestro.git"><img src="https://img.shields.io/badge/Version-0.1.5--alpha-green.svg" alt="Version"/></a>
+    <a href="https://github.com/murtaza-nasir/maestro.git"><img src="https://img.shields.io/badge/Version-0.1.7--alpha-green.svg" alt="Version"/></a>
     <a href="https://hub.docker.com/r/murtaza-nasir/maestro"><img src="https://img.shields.io/badge/Docker-Ready-blue.svg" alt="Docker"/></a>
   </div>
 </div>
@@ -234,7 +234,30 @@ graph TB
 
 <div class="grid cards" markdown>
 
--   :material-rocket: **Version 0.1.5-alpha** <small>Released Sep 2, 2025</small>
+-   :material-rocket: **Version 0.1.7-alpha** <small>Released Jan 25, 2025</small>
+    
+    ---
+    
+    **Intelligent Document Management & Enhanced Research**
+    
+    - Auto-create document groups from web sources during research
+    - Seamless transition with report and document sources from research to writing workspace
+    - Research report versioning with easy version switching
+    - Clickable document sources in writing mode
+    - Restart and revise missions with improved outline handling
+
+-   :material-history: **Version 0.1.6-alpha** <small>Released Jan 23, 2025</small>
+    
+    ---
+    
+    **Model Support & Cost Tracking**
+    
+    - GPT-5 support with configurable thinking levels
+    - Improved cost tracking system
+    - DeepSeek compatibility improvements
+    - Enhanced error handling and retry logic
+
+-   :material-timer: **Version 0.1.5-alpha** <small>Released Sep 2, 2025</small>
     
     ---
     
@@ -245,18 +268,6 @@ graph TB
     - Complete documentation overhaul
     - Enhanced UI/UX with LaTeX support
     - 50+ bug fixes and stability improvements
-    - **Note:** This is an alpha release with significant improvements
-
--   :material-new-box: **Version 0.1.4** <small>Released Aug 20, 2025</small>
-    
-    ---
-    
-    **Jina.ai Integration & Enhanced Search**
-    
-    - Jina.ai provider for advanced web content fetching
-    - Automatic query expansion for vague references
-    - Better JavaScript-heavy site handling
-    - Improved content extraction accuracy
 
 </div>
 

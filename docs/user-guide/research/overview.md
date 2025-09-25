@@ -140,10 +140,12 @@ Final report generation:
 
 - **Live Preview**: Report as it's being written
 - **Word Count**: Real-time tracking
+- **Version History**: Track multiple report versions (completed missions)
 - **Export Options**:
     - Markdown (.md)
     - Word document (.docx)
 - **Edit Capability**: Make final adjustments
+- **Continue Writing**: Seamlessly transition to writing workspace
 
 ## Research Phases Explained
 
@@ -194,10 +196,42 @@ Final report generation:
 
 ### After Completion
 
-**Revise/Restart from Round**: Re-run from checkpoint
+**Continue to Writing**: Transition your research to the writing workspace
 
-- Select previous research round
-- Give feedback to modify the outline and steer the research direction
+- Automatically transfers your research draft
+- Preserves document group associations (if Auto-save docs was enabled)
+
+**Revise/Restart**: Re-run with improved outline
+
+- Provide feedback to modify research direction
+- Skip initial exploration phase on restart
+
+## Auto-Creating Document Groups
+
+When conducting research that discovers valuable web sources, MAESTRO can automatically create and populate document groups with these materials. This feature preserves your research sources for future reference and enables deeper analysis through the RAG pipeline.
+
+### How It Works
+
+When auto-create is enabled, MAESTRO will:
+
+1. Track all web sources discovered during research
+2. Convert relevant web pages into markdown documents
+3. Create a new document group named after your research topic
+4. Process and index documents for semantic search
+5. Associate the group with your mission for easy access
+
+### Enabling Auto-Create
+
+The auto-create toggle appears in the chat interface when starting a research mission. When enabled, discovered web sources are automatically saved and processed. The created document group becomes available for:
+
+- Future research missions
+- Document library browsing
+- Writing assistant context
+- Cross-reference searches
+
+### Benefits
+
+This feature eliminates manual document collection while building a knowledge base from your research activities. Each research mission can contribute to your growing document library, making subsequent research more comprehensive and efficient.
 
 ## Research Configuration
 
@@ -219,6 +253,7 @@ Configure in Settings or per mission:
 
 - Enable/disable document searching
 - Select document groups
+- Auto-create document groups from web sources
 
 ### Performance Settings
 

@@ -19,8 +19,9 @@ Each document card shows:
 - **Title**: Extracted or filename-based title
 - **Authors**: If available in metadata
 - **Year**: Publication year if detected
-- **Status Badge**: Processing state
+- **Status Badge**: Processing state with chunk count for completed documents
 - **File Type Icon**: PDF, Word, or Markdown
+- **Chunk Count**: Number of processed chunks for semantic search
 - **Actions Menu**: View, download, delete options
 
 ## Viewing Documents

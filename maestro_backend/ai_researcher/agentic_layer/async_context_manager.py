@@ -665,6 +665,8 @@ class AsyncContextManager:
                     await crud.update_mission_context(db, mission_id=mission_id, mission_context=sanitized_context)
                     
                     # Create a versioned research report
+                    # Use synchronous database session for the CRUD operation
+                    from database.database import SessionLocal
                     from database.crud_research_reports import create_research_report
                     
                     # Extract title from report if available
@@ -676,20 +678,28 @@ class AsyncContextManager:
                                 title = line.strip()[2:].strip()
                                 break
                     
-                    # Create the versioned report in a sync context
-                    # Note: This is a synchronous operation wrapped in async context
-                    import asyncio
-                    loop = asyncio.get_event_loop()
-                    await loop.run_in_executor(
-                        None,
-                        create_research_report,
-                        db,
-                        mission_id,
-                        report_text,
-                        title,
-                        revision_notes,
-                        True  # make_current
-                    )
+                    # Create the versioned report using a synchronous session
+                    try:
+                        sync_db = SessionLocal()
+                        try:
+                            create_research_report(
+                                sync_db,
+                                mission_id,
+                                report_text,
+                                title,
+                                revision_notes,
+                                True  # make_current
+                            )
+                            sync_db.commit()
+                            logger.info(f"Created research report version for mission {mission_id}")
+                        except Exception as e:
+                            sync_db.rollback()
+                            logger.error(f"Failed to create research report version: {e}")
+                            raise
+                        finally:
+                            sync_db.close()
+                    except Exception as e:
+                        logger.error(f"Error creating research report: {e}", exc_info=True)
                     
                     logger.info(f"Stored final report and set status to 'completed' for mission '{mission_id}' in DB.")
                     

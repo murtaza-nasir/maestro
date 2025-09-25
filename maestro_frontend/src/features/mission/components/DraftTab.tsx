@@ -7,7 +7,7 @@ import { useChatStore } from '../../chat/store'
 import { useToast } from '../../../components/ui/toast'
 import { useWritingStore } from '../../writing/store'
 import { useViewStore } from '../../../stores/viewStore'
-import { FileText, RefreshCw, Copy, Edit3, X, Save, CheckCheck, ChevronLeft, ChevronRight, Clock, PenTool } from 'lucide-react'
+import { FileText, RefreshCw, Copy, Edit3, X, Save, CheckCheck, ChevronLeft, ChevronRight, Clock, PenTool, Download } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -15,12 +15,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../../components/ui/select'
-// import {
-//   DropdownMenu,
-//   DropdownMenuContent,
-//   DropdownMenuItem,
-//   DropdownMenuTrigger,
-// } from '../../../components/ui/dropdown-menu'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../../../components/ui/dropdown-menu'
 import { apiClient } from '../../../config/api'
 
 interface DraftTabProps {
@@ -56,7 +56,9 @@ export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
 
   // Fetch available report versions
   const fetchReportVersions = useCallback(async () => {
-    if (!missionId || activeMission?.status !== 'completed') return
+    if (!missionId || activeMission?.status !== 'completed') {
+      return
+    }
     
     try {
       const response = await apiClient.get(`/api/missions/${missionId}/reports`)
@@ -125,13 +127,21 @@ export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
     }
   }, [missionId, setMissionDraft, updateMissionReport, activeMission?.status, fetchReportVersions])
 
-  // WebSocket updates are now handled by ResearchPanel
-  // Initial fetch only
+  // Fetch draft and versions when mission changes or completes
   useEffect(() => {
+    // Reset versions when mission changes
+    setReportVersions([])
+    setCurrentVersion(1)
+    setSelectedVersion(1)
+    
+    // Fetch draft content
     if (!activeMission?.draft && !activeMission?.report) {
       fetchDraft()
+    } else if (activeMission?.status === 'completed') {
+      // Also fetch versions for completed missions
+      fetchReportVersions()
     }
-  }, [fetchDraft, activeMission?.draft, activeMission?.report])
+  }, [missionId, activeMission?.status]) // Trigger on mission ID or status change
 
   // Get the current content (prioritize selected version over default)
   const getCurrentContent = () => {
@@ -543,50 +553,46 @@ export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
     <div className="h-full flex flex-col">
       {/* Header with Status and Controls */}
       <div className="flex items-center justify-between p-2">
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center gap-3">
           <div className="flex items-center space-x-1">
             <FileText className="h-4 w-4 text-primary" />
             <h3 className="text-base font-semibold text-foreground">Research Draft</h3>
           </div>
-          <div className="flex items-center space-x-1">
-            <div className={`w-2 h-2 rounded-full bg-${statusInfo.color}-500`}></div>
-            <span className="text-xs text-muted-foreground">{statusInfo.text}</span>
-          </div>
+          
           {wordCount > 0 && (
-            <span className="text-xs text-muted-foreground">• {wordCount.toLocaleString()} words</span>
+            <span className="text-xs text-muted-foreground">{wordCount.toLocaleString()} words</span>
           )}
           
           {/* Version selector for completed missions with multiple versions */}
           {reportVersions.length > 1 && activeMission?.status === 'completed' && !isEditing && (
-            <div className="flex items-center space-x-2 ml-2">
-              <Clock className="h-3 w-3 text-muted-foreground" />
-              <Select
-                value={selectedVersion.toString()}
-                onValueChange={(value) => fetchReportVersion(parseInt(value))}
-                disabled={isLoading}
-              >
-                <SelectTrigger className="h-7 w-32 text-xs">
-                  <SelectValue placeholder="Select version" />
-                </SelectTrigger>
-                <SelectContent>
-                  {reportVersions.map((version) => (
-                    <SelectItem key={version.id} value={version.version.toString()}>
-                      <div className="flex items-center justify-between w-full">
+            <Select
+              value={selectedVersion.toString()}
+              onValueChange={(value) => fetchReportVersion(parseInt(value))}
+              disabled={isLoading}
+            >
+              <SelectTrigger className="h-7 w-[140px] text-xs">
+                <SelectValue placeholder="Select version" />
+              </SelectTrigger>
+              <SelectContent>
+                {reportVersions.map((version) => (
+                  <SelectItem key={version.id} value={version.version.toString()}>
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
                         <span>Version {version.version}</span>
                         {version.is_current && (
-                          <span className="text-xs text-muted-foreground ml-2">(current)</span>
+                          <span className="text-[10px] text-muted-foreground">(current)</span>
                         )}
                       </div>
                       {version.revision_notes && (
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {version.revision_notes.substring(0, 50)}...
+                        <div className="text-[10px] text-muted-foreground truncate max-w-[200px]">
+                          {version.revision_notes}
                         </div>
                       )}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
         </div>
         
@@ -629,35 +635,10 @@ export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
                 size="sm"
                 className="h-7 px-2 text-xs"
                 disabled={isLoading}
+                title="Refresh draft"
               >
                 <RefreshCw className={`h-3 w-3 ${isLoading ? 'animate-spin' : ''}`} />
               </Button>
-              <Button
-                onClick={() => {
-                  // console.log('DIRECT MARKDOWN TEST BUTTON CLICKED');
-                  handleDownload('md');
-                }}
-                variant="outline"
-                size="sm"
-                className="h-7 px-2 text-xs"
-                disabled={isLoading}
-              >
-                MD
-              </Button>
-              <Button
-                onClick={() => {
-                  // console.log('DIRECT WORD TEST BUTTON CLICKED');
-                  handleDownload('docx');
-                }}
-                variant="outline"
-                size="sm"
-                className="h-7 px-2 text-xs"
-                disabled={isLoading}
-              >
-                DOC
-              </Button>
-              {/* Dropdown menu temporarily commented out - keeping direct MD and DOC buttons */}
-              {/*
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -665,28 +646,22 @@ export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
                     size="sm"
                     className="h-7 px-2 text-xs"
                     disabled={isLoading}
+                    title="Download draft"
                   >
                     <Download className="h-3 w-3" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => {
-                    // console.log('MARKDOWN CLICK HANDLER CALLED');
-                    handleDownload('md');
-                  }}>
+                  <DropdownMenuItem onClick={() => handleDownload('md')}>
                     <FileText className="mr-2 h-4 w-4" />
                     Download as Markdown
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => {
-                    // console.log('WORD CLICK HANDLER CALLED');
-                    handleDownload('docx');
-                  }}>
+                  <DropdownMenuItem onClick={() => handleDownload('docx')}>
                     <FileText className="mr-2 h-4 w-4" />
                     Download as Word
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              */}
               {/* Show Continue Writing button for completed missions, Edit for others */}
               {activeMission?.status === 'completed' ? (
                 <Button

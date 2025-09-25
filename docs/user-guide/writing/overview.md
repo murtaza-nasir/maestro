@@ -26,9 +26,18 @@ The Writing Mode interface is divided into two synchronized panels:
 
 ### Starting a Writing Session
 
+There are two ways to begin writing in MAESTRO:
+
+**Option 1: New Writing Session**
 1. Navigate to the **Writing** tab in MAESTRO
 2. Click **"+ New"** to create a new writing session
 3. Your session will appear in the left sidebar with an auto-generated title
+
+**Option 2: Continue from Research**
+1. Complete a research mission in the Research tab
+2. Click **"Continue Writing"** in the Draft tab
+3. Your research draft transfers automatically to the writing workspace
+4. Associated document groups are preserved for continued reference
 
 ### Configuring Your Research Sources
 
@@ -100,11 +109,11 @@ The AI assistant can help with:
 
 ![References in Chat](../../assets/images/writing view references in chat.png)
 
-The assistant provides numbered references with color coding:
-- **Blue references** `[1]` `[2]`: Links to document sources from your collection
-- **Green references** `[3]` `[4]`: Links to web sources
-- Each reference is clickable for verification
-- All sources are listed at the end of each response
+The assistant provides numbered references with intuitive visual indicators:
+- **Document references** 📄 `[1]` `[2]`: Sources from your document collection, clickable to open the document viewer
+- **Web references** 🌐 `[3]` `[4]`: External web sources, clickable to open in a new browser tab
+- Each reference displays its source title for quick identification
+- All sources are listed at the end of each response with full details
 
 ## Editor Features
 
