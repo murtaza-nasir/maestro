@@ -442,6 +442,7 @@ async def create_mission(
         chat_id = mission_data.get("chat_id")
         use_web_search = mission_data.get("use_web_search", True)
         document_group_id = mission_data.get("document_group_id")
+        auto_create_document_group = mission_data.get("auto_create_document_group", False)
         mission_settings_data = mission_data.get("mission_settings")
 
         if not user_request or not chat_id:
@@ -454,6 +455,8 @@ async def create_mission(
         # Capture all user settings
         user_settings = current_user.settings or {}
         research_params = user_settings.get("research_parameters", {})
+        # Add auto_create_document_group from the request to research_params
+        research_params["auto_create_document_group"] = auto_create_document_group
         
         # Capture model configuration
         ai_settings = user_settings.get("ai_endpoints", {})
@@ -2352,8 +2355,13 @@ async def start_mission_execution(
                         mission_db = crud.get_mission(db, mission_id=mission_id, user_id=current_user.id)
                         chat_db = crud.get_chat(db, chat_id=mission_db.chat_id, user_id=current_user.id) if mission_db else None
                         
-                        # Create a new document group
-                        group_name = f"Research: {mission_context.user_request[:50]}..."
+                        # Create a new document group with concise name
+                        # Extract first meaningful part of request for concise name
+                        request_words = mission_context.user_request.split()[:5]  # First 5 words
+                        concise_request = " ".join(request_words)
+                        if len(mission_context.user_request.split()) > 5:
+                            concise_request += "..."
+                        group_name = f"Research: {concise_request}"
                         group_id = str(uuid.uuid4())
                         document_group = crud.create_document_group(
                             db=db,
@@ -2776,7 +2784,7 @@ async def download_report_as_docx(
         logger.error(f"Failed to convert report to DOCX for mission {mission_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to convert report to DOCX: {str(e)}")
 
-@router.post("/{mission_id}/create-document-group")
+@router.post("/missions/{mission_id}/create-document-group")
 async def create_document_group_from_mission(
     mission_id: str,
     request: CreateDocumentGroupRequest,
@@ -2907,8 +2915,16 @@ async def create_document_group_from_mission(
         if not all_doc_ids:
             raise HTTPException(status_code=400, detail="No relevant documents found in mission")
         
-        # Create document group
-        group_name = request.group_name or f"Research: {mission.user_request[:50]}..."
+        # Create document group with concise name
+        if request.group_name:
+            group_name = request.group_name
+        else:
+            # Extract first meaningful part of request for concise name
+            request_words = mission.user_request.split()[:5]  # First 5 words
+            concise_request = " ".join(request_words)
+            if len(mission.user_request.split()) > 5:
+                concise_request += "..."
+            group_name = f"Research: {concise_request}"
         group_id = str(uuid.uuid4())
         
         document_group = crud.create_document_group(
@@ -2953,7 +2969,7 @@ async def create_document_group_from_mission(
         logger.error(f"Failed to create document group for mission {mission_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to create document group: {str(e)}")
 
-@router.get("/{mission_id}/document-group")
+@router.get("/missions/{mission_id}/document-group")
 async def get_mission_document_group(
     mission_id: str,
     db: Session = Depends(get_db),

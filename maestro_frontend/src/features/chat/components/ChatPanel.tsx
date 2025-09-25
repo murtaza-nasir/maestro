@@ -689,16 +689,19 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
       <PanelHeader
         title={currentChat.title}
         subtitle={
-          <div className="flex flex-col space-y-1">
+          <div className="flex items-center gap-3">
             <span>
               {currentChat.messages.length === 0 
                 ? 'Start the conversation' 
                 : `${currentChat.messages.length} messages`}
             </span>
             {missionDocumentGroup && (
-              <span className="text-xs text-muted-foreground flex items-center">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-primary/10 text-xs">
                 <FolderPlus className="h-3 w-3 mr-1" />
-                Doc Group: {missionDocumentGroup.name} ({missionDocumentGroup.document_count} docs)
+                {missionDocumentGroup.name.length > 30 
+                  ? missionDocumentGroup.name.substring(0, 30) + '...' 
+                  : missionDocumentGroup.name} 
+                ({missionDocumentGroup.document_count})
               </span>
             )}
           </div>
@@ -932,13 +935,17 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatId: propChatId }) => {
                         disabled={isChatDisabled}
                       >
                         <SelectTrigger className="text-xs h-6 w-[110px]">
-                          <SelectValue placeholder="None" />
+                          <span className="truncate block w-full text-left">
+                            {selectedGroupId && selectedGroupId !== '' 
+                              ? documentGroups.find(g => g.id === selectedGroupId)?.name || 'None'
+                              : 'None'}
+                          </span>
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="none">None</SelectItem>
                           {documentGroups.map((group) => (
-                            <SelectItem key={group.id} value={group.id}>
-                              {group.name}
+                            <SelectItem key={group.id} value={group.id} title={group.name}>
+                              {group.name.length > 40 ? group.name.substring(0, 40) + '...' : group.name}
                             </SelectItem>
                           ))}
                         </SelectContent>

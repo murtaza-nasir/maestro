@@ -419,13 +419,6 @@ export const MissionSettingsDialog: React.FC<MissionSettingsDialogProps> = ({
                       'Skip Final Replanning',
                       'Skip final outline refinement for faster completion'
                     )}
-                    <div className="mt-3">
-                      {renderBooleanInput(
-                        'auto_create_document_group',
-                        'Auto-create Document Group',
-                        'Automatically save and organize all relevant documents from web searches and database into a document group'
-                      )}
-                    </div>
                   </div>
                 </CardContent>
               </Card>

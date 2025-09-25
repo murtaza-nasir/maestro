@@ -2,6 +2,7 @@ import logging
 from typing import Dict, Any, Optional, List, Callable, Tuple
 import queue
 import json
+from datetime import datetime
 
 from ai_researcher.config import THOUGHT_PAD_CONTEXT_LIMIT
 from ai_researcher.agentic_layer.async_context_manager import ExecutionLogEntry
@@ -321,27 +322,111 @@ Output ONLY a single JSON object conforming EXACTLY to the RequestAnalysisOutput
                         mission_id = mission_context.mission_id
                         logger.info(f"Created new mission with ID: {mission_id}")
                     
-                    # Update mission metadata with tool selection and document group
-                    await self.controller.context_manager.update_mission_metadata(mission_id, {
+                    # Get user settings to build comprehensive_settings
+                    from ai_researcher.user_context import get_current_user
+                    from datetime import datetime  # Ensure datetime is available in this scope
+                    current_user = get_current_user()
+                    user_settings = current_user.settings if current_user and hasattr(current_user, 'settings') else {}
+                    
+                    # Build comprehensive_settings like in the missions endpoint
+                    research_params = user_settings.get("research_parameters", {})
+                    research_params["auto_create_document_group"] = auto_create_document_group
+                    
+                    ai_settings = user_settings.get("ai_endpoints", {})
+                    model_config = {
+                        "fast_provider": ai_settings.get("fast_llm_provider"),
+                        "fast_model": ai_settings.get("fast_llm_model"),
+                        "mid_provider": ai_settings.get("mid_llm_provider"),
+                        "mid_model": ai_settings.get("mid_llm_model"),
+                        "intelligent_provider": ai_settings.get("intelligent_llm_provider"),
+                        "intelligent_model": ai_settings.get("intelligent_llm_model"),
+                        "verifier_provider": ai_settings.get("verifier_llm_provider"),
+                        "verifier_model": ai_settings.get("verifier_llm_model"),
+                    }
+                    
+                    search_settings = user_settings.get("search", {})
+                    web_fetch_settings = user_settings.get("web_fetch", {})
+                    
+                    comprehensive_settings = {
+                        "use_web_search": use_web_search,
+                        "use_local_rag": document_group_id is not None,
+                        "auto_create_document_group": auto_create_document_group,
+                        "document_group_id": document_group_id,
+                        "document_group_name": None,  # Will be populated if/when group is created
+                        "model_config": model_config,
+                        "research_params": research_params,
+                        "search_provider": search_settings.get("provider"),
+                        "web_fetch_settings": web_fetch_settings,
+                        "all_user_settings": user_settings,
+                        "settings_captured_at": datetime.now().isoformat(),
+                        "start_method": "chat_interface_existing"
+                    }
+                    
+                    # Update mission metadata with comprehensive settings
+                    existing_metadata = mission_context.metadata or {}
+                    existing_metadata.update({
                         "tool_selection": tool_selection,
                         "document_group_id": document_group_id,
                         "research_params": {
                             "auto_create_document_group": auto_create_document_group
-                        }
+                        },
+                        "comprehensive_settings": comprehensive_settings
                     })
+                    await self.controller.context_manager.update_mission_metadata(mission_id, existing_metadata)
                 else:
                     # Create mission if no existing mission_id
                     mission_context = await self.controller.context_manager.start_mission(user_request=request_content, chat_id=chat_id)
                     mission_id = mission_context.mission_id
                     logger.info(f"Created new mission with ID: {mission_id}")
                     
-                    # Set initial metadata with tool selection and document group
+                    # Get user settings to build comprehensive_settings
+                    from ai_researcher.user_context import get_current_user
+                    from datetime import datetime  # Ensure datetime is available in this scope
+                    current_user = get_current_user()
+                    user_settings = current_user.settings if current_user and hasattr(current_user, 'settings') else {}
+                    
+                    # Build comprehensive_settings like in the missions endpoint
+                    research_params = user_settings.get("research_parameters", {})
+                    research_params["auto_create_document_group"] = auto_create_document_group
+                    
+                    ai_settings = user_settings.get("ai_endpoints", {})
+                    model_config = {
+                        "fast_provider": ai_settings.get("fast_llm_provider"),
+                        "fast_model": ai_settings.get("fast_llm_model"),
+                        "mid_provider": ai_settings.get("mid_llm_provider"),
+                        "mid_model": ai_settings.get("mid_llm_model"),
+                        "intelligent_provider": ai_settings.get("intelligent_llm_provider"),
+                        "intelligent_model": ai_settings.get("intelligent_llm_model"),
+                        "verifier_provider": ai_settings.get("verifier_llm_provider"),
+                        "verifier_model": ai_settings.get("verifier_llm_model"),
+                    }
+                    
+                    search_settings = user_settings.get("search", {})
+                    web_fetch_settings = user_settings.get("web_fetch", {})
+                    
+                    comprehensive_settings = {
+                        "use_web_search": use_web_search,
+                        "use_local_rag": document_group_id is not None,
+                        "auto_create_document_group": auto_create_document_group,
+                        "document_group_id": document_group_id,
+                        "document_group_name": None,  # Will be populated if/when group is created
+                        "model_config": model_config,
+                        "research_params": research_params,
+                        "search_provider": search_settings.get("provider"),
+                        "web_fetch_settings": web_fetch_settings,
+                        "all_user_settings": user_settings,
+                        "settings_captured_at": datetime.now().isoformat(),
+                        "start_method": "chat_interface"
+                    }
+                    
+                    # Set initial metadata with comprehensive settings
                     await self.controller.context_manager.update_mission_metadata(mission_id, {
                         "tool_selection": tool_selection,
                         "document_group_id": document_group_id,
                         "research_params": {
                             "auto_create_document_group": auto_create_document_group
-                        }
+                        },
+                        "comprehensive_settings": comprehensive_settings
                     })
                 
                 # Now check if there were formatting preferences in the agent output
