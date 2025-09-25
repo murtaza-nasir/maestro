@@ -18,6 +18,7 @@ interface ComprehensiveMissionSettings {
   comprehensive_settings?: {
     use_web_search?: boolean
     use_local_rag?: boolean
+    auto_create_document_group?: boolean
     document_group_id?: string
     document_group_name?: string
     model_config?: {
@@ -154,6 +155,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ missionId }) => {
               <span className="text-sm text-muted-foreground">Local RAG</span>
               <Badge variant={settings.comprehensive_settings.use_local_rag ? 'default' : 'secondary'}>
                 {settings.comprehensive_settings.use_local_rag ? 'Enabled' : 'Disabled'}
+              </Badge>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Auto-save Docs</span>
+              <Badge variant={settings.comprehensive_settings.auto_create_document_group ? 'default' : 'secondary'}>
+                {settings.comprehensive_settings.auto_create_document_group ? 'On' : 'Off'}
               </Badge>
             </div>
             {settings.comprehensive_settings.document_group_name && (

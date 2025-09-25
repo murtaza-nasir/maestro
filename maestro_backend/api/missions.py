@@ -500,6 +500,7 @@ async def create_mission(
             # Tool selection
             "use_web_search": use_web_search,
             "use_local_rag": use_local_rag,
+            "auto_create_document_group": research_params.get("auto_create_document_group", False) if research_params else False,
             "document_group_id": document_group_id,
             "document_group_name": document_group_name,
             
@@ -2022,7 +2023,8 @@ async def start_mission_execution(
         if user_settings:
             # user_settings is already a dict from get_user_settings
             settings_dict = json.loads(user_settings) if isinstance(user_settings, str) else user_settings
-            research_settings = settings_dict.get("research", {})
+            # Fixed: Use "research_parameters" not "research" to match the actual settings structure
+            research_settings = settings_dict.get("research_parameters", {})
             
             # Extract research parameters from user's current settings
             current_research_params = {
