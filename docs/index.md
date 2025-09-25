@@ -23,6 +23,10 @@
 
 **Transform your research workflow:** Plan your research questions → Let AI agents investigate → Receive comprehensive reports with citations
 
+<div align="center" style="margin: 2rem 0;">
+  <img src="assets/images/research-report-main.png" alt="Research Report Example" style="max-width: 100%; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);"/>
+</div>
+
 ### Why Choose MAESTRO?
 
 <div class="grid" markdown>

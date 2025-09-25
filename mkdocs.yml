@@ -155,6 +155,7 @@ extra:
 # Navigation structure
 nav:
   - Home: index.md
+  - Screenshots: screenshots.md
   
   - Getting Started:
     - Quick Start: getting-started/quickstart.md
@@ -202,6 +203,12 @@ nav:
     - example-reports/index.md
     - Prompts Used: example-reports/prompts-used.md
     - By Model:
+      - DeepSeek V3:
+        - example-reports/deepseek-v3/index.md
+      - Qwen 3 Next 80B:
+        - example-reports/qwen-3-next-80b/index.md
+      - Tongyi DeepResearch 30B:
+        - example-reports/tongyi-deepresearch-30b/index.md
       - Qwen 2.5 72B: 
         - example-reports/qwen-25-72b/index.md
       - GPT-OSS 120B:

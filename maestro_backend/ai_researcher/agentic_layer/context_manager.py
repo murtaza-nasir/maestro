@@ -1347,7 +1347,7 @@ class ContextManager:
             mission.update_timestamp()
             
             # Save to database in a background thread to avoid blocking
-            logger.info(f"COST_DB_UPDATE: Scheduling stats save to DB for mission {mission_id}: Cost=${stats['total_cost']:.6f}")
+            # logger.info(f"COST_DB_UPDATE: Scheduling stats save to DB for mission {mission_id}: Cost=${stats['total_cost']:.6f}")
             
             # Use a thread to avoid blocking the main execution
             import threading
@@ -1355,7 +1355,7 @@ class ContextManager:
                 db = self.db_session_factory()
                 try:
                     crud.update_mission_context(db, mission_id=mission_id, mission_context=mission.model_dump(mode='json'))
-                    logger.info(f"COST_DB_UPDATE: Successfully saved stats to database for mission {mission_id}: Total Cost=${stats['total_cost']:.6f}")
+                    # logger.info(f"COST_DB_UPDATE: Successfully saved stats to database for mission {mission_id}: Total Cost=${stats['total_cost']:.6f}")
                 except Exception as e:
                     logger.error(f"COST_DB_UPDATE: Failed to save stats to database for mission {mission_id}: {e}", exc_info=True)
                 finally:

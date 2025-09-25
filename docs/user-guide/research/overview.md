@@ -134,18 +134,23 @@ Filter and search capabilities:
 
 #### 4. Draft Tab
 
-![Draft Generation](../../assets/images/Research view draft.png)
+![Draft Generation](../../assets/images/research-report-main.png)
 
 Final report generation:
 
 - **Live Preview**: Report as it's being written
 - **Word Count**: Real-time tracking
 - **Version History**: Track multiple report versions (completed missions)
+  
+  ![Report Versioning](../../assets/images/report-versioning.png)
+  
 - **Export Options**:
     - Markdown (.md)
     - Word document (.docx)
 - **Edit Capability**: Make final adjustments
 - **Continue Writing**: Seamlessly transition to writing workspace
+  
+  ![Research to Writing](../../assets/images/research-to-writing-transition.png)
 
 ## Research Phases Explained
 
@@ -209,6 +214,8 @@ Final report generation:
 ## Auto-Creating Document Groups
 
 When conducting research that discovers valuable web sources, MAESTRO can automatically create and populate document groups with these materials. This feature preserves your research sources for future reference and enables deeper analysis through the RAG pipeline.
+
+![Auto-Create Document Groups](../../assets/images/document-group-auto-create.png)
 
 ### How It Works
 

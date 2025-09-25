@@ -1544,13 +1544,13 @@ class AsyncContextManager:
             mission.update_timestamp()
             
             # Persist to database asynchronously
-            logger.info(f"COST_DB_UPDATE: Saving stats to DB for mission {mission_id}: Cost=${stats['total_cost']:.6f}")
+            # logger.info(f"COST_DB_UPDATE: Saving stats to DB for mission {mission_id}: Cost=${stats['total_cost']:.6f}")
             async def save_stats_to_db():
                 async with get_async_db() as db:
                     try:
                         sanitized_context = sanitize_for_jsonb(mission.model_dump(mode='json'))
                         await crud.update_mission_context(db, mission_id=mission_id, mission_context=sanitized_context)
-                        logger.info(f"COST_DB_UPDATE: Successfully saved stats to database for mission {mission_id}: Total Cost=${stats['total_cost']:.6f}")
+                        # logger.info(f"COST_DB_UPDATE: Successfully saved stats to database for mission {mission_id}: Total Cost=${stats['total_cost']:.6f}")
                     except Exception as e:
                         logger.error(f"COST_DB_UPDATE: Failed to save stats to database for mission {mission_id}: {e}", exc_info=True)
             
