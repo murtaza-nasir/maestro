@@ -252,6 +252,7 @@ class MissionStatus(BaseModel):
     error_info: Optional[str] = None
     tool_selection: Optional[Dict[str, Any]] = None
     document_group_id: Optional[str] = None
+    generated_document_group_id: Optional[str] = None
 
     class Config:
         json_encoders = {

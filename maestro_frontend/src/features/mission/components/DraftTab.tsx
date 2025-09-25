@@ -3,8 +3,11 @@ import { MathMarkdown } from '../../../components/markdown/MathMarkdown'
 import { Card, CardContent } from '../../../components/ui/card'
 import { Button } from '../../../components/ui/button'
 import { useMissionStore } from '../store'
+import { useChatStore } from '../../chat/store'
 import { useToast } from '../../../components/ui/toast'
-import { FileText, RefreshCw, Copy, Edit3, X, Save, CheckCheck, ChevronLeft, ChevronRight, Clock } from 'lucide-react'
+import { useWritingStore } from '../../writing/store'
+import { useViewStore } from '../../../stores/viewStore'
+import { FileText, RefreshCw, Copy, Edit3, X, Save, CheckCheck, ChevronLeft, ChevronRight, Clock, PenTool } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -36,7 +39,10 @@ interface ReportVersion {
 }
 
 export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
-  const { activeMission, setMissionDraft, updateMissionReport } = useMissionStore()
+  const { setView } = useViewStore()
+  const { activeMission, setMissionDraft, updateMissionReport, missions } = useMissionStore()
+  const { activeChat } = useChatStore()
+  const { createSession, selectSession } = useWritingStore()
   const { addToast } = useToast()
   const [isEditing, setIsEditing] = useState(false)
   const [editedReport, setEditedReport] = useState('')
@@ -46,6 +52,7 @@ export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
   const [reportVersions, setReportVersions] = useState<ReportVersion[]>([])
   const [currentVersion, setCurrentVersion] = useState<number>(1)
   const [selectedVersion, setSelectedVersion] = useState<number>(1)
+  const [isTransitioning, setIsTransitioning] = useState(false)
 
   // Fetch available report versions
   const fetchReportVersions = useCallback(async () => {
@@ -239,6 +246,93 @@ export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
       setTimeout(() => {
         setCopyStatus('idle')
       }, 3000)
+    }
+  }
+
+  const handleTransitionToWriting = async () => {
+    const content = getCurrentContent()
+    if (!content) {
+      addToast({
+        type: 'warning',
+        title: 'No Content',
+        message: 'There is no draft content to continue with.'
+      })
+      return
+    }
+
+    setIsTransitioning(true)
+    try {
+      // Get the mission to find its document group
+      const mission = missions.find(m => m.id === missionId)
+      console.log('Mission for transition:', mission)
+      
+      // Get the document group ID from the mission
+      // First try to get the generated_document_group_id
+      let documentGroupId = mission?.generated_document_group_id || null
+      console.log('Initial document group ID from mission:', documentGroupId)
+      
+      // If not found, fetch fresh status from backend to get the latest data
+      if (!documentGroupId) {
+        try {
+          const statusResponse = await apiClient.get(`/api/missions/${missionId}/status`)
+          console.log('Mission status response:', statusResponse.data)
+          documentGroupId = statusResponse.data.generated_document_group_id || null
+        } catch (err) {
+          console.error('Could not fetch mission status for document group:', err)
+        }
+      }
+      
+      console.log('Final document group ID to use:', documentGroupId)
+      
+      // Extract title from the draft content
+      const titleMatch = content.match(/^#\s+(.+)$/m)
+      const draftTitle = titleMatch ? titleMatch[1].trim() : `Draft from Research ${missionId.slice(0, 8)}`
+      
+      // Create a new writing session with the document group if it exists
+      console.log('Creating writing session with:', { 
+        name: `Writing: ${draftTitle}`,
+        document_group_id: documentGroupId,
+        web_search_enabled: true
+      })
+      
+      const newSession = await createSession({
+        name: `Writing: ${draftTitle}`,
+        document_group_id: documentGroupId,
+        web_search_enabled: true
+      })
+      
+      console.log('Created new writing session:', newSession)
+      
+      // Get the draft (which will be created automatically if it doesn't exist)
+      const draftResponse = await apiClient.get(`/api/writing/sessions/${newSession.id}/draft`)
+      const draft = draftResponse.data
+      
+      // Update the draft with the research content
+      await apiClient.put(`/api/writing/sessions/${newSession.id}/draft`, {
+        title: draftTitle,
+        content: content
+      })
+      
+      // Explicitly select the session to ensure it stays selected
+      await selectSession(newSession.id)
+      
+      // Switch to writing view
+      setView('writing')
+      
+      addToast({
+        type: 'success',
+        title: 'Transitioned to Writing',
+        message: 'Your research draft has been moved to the writing workspace.'
+      })
+    } catch (error) {
+      console.error('Failed to transition to writing:', error)
+      addToast({
+        type: 'error',
+        title: 'Transition Failed',
+        message: 'Failed to move draft to writing workspace. Please try again.'
+      })
+    } finally {
+      setIsTransitioning(false)
     }
   }
 
@@ -606,14 +700,37 @@ export const DraftTab: React.FC<DraftTabProps> = ({ missionId }) => {
                 </DropdownMenuContent>
               </DropdownMenu>
               */}
-              <Button
-                onClick={handleEdit}
-                variant="outline"
-                size="sm"
-                className="h-7 px-2 text-xs"
-              >
-                <Edit3 className="h-3 w-3" />
-              </Button>
+              {/* Show Continue Writing button for completed missions, Edit for others */}
+              {activeMission?.status === 'completed' ? (
+                <Button
+                  onClick={handleTransitionToWriting}
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs flex items-center gap-1"
+                  disabled={isTransitioning}
+                >
+                  {isTransitioning ? (
+                    <>
+                      <RefreshCw className="h-3 w-3 animate-spin" />
+                      <span>Creating...</span>
+                    </>
+                  ) : (
+                    <>
+                      <PenTool className="h-3 w-3" />
+                      <span>Write</span>
+                    </>
+                  )}
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleEdit}
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                >
+                  <Edit3 className="h-3 w-3" />
+                </Button>
+              )}
             </>
           )}
         </div>

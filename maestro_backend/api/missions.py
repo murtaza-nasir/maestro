@@ -622,6 +622,7 @@ async def get_mission_status(
         # Include tool_selection in the status response
         tool_selection = mission_context.metadata.get("tool_selection") if mission_context.metadata else None
         document_group_id = mission_context.metadata.get("document_group_id") if mission_context.metadata else None
+        generated_document_group_id = mission_context.metadata.get("generated_document_group_id") if mission_context.metadata else None
         
         return MissionStatus(
             mission_id=mission_id,
@@ -629,7 +630,8 @@ async def get_mission_status(
             updated_at=mission_context.updated_at,
             error_info=mission_context.error_info,
             tool_selection=tool_selection,
-            document_group_id=document_group_id
+            document_group_id=document_group_id,
+            generated_document_group_id=generated_document_group_id
         )
     except HTTPException:
         raise

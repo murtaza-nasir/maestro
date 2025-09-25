@@ -475,20 +475,6 @@ export const ResearchPanel: React.FC = () => {
                         Restart and Revise
                       </Button>
                       
-                      {/* Document Group button - only show View if auto-created */}
-                      {missionDocumentGroup && (
-                        <Button
-                          onClick={handleViewDocumentGroup}
-                          variant="outline"
-                          size="sm"
-                          className="text-xs"
-                          title={`View document group: ${missionDocumentGroup.name}`}
-                        >
-                          <FolderPlus className="h-3 w-3 mr-1" />
-                          View Docs ({missionDocumentGroup.document_count})
-                          <ExternalLink className="h-2.5 w-2.5 ml-1" />
-                        </Button>
-                      )}
                     </>
                   )}
                 </>

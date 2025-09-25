@@ -49,6 +49,7 @@ interface Mission {
   }
   document_group_id?: string
   document_group_name?: string
+  generated_document_group_id?: string  // Document group created by this mission
   use_web_search?: boolean
   use_local_rag?: boolean
   createdAt: Date
@@ -606,7 +607,7 @@ export const useMissionStore = create<MissionState>((set, get) => ({
   fetchMissionStatus: async (missionId: string) => {
     try {
       const response = await apiClient.get(`/api/missions/${missionId}/status`)
-      const { status, updated_at, tool_selection, document_group_id } = response.data
+      const { status, updated_at, tool_selection, document_group_id, generated_document_group_id } = response.data
       
       set((state) => {
         const updatedMissions = state.missions.map((mission) =>
@@ -616,7 +617,8 @@ export const useMissionStore = create<MissionState>((set, get) => ({
                 status: status,
                 updatedAt: new Date(updated_at),
                 tool_selection: tool_selection,
-                document_group_id: document_group_id
+                document_group_id: document_group_id,
+                generated_document_group_id: generated_document_group_id
               }
             : mission
         )

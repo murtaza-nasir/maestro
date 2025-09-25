@@ -273,7 +273,14 @@ export const useWritingStore = create<WritingState>((set, get) => ({
     set({ error: null })
     try {
       const sessions = await writingApi.getWritingSessions()
-      set({ sessions })
+      // Preserve the current session when loading sessions
+      set((state: WritingState) => ({ 
+        sessions,
+        // Keep the current session if it exists in the new sessions list
+        currentSession: state.currentSession && sessions.find(s => s.id === state.currentSession?.id) 
+          ? sessions.find(s => s.id === state.currentSession?.id)! 
+          : state.currentSession
+      }))
       state.setSessionLoading(tempSessionId, false)
     } catch (error) {
       console.error('Failed to load writing sessions:', error)
@@ -293,9 +300,30 @@ export const useWritingStore = create<WritingState>((set, get) => ({
     try {
       const newSession = await writingApi.createWritingSession(sessionData)
       
+      // Also fetch the chat that was created for this session
+      let newChat = null
+      if (newSession.chat_id) {
+        try {
+          const { apiClient } = await import('../../config/api')
+          const chatResponse = await apiClient.get(`/api/chats/${newSession.chat_id}`)
+          newChat = chatResponse.data
+        } catch (err) {
+          console.error('Failed to fetch created chat:', err)
+        }
+      }
+      
       set((state: WritingState) => ({
         sessions: [newSession, ...state.sessions],
-        currentSession: newSession
+        currentSession: newSession,
+        // Also set activeChat if we have it
+        activeChat: newChat || state.activeChat,
+        // Add the chat to the chats list if we have it
+        chats: newChat ? [newChat, ...state.chats] : state.chats,
+        // Initialize messages for the new chat
+        messagesByChat: newChat ? {
+          ...state.messagesByChat,
+          [newChat.id]: []
+        } : state.messagesByChat
       }))
       
       state.setSessionLoading(tempSessionId, false)
@@ -336,11 +364,24 @@ export const useWritingStore = create<WritingState>((set, get) => ({
       // Disconnect from previous session's WebSocket
       state.disconnectWebSocket()
       
+      // Fetch the chat for this session to set it as active
+      let sessionChat = null
+      if (session.chat_id) {
+        try {
+          const { apiClient } = await import('../../config/api')
+          const chatResponse = await apiClient.get(`/api/chats/${session.chat_id}`)
+          sessionChat = chatResponse.data
+        } catch (err) {
+          console.error('Failed to fetch chat for session:', err)
+        }
+      }
+      
       // Clear messages for the current chat when switching sessions
       const chatId = session.chat_id
       set((state: WritingState) => ({ 
         currentSession: session,
         currentDraft: null, // Clear current draft when switching sessions
+        activeChat: sessionChat || state.activeChat, // Set the activeChat
         messagesByChat: chatId ? {
           ...state.messagesByChat,
           [chatId]: []

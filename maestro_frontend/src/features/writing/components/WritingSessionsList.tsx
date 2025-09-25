@@ -38,6 +38,7 @@ export const WritingSessionsList: React.FC = () => {
 
   // Load sessions and document groups on mount
   useEffect(() => {
+    // Load sessions - the store will preserve the currentSession if one exists
     loadSessions()
     fetchDocumentGroups()
   }, [loadSessions])
