@@ -32,7 +32,7 @@ MAESTRO is an AI-powered research platform you can host on your own hardware. It
 ## Screenshots
 
 <p align="center">
-  <img src="images/10-research-draft.png" alt="Final Draft" width="700"/>
+  <img src="docs/assets/images/research-report-main.png" alt="Research Report" width="700"/>
 </p>
 
 <details>
