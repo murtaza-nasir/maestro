@@ -146,7 +146,7 @@ For troubleshooting and advanced configuration, see the [documentation](https://
 
 ## Recent Releases
 
-### Version 0.1.7-alpha (January 25, 2025)
+### Version 0.1.7-alpha (September 25, 2025)
 **Intelligent Document Management & Enhanced Research**
 - Auto-create document groups from discovered web sources
 - Seamless transition from research to writing workspace
@@ -154,7 +154,7 @@ For troubleshooting and advanced configuration, see the [documentation](https://
 - Clickable document references in writing mode
 - Improved mission restart and revise functionality
 
-### Version 0.1.6-alpha (January 23, 2025)
+### Version 0.1.6-alpha (September 23, 2025)
 **Model Support & Cost Tracking**
 - GPT-5 support with configurable thinking levels
 - Comprehensive cost tracking across all API calls
