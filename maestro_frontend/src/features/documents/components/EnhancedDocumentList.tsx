@@ -11,13 +11,17 @@ import {
   Upload,
   Edit,
   Eye,
-  FolderPlus
+  FolderPlus,
+  RefreshCw,
+  Database
 } from 'lucide-react';
 import type { Document } from '../types';
 import { 
   bulkDeleteDocuments, 
   bulkAddDocumentsToGroup, 
-  bulkRemoveDocumentsFromGroup
+  bulkRemoveDocumentsFromGroup,
+  bulkReprocessDocuments,
+  bulkReembedDocuments
 } from '../api';
 import { useDocumentContext } from '../context/DocumentContext';
 import { DeleteConfirmationModal } from '../../../components/ui/DeleteConfirmationModal';
@@ -192,6 +196,62 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
     } catch (err) {
       setError('Failed to remove documents from group');
       console.error('Bulk remove error:', err);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleReprocessDocuments = async () => {
+    if (selectedDocuments.size === 0) return;
+    
+    const confirmMessage = `Reprocess metadata for ${selectedDocuments.size} document(s)? This will update metadata extraction without re-embedding.`;
+    if (!confirm(confirmMessage)) return;
+    
+    try {
+      setIsProcessing(true);
+      const result = await bulkReprocessDocuments(Array.from(selectedDocuments));
+      setSelectedDocuments(new Set());
+      onDocumentAdded?.(); // Refresh the list
+      setError(null);
+      
+      // Show success message
+      if (result.success_count > 0) {
+        console.log(`Successfully queued ${result.success_count} documents for metadata reprocessing`);
+      }
+      if (result.failed_count > 0) {
+        setError(`Failed to reprocess ${result.failed_count} documents`);
+      }
+    } catch (err) {
+      setError('Failed to reprocess documents');
+      console.error('Reprocess error:', err);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleReembedDocuments = async () => {
+    if (selectedDocuments.size === 0) return;
+    
+    const confirmMessage = `Re-embed ${selectedDocuments.size} document(s)? This will completely reprocess documents including metadata and embeddings.`;
+    if (!confirm(confirmMessage)) return;
+    
+    try {
+      setIsProcessing(true);
+      const result = await bulkReembedDocuments(Array.from(selectedDocuments));
+      setSelectedDocuments(new Set());
+      onDocumentAdded?.(); // Refresh the list
+      setError(null);
+      
+      // Show success message
+      if (result.success_count > 0) {
+        console.log(`Successfully queued ${result.success_count} documents for re-embedding`);
+      }
+      if (result.failed_count > 0) {
+        setError(`Failed to re-embed ${result.failed_count} documents`);
+      }
+    } catch (err) {
+      setError('Failed to re-embed documents');
+      console.error('Re-embed error:', err);
     } finally {
       setIsProcessing(false);
     }
@@ -387,6 +447,26 @@ export const EnhancedDocumentList: React.FC<EnhancedDocumentListProps> = ({
                       Add to Group
                     </button>
                   )}
+                  {/* Reprocess button */}
+                  <button
+                    onClick={handleReprocessDocuments}
+                    disabled={isProcessing}
+                    className="flex items-center gap-1 px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
+                    title="Reprocess metadata extraction only"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    Reprocess
+                  </button>
+                  {/* Re-embed button */}
+                  <button
+                    onClick={handleReembedDocuments}
+                    disabled={isProcessing}
+                    className="flex items-center gap-1 px-3 py-1 text-sm bg-purple-500 text-white rounded hover:bg-purple-600 disabled:opacity-50"
+                    title="Full reprocessing including embeddings"
+                  >
+                    <Database className="h-3 w-3" />
+                    Re-embed
+                  </button>
                   <button
                     onClick={handleDeleteClick}
                     disabled={isProcessing}

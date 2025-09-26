@@ -1097,6 +1097,136 @@ async def cancel_document_processing(
         logger.debug(f"Error cancelling document processing: {e}")
         raise HTTPException(status_code=500, detail="Failed to cancel document processing")
 
+@router.post("/documents/bulk-reprocess", response_model=schemas.BulkOperationResponse)
+async def bulk_reprocess_documents(
+    request: schemas.BulkDocumentRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user_from_cookie)
+):
+    """
+    Reprocess documents (extract metadata only, without re-embedding).
+    This will update the metadata extraction for the selected documents.
+    """
+    try:
+        doc_ids = request.document_ids
+        logger.info(f"User {current_user.id} requested reprocessing for {len(doc_ids)} documents")
+        
+        success_count = 0
+        failed_count = 0
+        failed_docs = []
+        
+        for doc_id in doc_ids:
+            try:
+                # Get the document
+                document = crud.get_document(db, doc_id=doc_id, user_id=current_user.id)
+                if not document:
+                    failed_count += 1
+                    failed_docs.append({"id": doc_id, "error": "Document not found"})
+                    continue
+                
+                # Reset the document status to pending for reprocessing
+                document.processing_status = "pending"
+                document.metadata_['reprocess_metadata'] = True  # Flag for processor to only do metadata
+                db.commit()
+                
+                # Send update via WebSocket
+                await send_document_update(str(current_user.id), {
+                    "type": "document_reprocess_started",
+                    "doc_id": doc_id,
+                    "status": "pending",
+                    "message": "Document queued for metadata reprocessing"
+                })
+                
+                success_count += 1
+                logger.info(f"Document {doc_id} queued for metadata reprocessing")
+                
+            except Exception as e:
+                failed_count += 1
+                failed_docs.append({"id": doc_id, "error": str(e)})
+                logger.error(f"Failed to queue document {doc_id} for reprocessing: {e}")
+        
+        return schemas.BulkOperationResponse(
+            success_count=success_count,
+            failed_count=failed_count,
+            failed_items=failed_docs,
+            message=f"Queued {success_count} documents for metadata reprocessing"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in bulk_reprocess_documents: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/documents/bulk-reembed", response_model=schemas.BulkOperationResponse)  
+async def bulk_reembed_documents(
+    request: schemas.BulkDocumentRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user_from_cookie)
+):
+    """
+    Re-embed documents (full reprocessing including metadata extraction and embeddings).
+    This will delete existing embeddings and create new ones.
+    """
+    try:
+        doc_ids = request.document_ids
+        logger.info(f"User {current_user.id} requested re-embedding for {len(doc_ids)} documents")
+        
+        success_count = 0
+        failed_count = 0
+        failed_docs = []
+        
+        # Import vector store to delete existing embeddings
+        from ai_researcher.core_rag.vector_store_singleton import get_vector_store
+        vector_store = get_vector_store()
+        
+        for doc_id in doc_ids:
+            try:
+                # Get the document
+                document = crud.get_document(db, doc_id=doc_id, user_id=current_user.id)
+                if not document:
+                    failed_count += 1
+                    failed_docs.append({"id": doc_id, "error": "Document not found"})
+                    continue
+                
+                # Delete existing embeddings from vector store
+                try:
+                    dense_deleted, sparse_deleted = vector_store.delete_document(doc_id)
+                    logger.info(f"Deleted {dense_deleted + sparse_deleted} existing chunks for document {doc_id}")
+                except Exception as e:
+                    logger.warning(f"Error deleting existing embeddings for {doc_id}: {e}")
+                
+                # Reset document status and clear chunk count
+                document.processing_status = "pending"
+                document.chunk_count = 0
+                document.metadata_['reembed'] = True  # Flag for processor to do full reprocessing
+                db.commit()
+                
+                # Send update via WebSocket
+                await send_document_update(str(current_user.id), {
+                    "type": "document_reembed_started",
+                    "doc_id": doc_id,
+                    "status": "pending",
+                    "message": "Document queued for full re-embedding"
+                })
+                
+                success_count += 1
+                logger.info(f"Document {doc_id} queued for re-embedding")
+                
+            except Exception as e:
+                failed_count += 1
+                failed_docs.append({"id": doc_id, "error": str(e)})
+                logger.error(f"Failed to queue document {doc_id} for re-embedding: {e}")
+        
+        return schemas.BulkOperationResponse(
+            success_count=success_count,
+            failed_count=failed_count,
+            failed_items=failed_docs,
+            message=f"Queued {success_count} documents for full re-embedding"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in bulk_reembed_documents: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Note: The following endpoint is for internal use by the doc-processor service
 @router.post("/internal/document-progress", status_code=202, include_in_schema=False)
 async def post_document_progress(update: schemas.DocumentProgressUpdate):

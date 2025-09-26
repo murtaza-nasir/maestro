@@ -763,3 +763,13 @@ class SystemSettingsUpdate(BaseModel):
 class PasswordChange(BaseModel):
     current_password: str
     new_password: str
+
+# Bulk Operation Schemas
+class BulkDocumentRequest(BaseModel):
+    document_ids: List[str]
+
+class BulkOperationResponse(BaseModel):
+    success_count: int
+    failed_count: int
+    failed_items: List[Dict[str, Any]] = []
+    message: str

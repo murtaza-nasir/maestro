@@ -338,16 +338,37 @@ class BackgroundDocumentProcessor:
             print(f"[{doc_id}] Getting user settings and initializing document processor...")
             self._update_job_progress_sync(job_id, user_id, 10, "running")
             
-            # Get user settings from database
+            # Get user settings from database and check for reprocess/re-embed flags
             db = next(get_db())
             try:
                 from database import crud
                 user = crud.get_user(db, user_id)
                 user_settings = user.settings if user and user.settings else {}
                 print(f"[{doc_id}] Retrieved user settings for user {user_id}")
+                
+                # Check for reprocess/re-embed flags in document metadata
+                document = crud.get_document(db, doc_id=doc_id, user_id=user_id)
+                is_reprocess_only = document and document.metadata_ and document.metadata_.get('reprocess_metadata', False)
+                is_reembed = document and document.metadata_ and document.metadata_.get('reembed', False)
+                
+                # Clear the flags after reading them
+                if document and document.metadata_ and ('reprocess_metadata' in document.metadata_ or 'reembed' in document.metadata_):
+                    if 'reprocess_metadata' in document.metadata_:
+                        del document.metadata_['reprocess_metadata']
+                    if 'reembed' in document.metadata_:
+                        del document.metadata_['reembed']
+                    db.commit()
+                
+                if is_reprocess_only:
+                    print(f"[{doc_id}] REPROCESS MODE: Will only extract metadata, skipping embeddings")
+                elif is_reembed:
+                    print(f"[{doc_id}] RE-EMBED MODE: Full reprocessing with new embeddings")
+                    
             except Exception as e:
                 print(f"[{doc_id}] Warning: Could not retrieve user settings: {e}")
                 user_settings = {}
+                is_reprocess_only = False
+                is_reembed = False
             finally:
                 db.close()
             
@@ -432,43 +453,61 @@ class BackgroundDocumentProcessor:
             # No separate AI database anymore - everything is in the main database
             # The metadata was already saved to JSON file above for reference
             
-            # Step 4: Generate embeddings (70% progress)
-            print(f"[{doc_id}] Generating embeddings...")
-            self._update_job_progress_sync(job_id, user_id, 70, "running")
-            self._update_document_progress_sync(doc_id, user_id, 70, "processing")
+            chunks_added_count = 0
             
-            # Chunk the content
-            print(f"[{doc_id}] Chunking Markdown content...")
-            chunks = processor.chunker.chunk(markdown_content, doc_metadata=final_metadata)
-            print(f"[{doc_id}] Generated {len(chunks)} chunks")
-            
-            # Step 5: Store in vector database (90% progress)
-            print(f"[{doc_id}] Storing in vector database...")
-            self._update_job_progress_sync(job_id, user_id, 90, "running")
-            self._update_document_progress_sync(doc_id, user_id, 90, "processing")
-            
-            # Embed and store chunks
-            if processor.embedder and processor.vector_store and chunks:
-                print(f"[{doc_id}] Embedding {len(chunks)} chunks...")
-                chunks_with_embeddings = processor.embedder.embed_chunks(chunks)
+            # Skip embeddings if this is metadata-only reprocessing
+            if is_reprocess_only:
+                print(f"[{doc_id}] SKIPPING embeddings (metadata-only reprocess mode)")
+                self._update_job_progress_sync(job_id, user_id, 90, "running")
+                self._update_document_progress_sync(doc_id, user_id, 90, "processing")
                 
-                # Extract embeddings from chunks for vector store
-                dense_embeddings = [chunk["embeddings"]["dense"] for chunk in chunks_with_embeddings]
-                sparse_embeddings = [chunk["embeddings"]["sparse"] for chunk in chunks_with_embeddings]
-                
-                print(f"[{doc_id}] Adding chunks to vector store in batches...")
-                processor.vector_store.add_chunks(
-                    doc_id=doc_id,
-                    chunks=chunks_with_embeddings,
-                    dense_embeddings=dense_embeddings,
-                    sparse_embeddings=sparse_embeddings,
-                    batch_size=50  # Process 50 chunks at a time for better performance
-                )
-                chunks_added_count = len(chunks)
-                print(f"[{doc_id}] Successfully added {chunks_added_count} chunks to vector store")
+                # Get existing chunk count from database
+                db_temp = next(get_db())
+                try:
+                    existing_doc = crud.get_document(db_temp, doc_id=doc_id, user_id=user_id)
+                    if existing_doc and hasattr(existing_doc, 'chunk_count'):
+                        chunks_added_count = existing_doc.chunk_count or 0
+                        print(f"[{doc_id}] Preserving existing chunk count: {chunks_added_count}")
+                finally:
+                    db_temp.close()
             else:
-                chunks_added_count = 0
-                print(f"[{doc_id}] Skipping embedding/storing: No embedder or vector store")
+                # Step 4: Generate embeddings (70% progress)
+                print(f"[{doc_id}] Generating embeddings...")
+                self._update_job_progress_sync(job_id, user_id, 70, "running")
+                self._update_document_progress_sync(doc_id, user_id, 70, "processing")
+                
+                # Chunk the content
+                print(f"[{doc_id}] Chunking Markdown content...")
+                chunks = processor.chunker.chunk(markdown_content, doc_metadata=final_metadata)
+                print(f"[{doc_id}] Generated {len(chunks)} chunks")
+                
+                # Step 5: Store in vector database (90% progress)
+                print(f"[{doc_id}] Storing in vector database...")
+                self._update_job_progress_sync(job_id, user_id, 90, "running")
+                self._update_document_progress_sync(doc_id, user_id, 90, "processing")
+                
+                # Embed and store chunks
+                if processor.embedder and processor.vector_store and chunks:
+                    print(f"[{doc_id}] Embedding {len(chunks)} chunks...")
+                    chunks_with_embeddings = processor.embedder.embed_chunks(chunks)
+                    
+                    # Extract embeddings from chunks for vector store
+                    dense_embeddings = [chunk["embeddings"]["dense"] for chunk in chunks_with_embeddings]
+                    sparse_embeddings = [chunk["embeddings"]["sparse"] for chunk in chunks_with_embeddings]
+                    
+                    print(f"[{doc_id}] Adding chunks to vector store in batches...")
+                    processor.vector_store.add_chunks(
+                        doc_id=doc_id,
+                        chunks=chunks_with_embeddings,
+                        dense_embeddings=dense_embeddings,
+                        sparse_embeddings=sparse_embeddings,
+                        batch_size=50  # Process 50 chunks at a time for better performance
+                    )
+                    chunks_added_count = len(chunks)
+                    print(f"[{doc_id}] Successfully added {chunks_added_count} chunks to vector store")
+                else:
+                    chunks_added_count = 0
+                    print(f"[{doc_id}] Skipping embedding/storing: No embedder or vector store")
             
             processing_result = {
                 "doc_id": doc_id,
