@@ -853,6 +853,16 @@ Instructions:
 
         for round_num in range(start_round, num_rounds + 1):
             logger.info(f"--- Starting Research Round {round_num}/{num_rounds} ---")
+            
+            # Update phase display for UI
+            await self.controller.context_manager.update_phase_display(mission_id, {
+                "phase": "Structured Research",
+                "round": round_num,
+                "total_rounds": num_rounds,
+                "step": "Starting round",
+                "progress": ((round_num - 1) / num_rounds) * 100
+            })
+            
             mission_context = self.controller.context_manager.get_mission_context(mission_id)
             if not mission_context or not mission_context.plan:
                 logger.error(f"Mission context or plan missing at start of Round {round_num}. Aborting.")
@@ -958,6 +968,19 @@ Instructions:
                         if not await check_mission_status_async(self.controller, mission_id):
                             logger.info(f"Mission {mission_id} stopped/paused during research cycle {cycle_count+1} for section {section_id}. Stopping research.")
                             return False
+                        
+                        # Update phase display for UI with current section and cycle
+                        await self.controller.context_manager.update_phase_display(mission_id, {
+                            "phase": "Structured Research",
+                            "round": round_num,
+                            "total_rounds": num_rounds,
+                            "section": section.title,
+                            "section_id": section_id,
+                            "cycle": cycle_count + 1,
+                            "max_cycles": max_cycles_per_section,
+                            "step": f"Researching: {section.title}",
+                            "progress": ((round_num - 1) / num_rounds) * 100 + (cycle_count / max_cycles_per_section) * (100 / num_rounds)
+                        })
                         
                         logger.info(f"  Round {round_num} Research cycle {cycle_count+1}/{max_cycles_per_section} for section {section_id}...")
 

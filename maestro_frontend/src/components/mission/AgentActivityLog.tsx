@@ -8,6 +8,7 @@ import { PlanningAgentLog } from './PlanningAgentLog.tsx';
 import { WritingAgentLog } from './WritingAgentLog.tsx';
 import { ReflectionAgentLog } from './ReflectionAgentLog.tsx';
 import { DefaultLogRenderer } from './DefaultLogRenderer.tsx';
+import { PhaseStatusIndicator } from './PhaseStatusIndicator.tsx';
 
 export interface ExecutionLogEntry {
   log_id?: string;  // Unique identifier for each log entry
@@ -136,6 +137,9 @@ export const AgentActivityLog: React.FC<AgentActivityLogProps> = ({
             <span className="text-xs text-muted-foreground bg-secondary px-2 py-1 rounded">
               {logs.length} entries{totalLogs > 0 && totalLogs > logs.length ? ` of ${totalLogs} total` : ''}
             </span>
+          )}
+          {missionId && (missionStatus === 'running' || missionStatus === 'paused') && (
+            <PhaseStatusIndicator missionId={missionId} />
           )}
         </div>
         {(hasMore || (totalLogs > 0 && logs.length < totalLogs)) && onLoadMore && (

@@ -8,6 +8,7 @@ export { DefaultLogRenderer } from './DefaultLogRenderer';
 export { MissionStatsDashboard } from './MissionStatsDashboard';
 export { MissionHeaderStats } from './MissionHeaderStats';
 export { AgentStatusIndicator } from './AgentStatusIndicator';
+export { PhaseStatusIndicator } from './PhaseStatusIndicator';
 export { ActionParser } from './ActionParser';
 export type { ExecutionLogEntry } from './AgentActivityLog';
 export type { ParsedAction } from './ActionParser';

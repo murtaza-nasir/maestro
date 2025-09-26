@@ -642,6 +642,46 @@ async def get_mission_status(
             detail="Failed to get mission status"
         )
 
+@router.get("/missions/{mission_id}/phase-status")
+async def get_mission_phase_status(
+    mission_id: str,
+    current_user: User = Depends(get_current_user_from_cookie),
+    context_mgr: AsyncContextManager = Depends(get_context_manager)
+):
+    """Get current phase status and progress information for a mission."""
+    try:
+        mission_context = context_mgr.get_mission_context(mission_id)
+        if not mission_context:
+            raise HTTPException(
+                status_code=404,
+                detail="Mission not found"
+            )
+        
+        # Get phase display information
+        phase_display = mission_context.current_phase_display or {}
+        
+        # Add some context about the mission
+        phase_status = {
+            "mission_id": mission_id,
+            "status": mission_context.status,
+            "execution_phase": mission_context.execution_phase,
+            "completed_phases": mission_context.completed_phases,
+            "current_phase": phase_display.get("phase", "Unknown"),
+            "phase_details": phase_display,
+            "notes_count": len(mission_context.notes),
+            "has_plan": mission_context.plan is not None
+        }
+        
+        return phase_status
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get mission phase status: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to get mission phase status"
+        )
+
 @router.get("/missions/{mission_id}/stats", response_model=MissionStats)
 async def get_mission_stats(
     mission_id: str,

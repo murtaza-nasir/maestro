@@ -835,6 +835,11 @@ Make sure to address the user's specific concerns and suggestions."""
             # Step 1: Initial Request Analysis
             if "initial_analysis" not in mission_context.completed_phases:
                 await self.context_manager.update_execution_phase(mission_id, "initial_analysis")
+                await self.context_manager.update_phase_display(mission_id, {
+                    "phase": "Initial Analysis",
+                    "step": "Analyzing user request",
+                    "progress": 0
+                })
                 
                 analysis_result = await self.user_interaction_manager.analyze_request_type(
                     mission_id=mission_id,

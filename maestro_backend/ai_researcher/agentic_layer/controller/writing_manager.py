@@ -50,6 +50,15 @@ class WritingManager:
         from ai_researcher.dynamic_config import get_writing_passes
         num_writing_passes = get_writing_passes(mission_id)
         logger.info(f"--- Starting Writing Phase ({num_writing_passes} Passes) for mission {mission_id} ---")
+        
+        # Update phase display for UI
+        await self.controller.context_manager.update_phase_display(mission_id, {
+            "phase": "Writing",
+            "step": "Preparing to write report",
+            "total_passes": num_writing_passes,
+            "progress": 0
+        })
+        
         mission_context = self.controller.context_manager.get_mission_context(mission_id)
         if not mission_context or not mission_context.plan:
             logger.error(f"Cannot start writing phase: Mission context or plan not found for {mission_id}.")

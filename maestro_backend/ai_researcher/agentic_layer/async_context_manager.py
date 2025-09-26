@@ -187,6 +187,9 @@ class MissionContext(BaseModel):
     completed_phases: List[str] = Field(default_factory=list, description="List of completed phases")
     phase_checkpoint: Dict[str, Any] = Field(default_factory=dict, description="Checkpoint data for resuming phases")
     
+    # Current phase tracking for UI display
+    current_phase_display: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Current phase info for UI display")
+    
     # Reference ID mapping for simplified citations
     reference_id_map: Dict[str, str] = Field(default_factory=dict, description="Maps UUID/complex IDs to simple reference IDs (e.g., 'ref1', 'ref2')")
     reverse_reference_map: Dict[str, str] = Field(default_factory=dict, description="Maps simple reference IDs back to original UUIDs")
@@ -1849,3 +1852,34 @@ class AsyncContextManager:
         if mission_id in self._processed_documents_per_mission:
             del self._processed_documents_per_mission[mission_id]
             logger.debug(f"Cleaned up document processing cache for mission {mission_id}")
+    
+    async def update_phase_display(self, mission_id: str, phase_info: Dict[str, Any]):
+        """Update the current phase display information for UI."""
+        mission = self.get_mission_context(mission_id)
+        if mission:
+            mission.current_phase_display = phase_info
+            mission.update_timestamp()
+            
+            # Send WebSocket update for phase change
+            try:
+                from services.websocket_manager import get_websocket_manager
+                ws_manager = get_websocket_manager()
+                
+                phase_update = {
+                    "type": "phase_update",
+                    "phase": phase_info.get("phase", "unknown"),
+                    "details": phase_info
+                }
+                
+                await ws_manager.send_to_mission(mission_id, phase_update)
+                logger.debug(f"Sent phase update for mission {mission_id}: {phase_info}")
+            except Exception as e:
+                logger.error(f"Failed to send phase update via WebSocket: {e}")
+            
+            # Also persist to database
+            async with get_async_db() as db:
+                try:
+                    sanitized_context = sanitize_for_jsonb(mission.model_dump(mode='json'))
+                    await crud.update_mission_context(db, mission_id=mission_id, mission_context=sanitized_context)
+                except Exception as e:
+                    logger.error(f"Database error updating phase display for mission {mission_id}: {e}", exc_info=True)
