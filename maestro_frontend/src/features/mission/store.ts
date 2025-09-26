@@ -412,7 +412,12 @@ export const useMissionStore = create<MissionState>((set, get) => ({
                 source: n.source || undefined,
                 url: n.url || undefined,
                 tags: n.tags || undefined
-              })), 
+              })).sort((a, b) => {
+                // Ensure consistent ordering - newest first
+                const dateA = new Date(a.timestamp).getTime()
+                const dateB = new Date(b.timestamp).getTime()
+                return dateB - dateA
+              }), 
               updatedAt: new Date() 
             }
           : mission
@@ -456,12 +461,17 @@ export const useMissionStore = create<MissionState>((set, get) => ({
           // Only add notes that don't already exist (deduplication)
           const uniqueNewNotes = validatedNewNotes.filter(note => !existingNoteIds.has(note.note_id))
           
+          // Combine and sort all notes by timestamp (newest first to match backend)
+          const allNotes = [...existingNotes, ...uniqueNewNotes]
+          allNotes.sort((a, b) => {
+            const dateA = new Date(a.timestamp).getTime()
+            const dateB = new Date(b.timestamp).getTime()
+            return dateB - dateA // Sort newest first
+          })
+          
           const updatedMission = {
             ...mission,
-            notes: [
-              ...existingNotes, 
-              ...uniqueNewNotes
-            ],
+            notes: allNotes,
             updatedAt: new Date()
           }
 
