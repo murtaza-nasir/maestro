@@ -191,28 +191,30 @@ class BackgroundDocumentProcessor:
     def _get_processor_with_user_settings(self, user_settings: Dict[str, Any]) -> DocumentProcessor:
         """Get or initialize the document processor with user-specific settings (thread-safe)."""
         with self._components_lock:
-            print("Initializing DocumentProcessor with user settings...")
-            embedder = self._get_embedder()
-            vector_store = self._get_vector_store()
+            # Reuse existing processor if available, just update the metadata extractor
+            if self._processor is None:
+                print("Initializing DocumentProcessor with user settings...")
+                embedder = self._get_embedder()
+                vector_store = self._get_vector_store()
+                
+                self._processor = DocumentProcessor(
+                    pdf_dir=self.pdf_dir,
+                    markdown_dir=self.markdown_dir,
+                    metadata_dir=self.metadata_dir,
+                    db_path=self.db_path,
+                    embedder=embedder,
+                    vector_store=vector_store,
+                    force_reembed=False
+                )
+            else:
+                print("Reusing existing DocumentProcessor, updating metadata extractor...")
             
-            # Create a metadata extractor with user settings
+            # Always update the metadata extractor with current user settings
             from ai_researcher.core_rag.metadata_extractor import MetadataExtractor
             metadata_extractor = MetadataExtractor.from_user_settings(user_settings)
+            self._processor.metadata_extractor = metadata_extractor
             
-            processor = DocumentProcessor(
-                pdf_dir=self.pdf_dir,
-                markdown_dir=self.markdown_dir,
-                metadata_dir=self.metadata_dir,
-                db_path=self.db_path,
-                embedder=embedder,
-                vector_store=vector_store,
-                force_reembed=False
-            )
-            
-            # Replace the default metadata extractor with the user-configured one
-            processor.metadata_extractor = metadata_extractor
-            
-            return processor
+            return self._processor
     
     def add_websocket_connection(self, user_id: str, websocket):
         """Add a WebSocket connection for a user."""
