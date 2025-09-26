@@ -170,28 +170,51 @@ Extract the metadata based *only* on the text provided above and return it as JS
         ]
 
         print(f"MetadataExtractor: Sending request to {self.model}...")
+        
+        # Check if this is a GPT-5 model that requires special handling
+        is_gpt5_model = any(x in self.model.lower() for x in ['gpt-5', 'gpt5'])
+        is_openai_api = 'api.openai.com' in self.base_url or 'openai.azure.com' in self.base_url
+        
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=1000, # Adjust as needed
-                temperature=0.1, # Low temperature for factual extraction
-                response_format={
-                    "type": "json_object", # Use json_object type for general JSON
-                    # Note: OpenAI API might support json_schema directly,
-                    # but json_object is more broadly compatible with OpenRouter models
-                    # If using OpenAI directly, you might use:
-                    # "type": "json_schema",
-                    # "json_schema": {
-                    #     "name": "document_metadata",
-                    #     "schema": METADATA_SCHEMA
-                    # }
-                }
-            )
+            if is_gpt5_model and is_openai_api:
+                print(f"MetadataExtractor: Using GPT-5 specific parameters for {self.model}")
+                print(f"MetadataExtractor: Base URL: {self.base_url}")
+                print(f"MetadataExtractor: API key present: {bool(self.api_key)}")
+                # GPT-5 models via OpenAI API require special parameters
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    max_completion_tokens=1000,  # Use max_completion_tokens for GPT-5
+                    # Don't set temperature for GPT-5 (use default)
+                    response_format={
+                        "type": "json_object"
+                    }
+                )
+            else:
+                # Standard parameters for non-GPT-5 models
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    max_tokens=1000, # Adjust as needed
+                    temperature=0.1, # Low temperature for factual extraction
+                    response_format={
+                        "type": "json_object", # Use json_object type for general JSON
+                        # Note: OpenAI API might support json_schema directly,
+                        # but json_object is more broadly compatible with OpenRouter models
+                        # If using OpenAI directly, you might use:
+                        # "type": "json_schema",
+                        # "json_schema": {
+                        #     "name": "document_metadata",
+                        #     "schema": METADATA_SCHEMA
+                        # }
+                    }
+                )
 
             response_content = response.choices[0].message.content
             print("MetadataExtractor: Received response from LLM.")
-            # print(f"Raw LLM Response:\n{response_content}") # Uncomment for debugging
+            print(f"MetadataExtractor: Response content length: {len(response_content) if response_content else 0}")
+            if response_content and len(response_content) < 1000:
+                print(f"MetadataExtractor: Raw response: {response_content[:500]}")  # Show first 500 chars for debugging
 
             if not response_content:
                  print("MetadataExtractor: LLM returned empty content.")
@@ -221,11 +244,13 @@ Extract the metadata based *only* on the text provided above and return it as JS
 
             # --- ADDED VALIDATION ---
             # Check for the 'authors' field as it's also required by the schema
-            if "authors" not in metadata or not metadata["authors"] or not isinstance(metadata["authors"], list) or len(metadata["authors"]) == 0:
-                 print("MetadataExtractor: Error - Extracted metadata missing required 'authors' or 'authors' is empty/invalid.")
-                 # Optionally return partial metadata if title exists but authors are missing
-                 # return {"title": metadata.get("title"), "warning": "Missing authors"}
-                 return None # Fail if required 'authors' are missing or invalid
+            if "authors" not in metadata or not isinstance(metadata["authors"], list):
+                print("MetadataExtractor: Warning - 'authors' field is missing or invalid, using empty list.")
+                metadata["authors"] = []
+            
+            # For web documents, empty authors list is acceptable
+            if len(metadata.get("authors", [])) == 0:
+                print("MetadataExtractor: Note - Empty authors list (common for web documents).")
 
             # Optional: Check for publication_year if you want to be even stricter,
             # but it's not required by the current schema definition.
@@ -239,8 +264,56 @@ Extract the metadata based *only* on the text provided above and return it as JS
             print(f"Raw response content was:\n{response_content}")
             return None
         except openai.APIError as e:
-             print(f"MetadataExtractor: OpenAI API error: {e}")
-             return None
+            print(f"MetadataExtractor: OpenAI API error: {e}")
+            
+            # Check for GPT-5 specific errors and retry with correct parameters
+            error_str = str(e)
+            if is_gpt5_model and is_openai_api and (
+                "max_tokens" in error_str.lower() or 
+                "maximum" in error_str.lower() or
+                "temperature" in error_str.lower()
+            ):
+                print(f"MetadataExtractor: Detected GPT-5 parameter error, retrying with correct parameters...")
+                try:
+                    # Retry with GPT-5 specific parameters
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=messages,
+                        max_completion_tokens=1000,  # Use max_completion_tokens for GPT-5
+                        # Don't set temperature for GPT-5
+                        response_format={
+                            "type": "json_object"
+                        }
+                    )
+                    response_content = response.choices[0].message.content
+                    print("MetadataExtractor: GPT-5 retry successful")
+                    
+                    if not response_content:
+                        print("MetadataExtractor: LLM returned empty content on retry.")
+                        return None
+                    
+                    metadata = json.loads(response_content)
+                    print("MetadataExtractor: Successfully parsed JSON response from GPT-5 retry.")
+                    
+                    # Validate the metadata
+                    if not isinstance(metadata, dict):
+                        print(f"MetadataExtractor: LLM response is not a JSON object: {type(metadata)}")
+                        return None
+                    if "title" not in metadata or not metadata["title"]:
+                        print("MetadataExtractor: Error - Extracted metadata missing required 'title'.")
+                        return None
+                    
+                    # Allow empty authors for web documents
+                    if "authors" not in metadata or not isinstance(metadata["authors"], list):
+                        print("MetadataExtractor: Warning - 'authors' field is missing or invalid in retry, using empty list.")
+                        metadata["authors"] = []
+                    
+                    return metadata
+                    
+                except Exception as retry_e:
+                    print(f"MetadataExtractor: GPT-5 retry failed: {retry_e}")
+                    return None
+            return None
         except Exception as e:
             print(f"MetadataExtractor: An unexpected error occurred: {e}")
             return None
