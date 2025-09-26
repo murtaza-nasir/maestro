@@ -46,3 +46,5 @@ pytz
 pypandoc
 typer
 rich
+html2text
+beautifulsoup4

@@ -392,6 +392,42 @@ class BaseAgent(ABC):
             print(f"DEBUG ({self.agent_name}): PRE-REGISTRY CALL for '{tool_name}'. Filepath value: '{final_filepath}'")
             # --- END PRE-REGISTRY CALL DEBUG ---
 
+            # --- CHECK FOR ARXIV URLs WHEN FETCHING WEB PAGES ---
+            if tool_name == "fetch_web_page_content" and "url" in tool_arguments:
+                url = tool_arguments["url"]
+                # Check if this is an arXiv URL
+                from ai_researcher.agentic_layer.tools.arxiv_fetcher_tool import ArXivFetcherTool
+                is_arxiv, arxiv_id = ArXivFetcherTool.is_arxiv_url(url)
+                print(f"DEBUG: Checking URL '{url}' - is_arxiv={is_arxiv}, arxiv_id={arxiv_id}")
+                if is_arxiv:
+                    print(f"{self.agent_name}: Detected arXiv URL, using specialized arXiv fetcher for: {url} (ID: {arxiv_id})")
+                    # Create and execute the arXiv fetcher
+                    arxiv_fetcher = ArXivFetcherTool()
+                    result = await arxiv_fetcher.execute(
+                        url=url,
+                        update_callback=update_callback,
+                        log_queue=log_queue,
+                        mission_id=getattr(self, 'mission_id', None)
+                    )
+                    # Log the arXiv fetch as a successful tool execution
+                    if log_queue and update_callback and hasattr(self, 'mission_id') and self.mission_id:
+                        context_manager = None
+                        if hasattr(self, 'controller') and self.controller and hasattr(self.controller, 'context_manager'):
+                            context_manager = self.controller.context_manager
+                        if context_manager:
+                            await context_manager.log_execution_step(
+                                mission_id=self.mission_id,
+                                agent_name=self.agent_name,
+                                action=f"Fetch arXiv Paper: {arxiv_id}",
+                                input_summary=url,
+                                output_summary="arXiv paper fetched successfully" if "error" not in result else result.get("error", "Failed"),
+                                status="success" if "error" not in result else "failure",
+                                log_queue=log_queue,
+                                update_callback=update_callback
+                            )
+                    return result
+            # --- END ARXIV CHECK ---
+
             # Get the tool definition
             tool_def = registry_to_use.get_tool(tool_name)
             if not tool_def:
