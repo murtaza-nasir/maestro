@@ -232,7 +232,6 @@ async def upload_document(
         db.refresh(new_document)
         
         # Trigger document processing (send to background processor)
-        from api.websockets import send_document_update
         await send_document_update(str(current_user.id), {
             "type": "document_uploaded",
             "doc_id": doc_id,
@@ -306,16 +305,31 @@ async def upload_document_to_group(
         if existing:
             # Document already exists, just add to group if not already there
             # Check if already in group
-            from sqlalchemy import and_
-            existing_in_group = db.query(models.DocumentGroupAssociation).filter(
-                and_(
-                    models.DocumentGroupAssociation.document_id == existing.id,
-                    models.DocumentGroupAssociation.document_group_id == group_id
+            from sqlalchemy import and_, select
+            existing_in_group = db.execute(
+                select(models.document_group_association).where(
+                    and_(
+                        models.document_group_association.c.document_id == existing.id,
+                        models.document_group_association.c.document_group_id == group_id
+                    )
                 )
             ).first()
             
             if existing_in_group:
                 # Already in this group
+                # Send WebSocket update for duplicate document
+                await send_document_update(str(current_user.id), {
+                    "type": "document_progress",
+                    "doc_id": str(existing.id),
+                    "document_id": str(existing.id),
+                    "progress": 100,
+                    "status": "completed",
+                    "message": f"Document already exists in this group",
+                    "filename": existing.filename,
+                    "is_duplicate": True,
+                    "already_in_group": True
+                })
+                
                 return JSONResponse(
                     status_code=409,
                     content={
@@ -331,6 +345,21 @@ async def upload_document_to_group(
             else:
                 # Add to group
                 crud.add_document_to_group(db, group_id=group_id, doc_id=str(existing.id), user_id=current_user.id)
+                
+                # Send WebSocket update for existing document
+                await send_document_update(str(current_user.id), {
+                    "type": "document_progress",
+                    "doc_id": str(existing.id),
+                    "document_id": str(existing.id),
+                    "progress": 100,
+                    "status": "completed",
+                    "message": f"Document already exists, added to group",
+                    "filename": existing.filename,
+                    "is_duplicate": True,
+                    "already_in_group": False,
+                    "added_to_group": True
+                })
+                
                 return JSONResponse(
                     status_code=200,
                     content={
@@ -383,7 +412,6 @@ async def upload_document_to_group(
         crud.add_document_to_group(db, group_id=group_id, doc_id=doc_id, user_id=current_user.id)
         
         # Trigger document processing (send to background processor)
-        from api.websockets import send_document_update
         await send_document_update(str(current_user.id), {
             "type": "document_uploaded",
             "doc_id": doc_id,

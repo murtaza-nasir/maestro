@@ -72,6 +72,14 @@ export const UploadProgressToast: React.FC<UploadProgressToastProps> = ({
       case 'processing':
         return `Processing... ${file.progress}%`;
       case 'completed':
+        // Check if this was a duplicate document
+        if (file.isDuplicate && file.addedToGroup) {
+          return 'Document already exists, added to group';
+        } else if (file.isDuplicate) {
+          return 'Document already exists in group';
+        } else if (file.message) {
+          return file.message;
+        }
         return 'Upload complete';
       case 'cancelled':
         return 'Cancelled by user';

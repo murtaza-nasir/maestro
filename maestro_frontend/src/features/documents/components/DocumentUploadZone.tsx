@@ -9,6 +9,9 @@ export interface UploadFile {
   progress: number;
   error?: string;
   documentId?: string;
+  message?: string;
+  isDuplicate?: boolean;
+  addedToGroup?: boolean;
 }
 
 interface DocumentUploadZoneProps {

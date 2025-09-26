@@ -29,7 +29,10 @@ export const DocumentUploadProvider: React.FC<{ children: React.ReactNode }> = (
               status: progress.status,
               progress: progress.progress,
               error: progress.error,
-              documentId: progress.documentId
+              documentId: progress.documentId,
+              message: progress.message,
+              isDuplicate: progress.isDuplicate,
+              addedToGroup: progress.addedToGroup
             }
           : file
       )

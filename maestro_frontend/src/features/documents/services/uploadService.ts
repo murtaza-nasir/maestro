@@ -11,6 +11,9 @@ export interface UploadProgress {
   status: 'uploading' | 'processing' | 'completed' | 'error';
   error?: string;
   documentId?: string;
+  message?: string;
+  isDuplicate?: boolean;
+  addedToGroup?: boolean;
 }
 
 interface ProgressCallback {
@@ -123,7 +126,10 @@ export class UploadService {
             progress: data.progress || 0,
             status: data.status || 'processing',
             error: data.error,
-            documentId: docId
+            documentId: docId,
+            message: data.message,
+            isDuplicate: data.is_duplicate,
+            addedToGroup: data.added_to_group
           };
           
           // Map status values
@@ -316,24 +322,63 @@ export class UploadService {
           this.progressCallbacks.set(fileId, { ...callbackInfo, docId });
         }
         
-        // Send initial progress update
-        onProgress({
-          fileId: fileId,
-          progress: 10,
-          status: 'processing',
-          documentId: docId
-        });
+        // Check if this is an existing document that was just added to the group
+        if (response.data.status === 'existing') {
+          // Document already exists and was added to group, mark as complete immediately
+          onProgress({
+            fileId: fileId,
+            progress: 100,
+            status: 'completed',
+            documentId: docId,
+            message: 'Document already exists, added to group',
+            isDuplicate: true,
+            addedToGroup: true
+          });
+        } else {
+          // New document, send initial processing update
+          onProgress({
+            fileId: fileId,
+            progress: 10,
+            status: 'processing',
+            documentId: docId
+          });
+        }
       }
     } catch (error: any) {
       console.error('Upload error:', error);
       
-      // Handle duplicate file error (409) with user-friendly message
+      // Handle duplicate file error (409) specially - it's actually a success case
+      if (error.response?.status === 409) {
+        const responseData = error.response.data;
+        const docId = responseData?.id || responseData?.existing_document_id;
+        
+        if (docId) {
+          // Update callback mappings for WebSocket
+          const callbackInfo = this.progressCallbacks.get(fileId);
+          if (callbackInfo) {
+            this.progressCallbacks.delete(fileId);
+            this.progressCallbacks.set(docId, { ...callbackInfo, docId });
+            this.progressCallbacks.set(fileId, { ...callbackInfo, docId });
+          }
+        }
+        
+        // Mark as completed since it's already in the group
+        onProgress({
+          fileId: fileId,
+          progress: 100,
+          status: 'completed',
+          documentId: docId || fileId,
+          message: 'Document already exists in group',
+          isDuplicate: true,
+          addedToGroup: false
+        });
+        return; // Not really an error, just a duplicate
+      }
+      
+      // Handle other errors
       let errorMessage = 'Upload failed';
       
-      if (error.response?.status === 409) {
-        const duplicateFilename = error.response.data?.filename || file.name;
-        errorMessage = `This file has already been uploaded: ${duplicateFilename}`;
-      } else if (error.response?.data?.detail) {
+      if (error.response?.data?.detail) {
         errorMessage = error.response.data.detail;
       } else if (error.message) {
         errorMessage = error.message;
