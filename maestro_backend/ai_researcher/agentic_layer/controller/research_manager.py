@@ -954,6 +954,11 @@ Instructions:
                     cycle_count = refinement_iterations_this_round.get(section_id, 0)
 
                     while cycle_count < max_cycles_per_section and not section_fully_refined:
+                        # Check mission status before each research cycle
+                        if not await check_mission_status_async(self.controller, mission_id):
+                            logger.info(f"Mission {mission_id} stopped/paused during research cycle {cycle_count+1} for section {section_id}. Stopping research.")
+                            return False
+                        
                         logger.info(f"  Round {round_num} Research cycle {cycle_count+1}/{max_cycles_per_section} for section {section_id}...")
 
                         # Fetch context needed for ResearchAgent.run
@@ -1082,6 +1087,11 @@ Instructions:
                             update_callback=update_callback,
                             pass_num=round_num
                         )
+
+                        # Check mission status after reflection to avoid unnecessary processing
+                        if not await check_mission_status_async(self.controller, mission_id):
+                            logger.info(f"Mission {mission_id} stopped/paused after reflection for section {section_id}. Stopping research.")
+                            return False
 
                         if reflection_output:
                             round_reflection_outputs.append((section_id, reflection_output))
