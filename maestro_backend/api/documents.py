@@ -630,8 +630,8 @@ async def read_user_document_groups(
     Retrieve all document groups for the current user with document counts.
     Returns lightweight summaries without document data to reduce payload size.
     """
-    # Get groups without eager loading documents
-    query = db.query(models.DocumentGroup).filter_by(user_id=current_user.id)
+    # Get groups without eager loading documents, ordered by most recently updated first
+    query = db.query(models.DocumentGroup).filter_by(user_id=current_user.id).order_by(models.DocumentGroup.updated_at.desc())
     groups = query.offset(skip).limit(limit).all()
     
     # Convert to lightweight summaries

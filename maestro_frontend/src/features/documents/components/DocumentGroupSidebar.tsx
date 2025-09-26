@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Plus, 
   Search,
@@ -33,31 +33,64 @@ export const DocumentGroupSidebar: React.FC<DocumentGroupSidebarProps> = ({
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [groupToDelete, setGroupToDelete] = useState<{ id: string; name: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const pageSize = 20;
 
   useEffect(() => {
-    fetchGroups();
+    fetchGroups(0);
   }, []);
 
   // Listen for refresh signals from the context
   useEffect(() => {
     if (groupsRefreshKey > 0) {
-      fetchGroups();
+      fetchGroups(0);
+      setCurrentPage(0);
+      setHasMore(true);
     }
   }, [groupsRefreshKey]);
 
-  const fetchGroups = async () => {
+  const fetchGroups = async (page: number = 0, append: boolean = false) => {
     try {
-      setLoading(true);
-      const groups = await getDocumentGroups();
-      setDocumentGroups(groups);
+      if (page === 0) {
+        setLoading(true);
+      } else {
+        setIsLoadingMore(true);
+      }
+      
+      const skip = page * pageSize;
+      const groups = await getDocumentGroups(skip, pageSize);
+      
+      if (append) {
+        setDocumentGroups(prev => [...prev, ...groups]);
+      } else {
+        setDocumentGroups(groups);
+      }
+      
+      // Check if we have more pages
+      setHasMore(groups.length === pageSize);
+      setCurrentPage(page);
       setError(null);
     } catch (err) {
       setError('Failed to fetch document groups.');
       console.error(err);
     } finally {
       setLoading(false);
+      setIsLoadingMore(false);
     }
   };
+  
+  // Handle scroll to load more
+  const handleScroll = useCallback(() => {
+    if (!scrollContainerRef.current || isLoadingMore || !hasMore || loading) return;
+    
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+    if (scrollTop + clientHeight >= scrollHeight - 100) {
+      fetchGroups(currentPage + 1, true);
+    }
+  }, [currentPage, isLoadingMore, hasMore, loading]);
 
   const filteredGroups = documentGroups.filter(group =>
     group.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -69,7 +102,10 @@ export const DocumentGroupSidebar: React.FC<DocumentGroupSidebarProps> = ({
       const newGroup = await createDocumentGroup(newGroupName);
       setNewGroupName('');
       setShowCreateForm(false);
-      await fetchGroups();
+      // Refresh from the beginning to show the new group at the top
+      await fetchGroups(0);
+      setCurrentPage(0);
+      setHasMore(true);
       // Automatically select the newly created group
       const groupWithCount = { ...newGroup, document_count: 0 };
       onSelectGroup(groupWithCount);
@@ -90,7 +126,10 @@ export const DocumentGroupSidebar: React.FC<DocumentGroupSidebarProps> = ({
     if (editTitle.trim()) {
       try {
         await renameDocumentGroup(groupId, editTitle.trim());
-        await fetchGroups();
+        // Refresh current data without resetting pagination
+        await fetchGroups(0);
+        setCurrentPage(0);
+        setHasMore(true);
         refreshGroups(); // Notify other components about the group name change
       } catch (err) {
         setError('Failed to rename document group.');
@@ -118,7 +157,10 @@ export const DocumentGroupSidebar: React.FC<DocumentGroupSidebarProps> = ({
     try {
       setIsDeleting(true);
       await deleteDocumentGroup(groupToDelete.id);
-      await fetchGroups();
+      // Refresh from the beginning after deletion
+      await fetchGroups(0);
+      setCurrentPage(0);
+      setHasMore(true);
       refreshGroups(); // Notify other components about the group deletion
       if (selectedGroup?.id === groupToDelete.id) {
         onSelectGroup(null);
@@ -253,7 +295,11 @@ export const DocumentGroupSidebar: React.FC<DocumentGroupSidebarProps> = ({
       )}
 
       {/* Groups List */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div 
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto p-4"
+        onScroll={handleScroll}
+      >
         {/* All Documents Option */}
         <div
           className={`group relative p-3 rounded-lg cursor-pointer border transition-colors mb-3 ${
@@ -300,7 +346,8 @@ export const DocumentGroupSidebar: React.FC<DocumentGroupSidebarProps> = ({
             )}
           </div>
         ) : (
-          <div className="space-y-1">
+          <>
+            <div className="space-y-1">
             {filteredGroups.map((group) => {
               const isActive = selectedGroup?.id === group.id;
               
@@ -353,7 +400,22 @@ export const DocumentGroupSidebar: React.FC<DocumentGroupSidebarProps> = ({
                 />
               )
             })}
-          </div>
+            </div>
+            
+            {/* Loading more indicator */}
+            {isLoadingMore && (
+              <div className="text-center py-4">
+                <div className="text-text-secondary text-sm">Loading more groups...</div>
+              </div>
+            )}
+            
+            {/* No more groups indicator */}
+            {!hasMore && documentGroups.length > 0 && (
+              <div className="text-center py-4">
+                <div className="text-text-tertiary text-xs">No more groups to load</div>
+              </div>
+            )}
+          </>
         )}
       </div>
       </div>

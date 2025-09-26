@@ -12,9 +12,14 @@ export const getFilterOptions = async (groupId?: string): Promise<{
   return response.data;
 };
 
-export const getDocumentGroups = async (): Promise<DocumentGroupWithCount[]> => {
+export const getDocumentGroups = async (skip: number = 0, limit: number = 100): Promise<DocumentGroupWithCount[]> => {
   // Now returns lightweight summaries without document data
-  const response = await apiClient.get('/api/document-groups/');
+  const response = await apiClient.get('/api/document-groups/', {
+    params: {
+      skip,
+      limit
+    }
+  });
   return response.data;
 };
 

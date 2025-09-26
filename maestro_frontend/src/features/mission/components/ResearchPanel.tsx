@@ -402,23 +402,21 @@ export const ResearchPanel: React.FC = () => {
       <PanelHeader
         title="Research Mission"
         subtitle={
-          <div className="flex flex-col space-y-2">
-            {/* First row: Status badge */}
-            <div className="flex items-center space-x-2 px-2 py-0.5 bg-muted/50 rounded-md w-fit">
-              <div className={`w-2.5 h-2.5 rounded-full ${getStatusColor(currentMission?.status)}`}></div>
-              <span className="text-sm font-medium">{getStatusText(currentMission?.status)}</span>
-            </div>
-            {/* Second row: Stats - shown below status */}
-            <MissionHeaderStats 
-              missionId={activeChat?.missionId}
-              logs={activeChat?.missionId ? (missionLogs[activeChat.missionId] || []) : []} 
-              missionStatus={currentMission?.status} 
-            />
-          </div>
+          <MissionHeaderStats 
+            missionId={activeChat?.missionId}
+            logs={activeChat?.missionId ? (missionLogs[activeChat.missionId] || []) : []} 
+            missionStatus={currentMission?.status} 
+          />
         }
         icon={<FileSearch className="h-5 w-5 text-primary" />}
         actions={
           <div className="flex items-center space-x-4">
+            {/* Status indicator on the right */}
+            <div className="flex items-center space-x-2 px-2 py-0.5 bg-muted/50 rounded-md">
+              <div className={`w-2.5 h-2.5 rounded-full ${getStatusColor(currentMission?.status)}`}></div>
+              <span className="text-sm font-medium">{getStatusText(currentMission?.status)}</span>
+            </div>
+            
             <div className="flex items-center space-x-2">
               {currentMission?.status && (
                 <>
