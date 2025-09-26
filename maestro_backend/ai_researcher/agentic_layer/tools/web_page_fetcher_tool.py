@@ -89,7 +89,22 @@ class WebPageFetcherTool:
             A dictionary containing the extracted text under the key 'text', 'title', and 'metadata' on success,
             or a dictionary with an 'error' key on failure.
         """
-        # Check if we should use Jina fetcher
+        # FIRST: Check if this is an arXiv URL - this takes priority over fetch provider
+        # ArXiv papers should always use the specialized fetcher regardless of provider setting
+        from ai_researcher.agentic_layer.tools.arxiv_fetcher_tool import ArXivFetcherTool
+        is_arxiv, arxiv_id = ArXivFetcherTool.is_arxiv_url(url)
+        
+        if is_arxiv:
+            logger.info(f"Detected arXiv URL, using specialized ArXiv fetcher for paper ID: {arxiv_id}")
+            try:
+                if not hasattr(self, '_arxiv_fetcher'):
+                    self._arxiv_fetcher = ArXivFetcherTool()
+                return await self._arxiv_fetcher.execute(url, update_callback, log_queue, mission_id)
+            except Exception as e:
+                logger.error(f"ArXiv fetcher failed, falling back to regular fetching: {e}")
+                # Continue with regular fetching if ArXiv fetcher fails
+        
+        # SECOND: Check which web fetch provider to use for non-arXiv URLs
         fetch_provider = get_web_fetch_provider(mission_id)
         
         # If Jina is explicitly requested, use it directly

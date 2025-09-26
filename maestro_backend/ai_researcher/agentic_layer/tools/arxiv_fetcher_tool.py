@@ -587,12 +587,15 @@ class ArXivFetcherTool:
             
             logger.info(f"Successfully fetched arXiv paper: {metadata['title']} ({len(text)} chars)")
             
+            # Return in the same format as web_page_fetcher_tool for consistency
             return {
                 "text": text,
                 "title": metadata["title"],
                 "metadata": formatted_metadata,
                 "source": "arxiv",
-                "fetched_via": f"arxiv_{fetch_method}"
+                "fetched_via": f"arxiv_{fetch_method}",
+                "extracted_metadata": formatted_metadata,  # Include for compatibility
+                "url": url  # Include original URL
             }
             
         except Exception as e:
