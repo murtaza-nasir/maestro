@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import models
 from database import async_crud as crud  # Use async CRUD operations
 from database.async_database import get_async_db
+from utils.text_sanitizer import sanitize_for_jsonb
 
 # Use absolute imports starting from the top-level package 'ai_researcher'
 from ai_researcher.config import get_current_time
@@ -983,13 +984,14 @@ class AsyncContextManager:
         """Logs a step in the mission execution process and optionally calls a callback with the queue."""
         mission = self.get_mission_context(mission_id)
         if mission:
-            # --- Make detailed fields serializable BEFORE creating ExecutionLogEntry ---
-            serializable_input = _make_serializable(full_input)
-            serializable_output = _make_serializable(full_output)
-            serializable_model_details = _make_serializable(model_details)
-            serializable_tool_calls = _make_serializable(tool_calls)
-            # file_interactions is already List[str], should be fine
-            # --- End serialization step ---
+            # --- Make detailed fields serializable and sanitized BEFORE creating ExecutionLogEntry ---
+            serializable_input = sanitize_for_jsonb(_make_serializable(full_input)) if full_input else None
+            serializable_output = sanitize_for_jsonb(_make_serializable(full_output)) if full_output else None
+            serializable_model_details = sanitize_for_jsonb(_make_serializable(model_details)) if model_details else None
+            serializable_tool_calls = sanitize_for_jsonb(_make_serializable(tool_calls)) if tool_calls else None
+            # file_interactions is already List[str], but sanitize it too
+            file_interactions = sanitize_for_jsonb(file_interactions) if file_interactions else None
+            # --- End serialization and sanitization step ---
 
             try: # Add try-except around ExecutionLogEntry creation for robustness
                 log_entry = ExecutionLogEntry(
@@ -1071,6 +1073,13 @@ class AsyncContextManager:
                         chat = await crud.get_chat(db, chat_id=mission_db.chat_id, user_id=1)  # Need to get user_id properly
                         user_id = chat.user_id if chat else 1
                         
+                        # Sanitize all JSONB fields before saving to database
+                        sanitized_full_input = sanitize_for_jsonb(log_entry.full_input) if log_entry.full_input else None
+                        sanitized_full_output = sanitize_for_jsonb(log_entry.full_output) if log_entry.full_output else None
+                        sanitized_model_details = sanitize_for_jsonb(log_entry.model_details) if log_entry.model_details else None
+                        sanitized_tool_calls = sanitize_for_jsonb(log_entry.tool_calls) if log_entry.tool_calls else None
+                        sanitized_file_interactions = sanitize_for_jsonb(log_entry.file_interactions) if log_entry.file_interactions else None
+                        
                         # Create execution log entry in database - matching sync version signature
                         await crud.create_execution_log(
                             db=db,
@@ -1082,11 +1091,11 @@ class AsyncContextManager:
                             output_summary=log_entry.output_summary,
                             status=log_entry.status,
                             error_message=log_entry.error_message,
-                            full_input=log_entry.full_input,
-                            full_output=log_entry.full_output,
-                            model_details=log_entry.model_details,
-                            tool_calls=log_entry.tool_calls,
-                            file_interactions=log_entry.file_interactions,
+                            full_input=sanitized_full_input,
+                            full_output=sanitized_full_output,
+                            model_details=sanitized_model_details,
+                            tool_calls=sanitized_tool_calls,
+                            file_interactions=sanitized_file_interactions,
                             cost=cost,
                             prompt_tokens=prompt_tokens,
                             completion_tokens=completion_tokens,
