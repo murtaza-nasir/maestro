@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, ChevronRight } from 'lucide-react';
+import { Activity, Loader2, PlayCircle, PauseCircle, CheckCircle } from 'lucide-react';
+import { Card } from '../ui/card';
 
 interface PhaseDetails {
   phase?: string;
@@ -64,10 +65,12 @@ export const PhaseStatusIndicator: React.FC<PhaseStatusIndicatorProps> = ({ miss
 
   if (isLoading && !phaseStatus) {
     return (
-      <div className="flex items-center space-x-1 text-xs text-muted-foreground">
-        <Activity className="h-3 w-3 animate-spin" />
-        <span>Loading phase...</span>
-      </div>
+      <Card className="bg-secondary/50 border-muted/50 p-2">
+        <div className="flex items-center space-x-2 text-xs">
+          <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+          <span className="text-muted-foreground">Loading phase information...</span>
+        </div>
+      </Card>
     );
   }
 
@@ -77,55 +80,104 @@ export const PhaseStatusIndicator: React.FC<PhaseStatusIndicatorProps> = ({ miss
 
   const { phase_details } = phaseStatus;
   
-  // Build the phase display string
-  let phaseDisplay = phase_details.phase || phaseStatus.execution_phase || 'Unknown';
-  
-  // Add round information if available
-  if (phase_details.round && phase_details.total_rounds) {
-    phaseDisplay = `${phaseDisplay} (Round ${phase_details.round}/${phase_details.total_rounds})`;
-  }
-  
-  // Add section and cycle information if available
-  if (phase_details.section) {
-    if (phase_details.cycle && phase_details.max_cycles) {
-      phaseDisplay = `${phaseDisplay} - ${phase_details.section} (Cycle ${phase_details.cycle}/${phase_details.max_cycles})`;
-    } else {
-      phaseDisplay = `${phaseDisplay} - ${phase_details.section}`;
-    }
-  } else if (phase_details.step) {
-    phaseDisplay = `${phaseDisplay} - ${phase_details.step}`;
-  }
-
-  // Get progress color based on status
-  const getProgressColor = () => {
-    if (phaseStatus.status === 'completed') return 'text-green-500';
-    if (phaseStatus.status === 'failed') return 'text-red-500';
-    if (phaseStatus.status === 'paused') return 'text-yellow-500';
-    return 'text-blue-500';
+  // Get status icon and color scheme
+  const getStatusIcon = () => {
+    if (phaseStatus.status === 'completed') return <CheckCircle className="h-3 w-3" />;
+    if (phaseStatus.status === 'paused') return <PauseCircle className="h-3 w-3" />;
+    if (phaseStatus.status === 'running') return <PlayCircle className="h-3 w-3" />;
+    return <Activity className="h-3 w-3" />;
   };
 
-  return (
-    <div className="flex items-center space-x-2 text-xs">
-      <ChevronRight className="h-3 w-3 text-muted-foreground" />
-      <div className="flex items-center space-x-2">
-        <span className="text-muted-foreground">Phase:</span>
-        <span className={`font-medium ${getProgressColor()}`}>
-          {phaseDisplay}
+  const getStatusColor = () => {
+    if (phaseStatus.status === 'completed') return 'text-green-500 dark:text-green-400';
+    if (phaseStatus.status === 'failed') return 'text-red-500 dark:text-red-400';
+    if (phaseStatus.status === 'paused') return 'text-yellow-500 dark:text-yellow-400';
+    return 'text-blue-500 dark:text-blue-400';
+  };
+
+  const getProgressBarColor = () => {
+    if (phaseStatus.status === 'completed') return 'bg-green-500 dark:bg-green-400';
+    if (phaseStatus.status === 'failed') return 'bg-red-500 dark:bg-red-400';
+    if (phaseStatus.status === 'paused') return 'bg-yellow-500 dark:bg-yellow-400';
+    return 'bg-blue-500 dark:bg-blue-400';
+  };
+
+  // Build phase display components
+  const phaseInfo = [];
+  
+  if (phase_details.phase) {
+    phaseInfo.push(
+      <span key="phase" className="font-medium">
+        {phase_details.phase}
+      </span>
+    );
+  }
+  
+  if (phase_details.round && phase_details.total_rounds) {
+    phaseInfo.push(
+      <span key="round" className="text-muted-foreground">
+        Round {phase_details.round}/{phase_details.total_rounds}
+      </span>
+    );
+  }
+  
+  if (phase_details.section) {
+    phaseInfo.push(
+      <span key="section" className="text-primary/80">
+        {phase_details.section}
+      </span>
+    );
+    
+    if (phase_details.cycle && phase_details.max_cycles) {
+      phaseInfo.push(
+        <span key="cycle" className="text-muted-foreground">
+          Cycle {phase_details.cycle}/{phase_details.max_cycles}
         </span>
+      );
+    }
+  } else if (phase_details.step) {
+    phaseInfo.push(
+      <span key="step" className="text-muted-foreground italic">
+        {phase_details.step}
+      </span>
+    );
+  }
+
+  return (
+    <Card className="bg-secondary/30 border-muted/50 p-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <div className={`flex items-center space-x-1.5 ${getStatusColor()}`}>
+            {getStatusIcon()}
+            <span className="text-xs font-medium uppercase tracking-wider">
+              {phaseStatus.status === 'running' ? 'Processing' : phaseStatus.status}
+            </span>
+          </div>
+          
+          <div className="flex items-center space-x-2 text-xs">
+            {phaseInfo.map((item, index) => (
+              <React.Fragment key={index}>
+                {index > 0 && <span className="text-muted-foreground">•</span>}
+                {item}
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+        
         {phase_details.progress !== undefined && (
-          <div className="flex items-center space-x-1">
-            <div className="w-16 h-1.5 bg-secondary rounded-full overflow-hidden">
+          <div className="flex items-center space-x-2">
+            <div className="w-32 h-1.5 bg-secondary rounded-full overflow-hidden">
               <div 
-                className={`h-full ${getProgressColor()} bg-current transition-all duration-300`}
+                className={`h-full ${getProgressBarColor()} transition-all duration-300`}
                 style={{ width: `${Math.min(100, Math.max(0, phase_details.progress))}%` }}
               />
             </div>
-            <span className="text-muted-foreground">
+            <span className="text-xs text-muted-foreground font-mono">
               {Math.round(phase_details.progress || 0)}%
             </span>
           </div>
         )}
       </div>
-    </div>
+    </Card>
   );
 };

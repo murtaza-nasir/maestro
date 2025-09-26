@@ -129,42 +129,44 @@ export const AgentActivityLog: React.FC<AgentActivityLogProps> = ({
 
   return (
     <div className="flex flex-col h-full max-h-full overflow-hidden space-y-2">
-      <div className="flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center space-x-2">
-          <Bot className="h-4 w-4 text-primary" />
-          <h3 className="text-base font-semibold text-foreground">Agent Activity Log</h3>
-          {logs.length > 0 && (
-            <span className="text-xs text-muted-foreground bg-secondary px-2 py-1 rounded">
-              {logs.length} entries{totalLogs > 0 && totalLogs > logs.length ? ` of ${totalLogs} total` : ''}
-            </span>
-          )}
-          {missionId && (missionStatus === 'running' || missionStatus === 'paused') && (
-            <PhaseStatusIndicator missionId={missionId} />
-          )}
-        </div>
-        {(hasMore || (totalLogs > 0 && logs.length < totalLogs)) && onLoadMore && (
-          <div className="flex gap-2">
-            <Button
-              onClick={onLoadMore}
-              disabled={isLoadingMore || (!hasMore && logs.length >= totalLogs)}
-              variant="outline"
-              size="sm"
-              className="text-xs h-7"
-            >
-              {isLoadingMore ? 'Loading...' : 'Load More'}
-            </Button>
-            {hasMore && onLoadAll && (
+      <div className="flex flex-col space-y-2 flex-shrink-0">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <Bot className="h-4 w-4 text-primary" />
+            <h3 className="text-base font-semibold text-foreground">Agent Activity Log</h3>
+            {logs.length > 0 && (
+              <span className="text-xs text-muted-foreground bg-secondary px-2 py-1 rounded">
+                {logs.length} entries{totalLogs > 0 && totalLogs > logs.length ? ` of ${totalLogs} total` : ''}
+              </span>
+            )}
+          </div>
+          {(hasMore || (totalLogs > 0 && logs.length < totalLogs)) && onLoadMore && (
+            <div className="flex gap-2">
               <Button
-                onClick={onLoadAll}
-                disabled={isLoadingMore}
+                onClick={onLoadMore}
+                disabled={isLoadingMore || (!hasMore && logs.length >= totalLogs)}
                 variant="outline"
                 size="sm"
                 className="text-xs h-7"
               >
-                Load All
+                {isLoadingMore ? 'Loading...' : 'Load More'}
               </Button>
-            )}
-          </div>
+              {hasMore && onLoadAll && (
+                <Button
+                  onClick={onLoadAll}
+                  disabled={isLoadingMore}
+                  variant="outline"
+                  size="sm"
+                  className="text-xs h-7"
+                >
+                  Load All
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+        {missionId && (missionStatus === 'running' || missionStatus === 'paused') && (
+          <PhaseStatusIndicator missionId={missionId} />
         )}
       </div>
 
