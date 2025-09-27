@@ -23,6 +23,17 @@ Tongyi DeepResearch is Alibaba's specialized agentic model designed for long-hor
     
     [:octicons-arrow-right-24: Read Report](llm-business-analytics.md)
 
+-   **Beyond Limits: Superconductors, Quantum Computing & EV Batteries**
+    
+    ---
+    
+    **Style:** Popular science with technical depth  
+    **Length:** Extended research report
+    
+    Comprehensive analysis of breakthrough technologies in room-temperature superconductors, quantum computing advancements, and next-generation EV battery technologies.
+    
+    [:octicons-arrow-right-24: Read Report](superconductors-quantum-ev-batteries.md)
+
 </div>
 
 ## Model Performance

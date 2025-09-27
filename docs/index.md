@@ -7,7 +7,7 @@
   
   <div style="margin-top: 1rem;">
     <a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="License: AGPL v3"/></a>
-    <a href="https://github.com/murtaza-nasir/maestro.git"><img src="https://img.shields.io/badge/Version-0.1.7--alpha-green.svg" alt="Version"/></a>
+    <a href="https://github.com/murtaza-nasir/maestro.git"><img src="https://img.shields.io/badge/Version-0.1.8--alpha-green.svg" alt="Version"/></a>
     <a href="https://hub.docker.com/r/murtaza-nasir/maestro"><img src="https://img.shields.io/badge/Docker-Ready-blue.svg" alt="Docker"/></a>
   </div>
 </div>
@@ -238,7 +238,19 @@ graph TB
 
 <div class="grid cards" markdown>
 
--   :material-rocket: **Version 0.1.7-alpha** <small>Released Jan 25, 2025</small>
+-   :material-rocket: **Version 0.1.8-alpha** <small>Released Sep 26, 2025</small>
+    
+    ---
+    
+    **Mission Resilience & Document Intelligence Update**
+    
+    - Intelligent mission resume with complete checkpoint preservation
+    - arXiv paper fetcher for direct academic paper processing
+    - Writing phase resume support for interrupted missions
+    - Document reprocessing and re-embedding capabilities
+    - Accurate progress indicators for research tracking
+
+-   :material-history: **Version 0.1.7-alpha** <small>Released Jan 25, 2025</small>
     
     ---
     

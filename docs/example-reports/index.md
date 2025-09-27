@@ -51,6 +51,36 @@ Reports generated using API-based models (OpenAI, Google Gemini) in various comb
     - [Governing Remote Work Surveillance](api-based-combos/Governing-Remote-Work-Surveillance-Balancing-Oversight-Autonomy-and-Trust%5Bgpt5nano%2Cgpt5mini%2Cgpt5%5D.md)
     - [Royal Two-Week Coastal Procession](api-based-combos/Royal-TwoWeek-Coastal-Procession-Washington-to-Bar-Harbor-and-Boston%5Bgpt5nano%2Cgpt5mini%2Cgpt5%5D.md)
 
+-   :material-brain:{ .lg .middle } **[DeepSeek V3](deepseek-v3/index.md)** <small>via OpenRouter</small>
+        
+    <span class="md-typeset__table"><table>
+    <tr><td><strong>Fast</strong></td><td><code>deepseek-v3</code></td></tr>
+    <tr><td><strong>Mid</strong></td><td><code>deepseek-v3</code></td></tr>
+    <tr><td><strong>Smart</strong></td><td><code>deepseek-v3</code></td></tr>
+    </table></span>
+    
+    [:octicons-arrow-right-24: View Reports](deepseek-v3/index.md)
+
+-   :material-lightning-bolt:{ .lg .middle } **[Qwen 3 Next 80B](qwen-3-next-80b/index.md)** <small>via OpenRouter</small>
+        
+    <span class="md-typeset__table"><table>
+    <tr><td><strong>Fast</strong></td><td><code>qwen-3-next-80b</code></td></tr>
+    <tr><td><strong>Mid</strong></td><td><code>qwen-3-next-80b</code></td></tr>
+    <tr><td><strong>Smart</strong></td><td><code>qwen-3-next-80b</code></td></tr>
+    </table></span>
+    
+    [:octicons-arrow-right-24: View Reports](qwen-3-next-80b/index.md)
+
+-   :material-microscope:{ .lg .middle } **[Tongyi DeepResearch 30B](tongyi-deepresearch-30b/index.md)** <small>via OpenRouter</small>
+        
+    <span class="md-typeset__table"><table>
+    <tr><td><strong>Fast</strong></td><td><code>tongyi-deepresearch-30b</code></td></tr>
+    <tr><td><strong>Mid</strong></td><td><code>tongyi-deepresearch-30b</code></td></tr>
+    <tr><td><strong>Smart</strong></td><td><code>tongyi-deepresearch-30b</code></td></tr>
+    </table></span>
+    
+    [:octicons-arrow-right-24: View Reports](tongyi-deepresearch-30b/index.md)
+
 </div>
 
 ---

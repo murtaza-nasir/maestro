@@ -5,16 +5,16 @@
 # MAESTRO: Your Self-Hosted AI Research Assistant
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-0.1.7--alpha-green.svg)](https://github.com/murtaza-nasir/maestro.git)
+[![Version](https://img.shields.io/badge/Version-0.1.8--alpha-green.svg)](https://github.com/murtaza-nasir/maestro.git)
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://hub.docker.com/r/murtaza-nasir/maestro)
 [![Documentation](https://img.shields.io/badge/Docs-Available-brightgreen.svg)](https://murtaza-nasir.github.io/maestro/)
 
-> **Version 0.1.7-alpha (Jan 25, 2025) - Intelligent Document Management**
+> **Version 0.1.8-alpha (Sep 26, 2025) - Mission Resilience & Document Intelligence Update**
 > 
-> - **Auto-Create Document Groups**: Automatically preserve web sources from research into a document group
-> - **Research to Writing**: Seamlessly send the prepared report from research mode to writing mode with document group preservation
-> - **Enhanced References**: Clickable document sources open in viewer
-> - **Mission Improvements**: Restart and revise with better outline handling 
+> - **Intelligent Mission Resume**: Missions properly resume from exact checkpoint with all data preserved
+> - **arXiv Paper Fetcher**: Direct fetch and process academic papers from arXiv
+> - **Writing Phase Resume**: Full support for resuming missions during writing phase
+> - **Document Reprocessing**: Re-process and re-embed existing documents with improved extraction 
 
 MAESTRO is an AI-powered research platform you can host on your own hardware. It's designed to manage complex research tasks from start to finish in a collaborative research environment. Plan your research, let AI agents carry it out, and watch as they generate detailed reports based on your documents and sources from the web.
 
@@ -145,6 +145,14 @@ For detailed installation instructions, see the [Installation Guide](https://mur
 For troubleshooting and advanced configuration, see the [documentation](https://murtaza-nasir.github.io/maestro/).
 
 ## Recent Releases
+
+### Version 0.1.8-alpha (September 26, 2025)
+**Mission Resilience & Document Intelligence Update**
+- Intelligent mission resume with complete checkpoint preservation
+- arXiv paper fetcher for direct academic paper processing
+- Writing phase resume support
+- Document reprocessing and re-embedding capabilities
+- Fixed progress indicators for accurate research tracking
 
 ### Version 0.1.7-alpha (September 25, 2025)
 **Intelligent Document Management & Enhanced Research**
