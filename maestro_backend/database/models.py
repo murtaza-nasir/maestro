@@ -11,7 +11,7 @@ For detailed architecture documentation, see: docs/DATABASE_ARCHITECTURE.md
 """
 
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON, Table, Boolean, Numeric, BigInteger
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 import sqlalchemy
@@ -332,7 +332,7 @@ class ResearchReport(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # Relationships
-    mission = relationship("Mission", backref="research_reports")
+    mission = relationship("Mission", backref=backref("research_reports", cascade="all, delete-orphan"))
     
     __table_args__ = (
         # Ensure unique version numbers per mission
