@@ -917,6 +917,12 @@ Instructions:
             refinement_iterations_this_round = {}
             round_focus_questions = {}
             round_reflection_outputs = []
+            
+            # Count total researchable sections for accurate progress tracking
+            researchable_sections = [s for s in sections_in_research_order 
+                                    if s.research_strategy == "research_based" and not s.subsections]
+            total_researchable_sections = len(researchable_sections)
+            sections_completed_this_round = 0
 
             # Iterate through sections in depth-first order
             for section in sections_in_research_order:
@@ -969,6 +975,23 @@ Instructions:
                             logger.info(f"Mission {mission_id} stopped/paused during research cycle {cycle_count+1} for section {section_id}. Stopping research.")
                             return False
                         
+                        # Calculate progress based on:
+                        # 1. Which round we're in (each round is 50% if 2 rounds total)
+                        # 2. How many sections completed in this round
+                        # 3. Progress within current section (cycles)
+                        round_base_progress = ((round_num - 1) / num_rounds) * 100
+                        round_weight = 100 / num_rounds
+                        
+                        if total_researchable_sections > 0:
+                            # Progress within the round based on completed sections plus current section progress
+                            sections_progress = (sections_completed_this_round / total_researchable_sections) * round_weight
+                            current_section_weight = round_weight / total_researchable_sections
+                            current_section_progress = (cycle_count / max_cycles_per_section) * current_section_weight
+                            total_progress = round_base_progress + sections_progress + current_section_progress
+                        else:
+                            # Fallback if no researchable sections (shouldn't happen)
+                            total_progress = round_base_progress + (cycle_count / max_cycles_per_section) * round_weight
+                        
                         # Update phase display for UI with current section and cycle
                         await self.controller.context_manager.update_phase_display(mission_id, {
                             "phase": "Structured Research",
@@ -979,7 +1002,9 @@ Instructions:
                             "cycle": cycle_count + 1,
                             "max_cycles": max_cycles_per_section,
                             "step": f"Researching: {section.title}",
-                            "progress": ((round_num - 1) / num_rounds) * 100 + (cycle_count / max_cycles_per_section) * (100 / num_rounds)
+                            "progress": total_progress,
+                            "sections_completed": sections_completed_this_round,
+                            "total_sections": total_researchable_sections
                         })
                         
                         logger.info(f"  Round {round_num} Research cycle {cycle_count+1}/{max_cycles_per_section} for section {section_id}...")
@@ -1146,6 +1171,7 @@ Instructions:
                     
                     processed_sections_this_round.add(section_id)
                     completed_sections.add(section_id)
+                    sections_completed_this_round += 1  # Increment for progress tracking
                     
                     # Save checkpoint after completing section
                     checkpoint_data = {
