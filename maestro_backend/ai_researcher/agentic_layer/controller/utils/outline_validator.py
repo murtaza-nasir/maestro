@@ -431,16 +431,17 @@ class OutlineValidator:
         
         return filtered_outline
     
-    def _validate_and_correct_strategies(self, outline: List[ReportSection], auto_correct: bool) -> List[ReportSection]:
+    def _validate_and_correct_strategies(self, outline: List[ReportSection], auto_correct: bool, is_top_level: bool = True) -> List[ReportSection]:
         """
         Validate and correct research strategies based on section characteristics.
         
         Rules:
-        1. Respect content_based assignments for first/last sections from planning agent
-        2. Sections with subsections should use 'synthesize_from_subsections'
-        3. Check first/last sections with research_based against intro/conclusion keywords
-        4. Leaf sections (no subsections) default to 'research_based' unless they're intro/conclusion
-        5. At least one section must be 'research_based'
+        1. Respect content_based assignments for first/last TOP-LEVEL sections only
+        2. Subsections (non-top-level) should NEVER be content_based - always research_based or synthesize_from_subsections
+        3. Sections with subsections should use 'synthesize_from_subsections'
+        4. Check first/last sections with research_based against intro/conclusion keywords
+        5. Leaf sections (no subsections) default to 'research_based' unless they're intro/conclusion
+        6. At least one section must be 'research_based'
         """
         if not outline:
             return outline
@@ -466,9 +467,19 @@ class OutlineValidator:
             # Determine expected strategy based on section characteristics
             expected_strategy = None
             
-            # Rule 1: Respect content_based for first/last sections from planning agent
-            if current_strategy == "content_based" and (is_first_section or is_last_section):
-                # Trust the planning agent's judgment for first/last sections with content_based
+            # NEW Rule: Subsections should NEVER be content_based
+            if not is_top_level and current_strategy == "content_based":
+                # Force subsections to be research_based (or synthesize_from_subsections if they have children)
+                if section.subsections and len(section.subsections) > 0:
+                    expected_strategy = "synthesize_from_subsections"
+                else:
+                    expected_strategy = "research_based"
+                    has_research_based = True
+                logger.info(f"Subsection '{section.title}' was content_based, changing to {expected_strategy}")
+            
+            # Rule 1: Respect content_based for first/last TOP-LEVEL sections only
+            elif is_top_level and current_strategy == "content_based" and (is_first_section or is_last_section):
+                # Trust the planning agent's judgment for first/last TOP-LEVEL sections with content_based
                 expected_strategy = "content_based"
             
             # Rule 2: Sections with subsections
@@ -542,9 +553,9 @@ class OutlineValidator:
             if section.research_strategy == "research_based":
                 has_research_based = True
             
-            # Recursively check subsections
+            # Recursively check subsections (passing is_top_level=False)
             if section.subsections:
-                section.subsections = self._validate_and_correct_strategies(section.subsections, auto_correct)
+                section.subsections = self._validate_and_correct_strategies(section.subsections, auto_correct, is_top_level=False)
                 # Check if any subsection is research_based
                 if self._has_research_based_section(section.subsections):
                     has_research_based = True

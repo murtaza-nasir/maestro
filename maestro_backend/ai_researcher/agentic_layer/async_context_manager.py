@@ -395,12 +395,47 @@ class AsyncContextManager:
         if not mission:
             logger.warning(f"Mission context not found in memory for ID: {mission_id}. Returning None.")
         return mission
+    
+    def remove_mission_from_memory(self, mission_id: str) -> bool:
+        """
+        Remove a mission from in-memory storage.
+        This is used when a mission is deleted or needs to be force-stopped.
+        Returns True if mission was removed, False if not found.
+        """
+        if mission_id in self._missions:
+            # First mark as stopped to prevent further operations
+            mission = self._missions[mission_id]
+            mission.status = "stopped"
+            
+            # Remove from memory
+            del self._missions[mission_id]
+            
+            # Clean up semaphore if exists
+            if mission_id in self._mission_semaphores:
+                del self._mission_semaphores[mission_id]
+            
+            # Cancel any async tasks
+            from ai_researcher.agentic_layer.controller.utils.async_task_manager import get_task_manager
+            task_manager = get_task_manager()
+            asyncio.create_task(task_manager.cancel_mission_tasks(mission_id))
+            
+            # Stop the mission thread/loop
+            from ai_researcher.agentic_layer.controller.utils.mission_lifecycle import get_lifecycle_manager
+            lifecycle_manager = get_lifecycle_manager()
+            lifecycle_manager.stop_mission(mission_id)
+            lifecycle_manager.cleanup_mission(mission_id)
+            
+            logger.info(f"Removed mission {mission_id} from memory and stopped all operations")
+            return True
+        return False
 
     async def update_mission_status(self, mission_id: str, status: MissionStatus, error_info: Optional[str] = None):
         """Updates the status of a mission in memory and in the database, and sends WebSocket update."""
         mission = self.get_mission_context(mission_id)
         if mission:
+            old_status = mission.status
             mission.status = status
+            logger.info(f"[STATUS UPDATE] Mission {mission_id} status changed: {old_status} -> {status}")
             mission.error_info = error_info if status == "failed" else None
             mission.update_timestamp()
             
@@ -1005,6 +1040,15 @@ class AsyncContextManager:
     ):
         """Logs a step in the mission execution process and optionally calls a callback with the queue."""
         mission = self.get_mission_context(mission_id)
+        
+        # Check if mission is paused/stopped before logging
+        # BUT allow pause/stop actions themselves to be logged
+        if mission and mission.status in ["paused", "stopped"]:
+            # Allow pause/resume/stop actions to be logged even when status is paused/stopped
+            if action not in ["Pause Mission", "Stop Mission", "Resume Mission"]:
+                logger.debug(f"Skipping log for {agent_name}/{action} - mission {mission_id} is {mission.status}")
+                return  # Don't log if mission is paused/stopped (except for pause/stop/resume actions)
+        
         if mission:
             # --- Make detailed fields serializable and sanitized BEFORE creating ExecutionLogEntry ---
             serializable_input = sanitize_for_jsonb(_make_serializable(full_input)) if full_input else None

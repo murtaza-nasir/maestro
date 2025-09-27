@@ -420,7 +420,7 @@ The plan should include:
     - **`research_based`**: (DEFAULT) Use for sections/subsections requiring dedicated research steps (document search, web search, etc.).
     - **`synthesize_from_subsections`**: Use ONLY for a parent section whose content should be an introduction/summary derived *solely* from its direct subsections. These sections DO NOT get their own research steps.
     - **`content_based`**: **CRITICAL:** Use ONLY for top-level sections explicitly titled 'Introduction', 'Conclusion', 'Summary', or 'Abstract'. These sections are written based on the content of *other* sections and MUST NOT have dedicated research steps. Do NOT use `research_based` for these specific sections.
-- Ensure the `research_strategy` field is correctly set for each `ReportSection` object in the `report_outline`. **Pay close attention to assigning `content_based` correctly to Introductory and Concluding sections (like Introduction, Intro to X, Conclusion, Final Thoughts, etc).**
+- Ensure the `research_strategy` field is correctly set for each `ReportSection` object in the `report_outline`. **Pay close attention to assigning `content_based` ONLY to top-level Introductory and Concluding sections (like Introduction, Intro to X, Conclusion, Final Thoughts, etc). Do NOT use `content_based` for subsections that explain or detail specific topics - those should be `research_based`.**
 
 Available Research Tools:
 """

@@ -1189,6 +1189,7 @@ async def resume_mission_execution(
     controller: AgentController = Depends(get_user_specific_agent_controller)
 ):
     """Resume a stopped mission."""
+    logger.warning(f"[RESUME ENDPOINT] Resume mission endpoint called for {mission_id} by user {current_user.username}")
     try:
         mission_context = controller.context_manager.get_mission_context(mission_id)
         if not mission_context:
@@ -1200,7 +1201,7 @@ async def resume_mission_execution(
         
         logger.info(f"Attempting to resume mission {mission_id} with status: {mission_context.status}")
 
-        # Allow resuming from multiple states (including running which might have been paused)
+        # Allow resuming from multiple states
         resumable_statuses = ["stopped", "paused", "failed"]
         if mission_context.status not in resumable_statuses:
             if mission_context.status == "completed":
@@ -1209,9 +1210,20 @@ async def resume_mission_execution(
                     detail=f"Mission is already completed. Cannot resume a completed mission."
                 )
             elif mission_context.status == "running":
-                # Mission might appear as running but actually be paused - check if there are active tasks
-                logger.warning(f"Mission {mission_id} status is 'running' but resume was requested. Allowing resume.")
-                # Don't raise error, allow resume to proceed
+                # Check if mission is ACTUALLY running (has active threads/tasks)
+                from ai_researcher.agentic_layer.controller.utils.mission_lifecycle import get_lifecycle_manager
+                lifecycle_manager = get_lifecycle_manager()
+                
+                if lifecycle_manager.is_mission_running(mission_id):
+                    logger.warning(f"Mission {mission_id} is actively running. Rejecting duplicate resume request.")
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Mission is already running. Cannot resume a running mission."
+                    )
+                else:
+                    # Mission status is "running" but no active thread - likely crashed or stuck
+                    logger.warning(f"Mission {mission_id} status is 'running' but no active thread found. Allowing resume.")
+                    # Allow resume to proceed
             elif mission_context.status == "planning":
                 logger.info(f"Mission {mission_id} is in planning phase. Continuing from planning.")
             else:
@@ -1310,8 +1322,12 @@ async def resume_mission_execution(
             except Exception as e:
                 logger.error(f"Error in websocket_update_callback for mission {mission_id}: {e}")
 
-        # Update status to indicate resuming
-        await controller.context_manager.update_mission_status(mission_id, "running")
+        # Only update status if mission is truly resumable
+        if mission_context.status in ["stopped", "paused", "failed"]:
+            logger.info(f"Mission {mission_id} is resumable (status: {mission_context.status}). Setting status to 'running'.")
+            await controller.context_manager.update_mission_status(mission_id, "running")
+        else:
+            logger.info(f"Mission {mission_id} status is '{mission_context.status}', not updating status before resume.")
         
         # Resume mission execution in a separate thread from the pool
         loop = asyncio.get_event_loop()
@@ -1337,9 +1353,32 @@ async def resume_mission_execution(
         def run_mission_in_thread():
             """Sets user context and runs the async mission."""
             set_current_user(current_user)
-            asyncio.run(run_mission_async())
+            
+            # Register the current thread with lifecycle manager
+            from ai_researcher.agentic_layer.controller.utils.mission_lifecycle import get_lifecycle_manager
+            lifecycle_manager = get_lifecycle_manager()
+            lifecycle_manager.register_mission_thread(mission_id, threading.current_thread())
+            
+            try:
+                # Create and register the event loop
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                lifecycle_manager.register_mission_loop(mission_id, new_loop)
+                
+                # Run the mission
+                new_loop.run_until_complete(run_mission_async())
+            finally:
+                # Clean up when done
+                lifecycle_manager.cleanup_mission(mission_id)
+                new_loop.close()
 
-        loop.run_in_executor(thread_pool, run_mission_in_thread)
+        import threading
+        future = loop.run_in_executor(thread_pool, run_mission_in_thread)
+        
+        # Register the future for cancellation support
+        from ai_researcher.agentic_layer.controller.utils.mission_lifecycle import get_lifecycle_manager
+        lifecycle_manager = get_lifecycle_manager()
+        lifecycle_manager.register_mission_future(mission_id, future)
         
         logger.info(f"Mission {mission_id} resume initiated successfully")
         return {"message": "Mission execution resumed", "mission_id": mission_id}
@@ -1360,17 +1399,21 @@ async def stop_mission_execution(
     controller: AgentController = Depends(get_agent_controller)
 ):
     """Stop a running mission."""
+    logger.info(f"[ENDPOINT] Stop mission endpoint called for mission {mission_id} by user {current_user.username}")
     try:
         mission_context = controller.context_manager.get_mission_context(mission_id)
+        logger.info(f"[ENDPOINT] Mission context found: {mission_context is not None}, status: {mission_context.status if mission_context else 'N/A'}")
         if not mission_context:
             raise HTTPException(
                 status_code=404,
                 detail="Mission not found"
             )
 
-        await controller.stop_mission(mission_id)
+        logger.info(f"[ENDPOINT] Calling controller.pause_mission for {mission_id}")
+        await controller.pause_mission(mission_id)
+        logger.info(f"[ENDPOINT] Successfully called pause_mission for {mission_id}")
         
-        return {"message": "Mission execution stopped", "mission_id": mission_id}
+        return {"message": "Mission execution paused", "mission_id": mission_id}
     except HTTPException:
         raise
     except Exception as e:
@@ -2581,10 +2624,26 @@ async def start_mission_execution(
         def run_background_task():
             """Wrapper to run async task in thread with user context."""
             set_current_user(current_user)
-            asyncio.run(prepare_and_run_mission())
+            
+            # Register the current thread with the lifecycle manager
+            from ai_researcher.agentic_layer.controller.utils.mission_lifecycle import get_lifecycle_manager
+            lifecycle_manager = get_lifecycle_manager()
+            lifecycle_manager.register_mission_thread(mission_id, threading.current_thread())
+            
+            # Create new event loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            lifecycle_manager.register_mission_loop(mission_id, loop)
+            
+            try:
+                loop.run_until_complete(prepare_and_run_mission())
+            finally:
+                loop.close()
+                lifecycle_manager.cleanup_mission(mission_id)
         
         # Execute in background thread pool
-        loop.run_in_executor(thread_pool, run_background_task)
+        import threading
+        future = loop.run_in_executor(thread_pool, run_background_task)
         
         # Update status to indicate we're starting
         await context_mgr.update_mission_metadata(mission_id, {"status": "planning"})

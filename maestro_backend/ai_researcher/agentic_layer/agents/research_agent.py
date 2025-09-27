@@ -214,6 +214,13 @@ If you DO NOT receive 'Focus Questions' but receive 'Existing Relevant Notes':
         # This allows _call_llm to access it for updating mission stats
         self.mission_id = mission_id
         
+        # Check mission status at the very beginning
+        if hasattr(self, 'controller') and self.controller:
+            from ai_researcher.agentic_layer.controller.utils.status_checks import check_mission_status_sync
+            if not check_mission_status_sync(self.controller, mission_id):
+                logger.info(f"Mission {mission_id} is stopped/paused. Exiting ResearchAgent.run() immediately.")
+                return [], {"model_calls": [], "tool_calls": [], "file_interactions": []}, None
+        
         # Get max notes per section configuration
         from ai_researcher.dynamic_config import get_max_notes_per_section_assignment
         max_notes_per_section = get_max_notes_per_section_assignment(self.mission_id)
@@ -399,10 +406,32 @@ If you DO NOT receive 'Focus Questions' but receive 'Existing Relevant Notes':
                 
                 if tasks_to_process:
                     print(f"{log_prefix}: Generating notes from {len(tasks_to_process)} content sources (limited from {len(note_generation_tasks)} to stay within {max_notes_per_section} limit)...")
-                    note_processing_results = await asyncio.gather(*tasks_to_process)
+                    
+                    # Use cancellable gather if mission_id is available
+                    if hasattr(self, 'mission_id') and self.mission_id:
+                        from ai_researcher.agentic_layer.controller.utils.async_task_manager import get_task_manager
+                        task_manager = get_task_manager()
+                        try:
+                            note_processing_results = await task_manager.gather_cancellable(
+                                self.mission_id, *tasks_to_process, return_exceptions=True
+                            )
+                        except asyncio.CancelledError:
+                            logger.info(f"Note generation cancelled for mission {self.mission_id}")
+                            return all_generated_notes, {"model_calls": model_calls_list, "tool_calls": tool_calls_list, "file_interactions": file_interactions_list}, scratchpad_update
+                    else:
+                        note_processing_results = await asyncio.gather(*tasks_to_process, return_exceptions=True)
 
                     # Collect results from parallel processing
-                    for note, note_model_details, _ in note_processing_results: # Unpack 3 values, ignore context here
+                    for result in note_processing_results:
+                        # Skip cancelled or failed tasks
+                        if isinstance(result, Exception):
+                            if isinstance(result, asyncio.CancelledError):
+                                logger.debug("Note generation task was cancelled")
+                            else:
+                                logger.warning(f"Note generation task failed: {result}")
+                            continue
+                        
+                        note, note_model_details, _ = result  # Unpack 3 values, ignore context here
                         # read_tool_call and file_read are handled within _extract_content_windows
                         if note:
                             all_generated_notes.append(note)
@@ -1790,12 +1819,39 @@ If no relevant sub-questions are identified, return an empty list for "sub_quest
             return {"document": [], "web": []}, [] # Return empty results and calls
 
         logger.info(f"Executing {len(search_tasks)} search tasks in parallel...")
-        search_task_results = await asyncio.gather(*search_tasks)
+        
+        # Check if we have a mission_id to use cancellable tasks
+        if hasattr(self, 'mission_id') and self.mission_id:
+            from ai_researcher.agentic_layer.controller.utils.async_task_manager import get_task_manager
+            task_manager = get_task_manager()
+            try:
+                # Use cancellable gather that can be interrupted on pause
+                search_task_results = await task_manager.gather_cancellable(
+                    self.mission_id, 
+                    *search_tasks, 
+                    return_exceptions=True
+                )
+            except asyncio.CancelledError:
+                logger.info(f"Search tasks cancelled for mission {self.mission_id}")
+                return {"document": [], "web": []}, []
+        else:
+            # Fallback to regular gather if no mission_id
+            search_task_results = await asyncio.gather(*search_tasks, return_exceptions=True)
 
         # Process and aggregate results
         aggregated_results = {"document": [], "web": []}
         tool_calls_list = []
-        for i, (result_list, tool_call_details) in enumerate(search_task_results):
+        for i, result in enumerate(search_task_results):
+            # Skip if the task was cancelled or failed
+            if isinstance(result, Exception):
+                if isinstance(result, asyncio.CancelledError):
+                    logger.debug(f"Search task {i} was cancelled")
+                else:
+                    logger.warning(f"Search task {i} failed with exception: {result}")
+                continue
+            
+            # Unpack the result tuple
+            result_list, tool_call_details = result
             tool_calls_list.append(tool_call_details)
             if result_list: # Only extend if results were found and no error occurred
                 # Determine if it was doc or web based on index/tool name

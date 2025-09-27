@@ -629,10 +629,27 @@ class AgentController:
                 logger.info(f"  {i+1}. {section.section_id}: {section.title}")
             
             # Create resume checkpoint to start from the specified round
+            # Try to get existing checkpoint data to preserve completed sections
+            existing_checkpoint = mission_context.phase_checkpoint.get('structured_research', {}) if mission_context.phase_checkpoint else {}
+            completed_sections = existing_checkpoint.get('completed_sections', [])
+            
+            # Only keep sections completed before this round (in case we're going back to an earlier round)
+            # This ensures we don't skip sections that should be re-researched when going back
+            if completed_sections and existing_checkpoint.get('current_round'):
+                existing_round = existing_checkpoint.get('current_round', 0)
+                if existing_round >= round_num:
+                    # If resuming to same or earlier round, keep completed sections from that round
+                    completed_sections = completed_sections
+                    logger.info(f"Preserving {len(completed_sections)} completed sections from round {round_num}")
+                else:
+                    # If jumping forward, clear completed sections (shouldn't happen in normal use)
+                    completed_sections = []
+                    logger.info(f"Clearing completed sections as jumping from round {existing_round} to {round_num}")
+            
             resume_checkpoint = {
                 'phase': 'structured_research',  # Important: mark this as structured research phase
                 'current_round': round_num,
-                'completed_sections': []  # Start fresh from this round
+                'completed_sections': completed_sections  # Preserve already completed sections
             }
             
             # Store the checkpoint in context for run_mission to use
@@ -1037,6 +1054,7 @@ Make sure to address the user's specific concerns and suggestions."""
 
                 # Check if mission was stopped or paused before starting research
                 mission_context = self.context_manager.get_mission_context(mission_id)
+                logger.info(f"[PAUSE CHECK] Mission {mission_id} status check before research phase: status={mission_context.status if mission_context else 'NO_CONTEXT'}")
                 if mission_context and mission_context.status in ["stopped", "paused"]:
                     logger.info(f"Mission {mission_id} was {mission_context.status} before research phase. Aborting.")
                     return
@@ -1124,6 +1142,7 @@ Make sure to address the user's specific concerns and suggestions."""
                 }
                 await self.context_manager.save_phase_checkpoint(mission_id, 'structured_research', initial_checkpoint)
 
+            logger.info(f"[EXECUTION] Starting execute_research_plan for mission {mission_id}")
             plan_execution_success = await self.research_manager.execute_research_plan(
                 mission_id=mission_id,
                 plan=preliminary_plan,
@@ -1131,11 +1150,13 @@ Make sure to address the user's specific concerns and suggestions."""
                 update_callback=update_callback,
                 resume_checkpoint=resume_checkpoint
             )
+            logger.info(f"[EXECUTION] execute_research_plan returned: {plan_execution_success}")
             
             # Check if mission was stopped or paused during plan execution
             mission_context = self.context_manager.get_mission_context(mission_id)
+            logger.info(f"[EXECUTION] Post-execution status check: status={mission_context.status if mission_context else 'NO_CONTEXT'}")
             if mission_context and mission_context.status in ["stopped", "paused"]:
-                logger.info(f"Mission {mission_id} was {mission_context.status} during plan execution. Aborting.")
+                logger.info(f"[EXECUTION ABORT] Mission {mission_id} was {mission_context.status} during plan execution. Aborting.")
                 return
                 
             if not plan_execution_success:
@@ -1500,87 +1521,129 @@ Make sure to address the user's specific concerns and suggestions."""
                 del self.mission_subtasks[mission_id]
             logger.debug(f"Removed subtask for mission {mission_id}")
     
-    async def stop_mission(self, mission_id: str):
-        """Pauses a running mission and cancels all associated tasks with proper timeout."""
-        logger.info(f"Pausing mission {mission_id}...")
-        
-        # First update the status to paused to prevent new tasks from starting
-        await self.context_manager.update_mission_status(mission_id, "paused")
-        
-        # Store checkpoint for resuming later
-        mission_context = self.context_manager.get_mission_context(mission_id)
-        if mission_context:
-            self.context_manager.store_resume_checkpoint(
-                mission_id, 
-                {
-                    "status": "paused",
-                    "timestamp": asyncio.get_event_loop().time()
-                }
-            )
-        
-        # Collect all tasks to cancel
-        tasks_to_cancel = []
-        
-        # Add main task if it exists
-        if mission_id in self.mission_tasks:
-            main_task = self.mission_tasks[mission_id]
-            if not main_task.done():
-                tasks_to_cancel.append(main_task)
-        
-        # Add all subtasks if they exist
-        if mission_id in self.mission_subtasks:
-            for task in self.mission_subtasks[mission_id]:
-                if not task.done():
-                    tasks_to_cancel.append(task)
-        
-        if tasks_to_cancel:
-            logger.info(f"Attempting to cancel {len(tasks_to_cancel)} tasks for mission {mission_id}")
-            
-            # First, request cancellation for all tasks
-            for task in tasks_to_cancel:
-                task.cancel()
-            
-            # Give tasks 5 seconds to finish gracefully
-            try:
-                await asyncio.wait_for(
-                    asyncio.gather(*tasks_to_cancel, return_exceptions=True),
-                    timeout=5.0
-                )
-                logger.info(f"All tasks cancelled gracefully for mission {mission_id}")
-            except asyncio.TimeoutError:
-                logger.warning(f"Some tasks did not cancel within 5 seconds for mission {mission_id}, forcing cancellation")
-                # Tasks that didn't finish will remain cancelled
-            
-            # Count how many were actually cancelled vs completed
-            cancelled_count = sum(1 for task in tasks_to_cancel if task.cancelled())
-            completed_count = sum(1 for task in tasks_to_cancel if task.done() and not task.cancelled())
-            logger.info(f"Mission {mission_id}: {cancelled_count} tasks cancelled, {completed_count} completed")
-        
-        # Clean up task registries
-        if mission_id in self.mission_tasks:
-            del self.mission_tasks[mission_id]
-        if mission_id in self.mission_subtasks:
-            del self.mission_subtasks[mission_id]
-        
-        await self.context_manager.log_execution_step(
-            mission_id=mission_id,
-            agent_name="AgentController",
-            action="Pause Mission",
-            status="success"
-        )
-        logger.info(f"Mission {mission_id} stopped and all tasks cancelled.")
+    # DEPRECATED: Use pause_mission instead. This function is kept for backward compatibility
+    # but is no longer used. It was confusing to have both stop_mission and pause_mission
+    # when they do the same thing.
+    # async def stop_mission(self, mission_id: str):
+    #     """Pauses a running mission and cancels all associated tasks with proper timeout."""
+    #     logger.info(f"Pausing mission {mission_id}...")
+    #     
+    #     # First update the status to paused to prevent new tasks from starting
+    #     await self.context_manager.update_mission_status(mission_id, "paused")
+    #     
+    #     # Store checkpoint for resuming later
+    #     mission_context = self.context_manager.get_mission_context(mission_id)
+    #     if mission_context:
+    #         self.context_manager.store_resume_checkpoint(
+    #             mission_id, 
+    #             {
+    #                 "status": "paused",
+    #                 "timestamp": asyncio.get_event_loop().time()
+    #             }
+    #         )
+    #     
+    #     # Collect all tasks to cancel
+    #     tasks_to_cancel = []
+    #     
+    #     # Add main task if it exists
+    #     if mission_id in self.mission_tasks:
+    #         main_task = self.mission_tasks[mission_id]
+    #         if not main_task.done():
+    #             tasks_to_cancel.append(main_task)
+    #     
+    #     # Add all subtasks if they exist
+    #     if mission_id in self.mission_subtasks:
+    #         for task in self.mission_subtasks[mission_id]:
+    #             if not task.done():
+    #                 tasks_to_cancel.append(task)
+    #     
+    #     if tasks_to_cancel:
+    #         logger.info(f"Attempting to cancel {len(tasks_to_cancel)} tasks for mission {mission_id}")
+    #         
+    #         # First, request cancellation for all tasks
+    #         for task in tasks_to_cancel:
+    #             task.cancel()
+    #         
+    #         # Give tasks 5 seconds to finish gracefully
+    #         try:
+    #             await asyncio.wait_for(
+    #                 asyncio.gather(*tasks_to_cancel, return_exceptions=True),
+    #                 timeout=5.0
+    #             )
+    #             logger.info(f"All tasks cancelled gracefully for mission {mission_id}")
+    #         except asyncio.TimeoutError:
+    #             logger.warning(f"Some tasks did not cancel within 5 seconds for mission {mission_id}, forcing cancellation")
+    #             # Tasks that didn't finish will remain cancelled
+    #         
+    #         # Count how many were actually cancelled vs completed
+    #         cancelled_count = sum(1 for task in tasks_to_cancel if task.cancelled())
+    #         completed_count = sum(1 for task in tasks_to_cancel if task.done() and not task.cancelled())
+    #         logger.info(f"Mission {mission_id}: {cancelled_count} tasks cancelled, {completed_count} completed")
+    #     
+    #     # Clean up task registries
+    #     if mission_id in self.mission_tasks:
+    #         del self.mission_tasks[mission_id]
+    #     if mission_id in self.mission_subtasks:
+    #         del self.mission_subtasks[mission_id]
+    #     
+    #     await self.context_manager.log_execution_step(
+    #         mission_id=mission_id,
+    #         agent_name="AgentController",
+    #         action="Pause Mission",
+    #         status="success"
+    #     )
+    #     logger.info(f"Mission {mission_id} stopped and all tasks cancelled.")
 
     async def pause_mission(self, mission_id: str):
-        """Pauses a running mission."""
-        logger.info(f"Pausing mission {mission_id}...")
+        """Pauses a running mission and cancels all async tasks."""
+        logger.info(f"[PAUSE] Pausing mission {mission_id}...")
+        
+        # Check current status before pausing
+        mission_context = self.context_manager.get_mission_context(mission_id)
+        logger.info(f"[PAUSE] Current status before pause: {mission_context.status if mission_context else 'NO_CONTEXT'}")
+        
+        # First update status to prevent new tasks from starting
         await self.context_manager.update_mission_status(mission_id, "paused")
+        
+        # Verify status was updated
+        mission_context = self.context_manager.get_mission_context(mission_id)
+        logger.info(f"[PAUSE] Status after pause update: {mission_context.status if mission_context else 'NO_CONTEXT'}")
+        
+        # Cancel all running async tasks for this mission
+        from ai_researcher.agentic_layer.controller.utils.async_task_manager import get_task_manager
+        task_manager = get_task_manager()
+        cancelled_count = await task_manager.cancel_mission_tasks(mission_id)
+        
+        if cancelled_count > 0:
+            logger.info(f"Cancelled {cancelled_count} running tasks for mission {mission_id}")
+        
+        # Stop the mission execution thread/loop
+        from ai_researcher.agentic_layer.controller.utils.mission_lifecycle import get_lifecycle_manager
+        lifecycle_manager = get_lifecycle_manager()
+        lifecycle_manager.stop_mission(mission_id)
+        
         await self.context_manager.log_execution_step(
             mission_id=mission_id,
             agent_name="AgentController",
             action="Pause Mission",
-            status="success"
+            status="success",
+            output_summary=f"Paused mission and cancelled {cancelled_count} running tasks"
         )
         logger.info(f"Mission {mission_id} paused.")
+    
+    async def delete_mission(self, mission_id: str):
+        """Completely stops and deletes a mission."""
+        logger.info(f"Deleting mission {mission_id}...")
+        
+        # Remove from memory and stop all operations
+        removed = self.context_manager.remove_mission_from_memory(mission_id)
+        
+        if removed:
+            logger.info(f"Mission {mission_id} deleted and all operations stopped.")
+        else:
+            logger.warning(f"Mission {mission_id} not found in memory.")
+        
+        return removed
 
     # Delegate methods to the appropriate managers
     async def refine_questions(self, mission_id: str, user_feedback: str, current_questions: List[str], 

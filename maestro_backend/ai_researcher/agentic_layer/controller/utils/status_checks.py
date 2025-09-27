@@ -89,25 +89,38 @@ def check_mission_status_sync(controller, mission_id: str) -> bool:
 async def check_mission_status_async(controller, mission_id: str) -> bool:
     """
     Asynchronous helper function to check if a mission should continue running.
-    Returns True if mission should continue, False if stopped/paused.
+    Returns True if mission should continue, False if stopped/paused/deleted.
     
     Args:
         controller: The controller instance with context_manager
         mission_id: The mission ID to check
         
     Returns:
-        bool: True if mission should continue, False if stopped/paused
+        bool: True if mission should continue, False if stopped/paused/deleted
     """
     try:
+        # First check in-memory context
         mission_context = controller.context_manager.get_mission_context(mission_id)
-        if mission_context and mission_context.status in ["stopped", "paused"]:
-            logger.info(f"Mission {mission_id} is {mission_context.status}. Stopping execution.")
+        
+        # LOG EVERYTHING
+        logger.info(f"[STATUS CHECK] Mission {mission_id}: context_exists={mission_context is not None}, status={mission_context.status if mission_context else 'NO_CONTEXT'}")
+        
+        # If not in memory, it was likely deleted - stop execution
+        if not mission_context:
+            logger.warning(f"Mission {mission_id} not found in memory - likely deleted. Stopping execution.")
             return False
+        
+        # Check status
+        if mission_context.status in ["stopped", "paused"]:
+            logger.info(f"[STATUS CHECK STOPPING] Mission {mission_id} is {mission_context.status}. Stopping execution.")
+            return False
+        
+        logger.info(f"[STATUS CHECK CONTINUE] Mission {mission_id} status is {mission_context.status}, continuing...")
         return True
     except Exception as e:
         logger.error(f"Error checking mission status for {mission_id}: {e}", exc_info=True)
-        # Return True to continue execution if status check fails
-        return True
+        # Return False to stop execution if status check fails (safer)
+        return False
 
 def raise_if_mission_stopped(controller, mission_id: str) -> None:
     """
