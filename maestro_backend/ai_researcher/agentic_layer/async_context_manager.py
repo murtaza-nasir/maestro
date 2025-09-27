@@ -472,7 +472,7 @@ class AsyncContextManager:
                         logger.error(f"Failed to mark phase as completed in database: {e}")
     
     def get_next_phase(self, mission_id: str) -> Optional[str]:
-        """Returns the next phase to execute based on completed phases."""
+        """Returns the next phase to execute based on completed phases and current phase."""
         mission = self.get_mission_context(mission_id)
         if not mission:
             return None
@@ -490,15 +490,27 @@ class AsyncContextManager:
             "completed"
         ]
         
+        # First check if there's a current phase that was interrupted
+        # Check phase_checkpoint for any in-progress phases
+        for phase_name in phase_order:
+            if phase_name in mission.phase_checkpoint and phase_name not in mission.completed_phases:
+                phase_data = mission.phase_checkpoint[phase_name]
+                # If there's checkpoint data, this phase was started but not completed
+                if phase_data:
+                    logger.info(f"Mission {mission_id} has in-progress phase: {phase_name}")
+                    return phase_name
+        
+        # Also check the resume checkpoint for phase info
+        checkpoint = self.get_resume_checkpoint(mission_id)
+        if checkpoint and checkpoint.get('phase'):
+            checkpoint_phase = checkpoint['phase']
+            if checkpoint_phase not in mission.completed_phases:
+                logger.info(f"Mission {mission_id} has checkpoint for phase: {checkpoint_phase}")
+                return checkpoint_phase
+        
         # Find the next uncompleted phase
         for phase in phase_order:
             if phase not in mission.completed_phases:
-                # Special check for structured_research - it may be partially complete
-                if phase == "structured_research":
-                    # Check if there's checkpoint data indicating partial completion
-                    checkpoint = self.get_resume_checkpoint(mission_id)
-                    if checkpoint and checkpoint.get('phase') == 'structured_research':
-                        logger.info(f"Mission {mission_id} has partial structured_research progress")
                 return phase
         
         return "completed"
@@ -568,6 +580,13 @@ class AsyncContextManager:
                     logger.debug(f"Saved checkpoint for phase '{phase}' in mission {mission_id}")
                 except Exception as e:
                     logger.error(f"Failed to save phase checkpoint: {e}", exc_info=True)
+    
+    async def get_phase_checkpoint(self, mission_id: str, phase: str) -> Optional[Dict[str, Any]]:
+        """Get checkpoint data for a specific phase."""
+        mission = self.get_mission_context(mission_id)
+        if mission:
+            return mission.phase_checkpoint.get(phase)
+        return None
 
     async def store_plan(self, mission_id: str, plan: SimplifiedPlan):
         """Stores the generated plan for a mission in memory and persists the context to the database."""

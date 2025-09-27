@@ -630,6 +630,7 @@ class AgentController:
             
             # Create resume checkpoint to start from the specified round
             resume_checkpoint = {
+                'phase': 'structured_research',  # Important: mark this as structured research phase
                 'current_round': round_num,
                 'completed_sections': []  # Start fresh from this round
             }
@@ -655,6 +656,72 @@ class AgentController:
         except Exception as e:
             logger.error(f"Error resuming mission {mission_id} from round {round_num}: {e}", exc_info=True)
             await self.context_manager.update_mission_status(mission_id, "failed", f"Resume failed: {e}")
+            return False
+    
+    async def resume_writing_phase(
+        self,
+        mission_id: str,
+        writing_pass: int = 0,
+        log_queue: Optional[queue.Queue] = None,
+        update_callback: Optional[Callable[[queue.Queue, Any], None]] = None
+    ):
+        """
+        Resume mission from the writing phase at a specific pass.
+        
+        Args:
+            mission_id: The mission ID
+            writing_pass: The writing pass to resume from (0-based)
+            log_queue: Optional queue for logging
+            update_callback: Optional callback for updates
+        """
+        try:
+            logger.info(f"Resuming writing phase for mission {mission_id} from pass {writing_pass}")
+            
+            # Check if mission context and plan exist
+            mission_context = self.context_manager.get_mission_context(mission_id)
+            if not mission_context:
+                logger.error(f"Mission context not found for mission {mission_id}")
+                await self.context_manager.update_mission_status(mission_id, "failed", "Mission context not found")
+                return False
+            
+            if not mission_context.plan:
+                logger.error(f"Mission plan not found for mission {mission_id}")
+                await self.context_manager.update_mission_status(mission_id, "failed", "Mission plan not found")
+                return False
+            
+            # Create resume checkpoint for writing phase
+            resume_checkpoint = {
+                'phase': 'writing',
+                'current_pass': writing_pass,
+                'completed_sections': []  # Will be loaded from saved checkpoint if available
+            }
+            
+            # Load any existing checkpoint data
+            existing_checkpoint = await self.context_manager.get_phase_checkpoint(mission_id, 'writing')
+            if existing_checkpoint:
+                # Merge with existing checkpoint
+                if 'completed_sections' in existing_checkpoint and writing_pass == existing_checkpoint.get('current_pass', 0):
+                    resume_checkpoint['completed_sections'] = existing_checkpoint['completed_sections']
+                    logger.info(f"Loaded {len(resume_checkpoint['completed_sections'])} completed sections from checkpoint")
+            
+            # Store the checkpoint in context for run_mission to use
+            self.context_manager.store_resume_checkpoint(mission_id, resume_checkpoint)
+            
+            logger.info(f"Stored checkpoint and prepared mission state for writing phase resume from pass {writing_pass}")
+            
+            # Call run_mission with resume_from_phase set to "writing"
+            await self.run_mission(
+                mission_id=mission_id,
+                log_queue=log_queue,
+                update_callback=update_callback,
+                resume_from_phase="writing"
+            )
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error resuming writing phase for mission {mission_id}: {e}", exc_info=True)
+            await self.context_manager.update_mission_status(mission_id, "failed", f"Writing phase resume failed: {e}")
             return False
     
     async def revise_outline_and_resume(
@@ -780,16 +847,72 @@ Make sure to address the user's specific concerns and suggestions."""
         update_callback: Optional[Callable[[queue.Queue, Any], None]] = None
     ):
         """
-        Resumes a mission from where it left off based on completed phases.
+        Resumes a mission from where it left off based on completed phases and checkpoint data.
+        Intelligently determines the correct phase based on all available mission data.
         """
-        # Get the next phase to execute
+        mission_context = self.context_manager.get_mission_context(mission_id)
+        if not mission_context:
+            logger.error(f"Mission {mission_id} not found in context")
+            return
+        
+        # First, check if we have checkpoint data that indicates an in-progress phase
+        phase_checkpoint = mission_context.phase_checkpoint
+        
+        # Check for structured research checkpoint
+        if 'structured_research' in phase_checkpoint and phase_checkpoint['structured_research']:
+            sr_checkpoint = phase_checkpoint['structured_research']
+            # If structured research has checkpoint data but isn't marked complete
+            if 'structured_research' not in mission_context.completed_phases:
+                logger.info(f"Mission {mission_id} has structured research checkpoint at round {sr_checkpoint.get('current_round', 0)}")
+                # Restore the checkpoint and resume from structured research
+                self.context_manager.store_resume_checkpoint(mission_id, sr_checkpoint)
+                await self.run_mission(mission_id, log_queue, update_callback, resume_from_phase="structured_research")
+                return
+        
+        # Check for writing phase checkpoint
+        if 'writing' in phase_checkpoint and phase_checkpoint['writing']:
+            writing_checkpoint = phase_checkpoint['writing']
+            # If writing has checkpoint data but isn't marked complete
+            if 'writing' not in mission_context.completed_phases:
+                logger.info(f"Mission {mission_id} has writing checkpoint at pass {writing_checkpoint.get('current_pass', 0)}")
+                # Restore the checkpoint and resume from writing
+                self.context_manager.store_resume_checkpoint(mission_id, writing_checkpoint)
+                await self.run_mission(mission_id, log_queue, update_callback, resume_from_phase="writing")
+                return
+        
+        # Check based on what data exists in the mission context
+        # If we have a plan and notes, we've at least completed initial research
+        has_plan = mission_context.plan is not None
+        has_notes = mission_context.notes and len(mission_context.notes) > 0
+        has_report_content = mission_context.report_content and len(mission_context.report_content) > 0
+        
+        # Determine phase based on available data
+        if has_report_content:
+            # If there's report content, we're at least in the writing phase
+            if 'writing' not in mission_context.completed_phases:
+                logger.info(f"Mission {mission_id} has report content, resuming from writing phase")
+                await self.run_mission(mission_id, log_queue, update_callback, resume_from_phase="writing")
+                return
+        
+        if has_plan and has_notes:
+            # If we have both plan and notes, check if we need to continue structured research
+            if 'structured_research' not in mission_context.completed_phases:
+                # Check if we have enough notes or need more research
+                logger.info(f"Mission {mission_id} has plan and {len(mission_context.notes)} notes, checking structured research status")
+                # Look for any indication we were in structured research
+                if mission_context.current_phase_display and 'Structured Research' in str(mission_context.current_phase_display):
+                    logger.info(f"Mission {mission_id} was in structured research, resuming")
+                    await self.run_mission(mission_id, log_queue, update_callback, resume_from_phase="structured_research")
+                    return
+        
+        # Fall back to the standard phase detection
         next_phase = self.context_manager.get_next_phase(mission_id)
         
         if next_phase == "completed":
             logger.info(f"Mission {mission_id} is already completed")
             return
         
-        logger.info(f"Resuming mission {mission_id} from phase: {next_phase}")
+        logger.info(f"Resuming mission {mission_id} from phase: {next_phase} (standard detection)")
         
         # Call run_mission which will now check for completed phases
         await self.run_mission(mission_id, log_queue, update_callback, resume_from_phase=next_phase)
@@ -991,6 +1114,15 @@ Make sure to address the user's specific concerns and suggestions."""
                 resume_checkpoint = self.context_manager.get_resume_checkpoint(mission_id)
                 if resume_checkpoint and resume_checkpoint.get('phase') == 'structured_research':
                     logger.info(f"Found structured_research checkpoint for mission {mission_id}: {resume_checkpoint}")
+            else:
+                # Starting structured research fresh - save initial checkpoint
+                logger.info(f"Starting structured research phase for mission {mission_id}")
+                initial_checkpoint = {
+                    'phase': 'structured_research',
+                    'current_round': 0,
+                    'completed_sections': []
+                }
+                await self.context_manager.save_phase_checkpoint(mission_id, 'structured_research', initial_checkpoint)
 
             plan_execution_success = await self.research_manager.execute_research_plan(
                 mission_id=mission_id,
@@ -1012,152 +1144,215 @@ Make sure to address the user's specific concerns and suggestions."""
                     await self.context_manager.update_mission_status(mission_id, "failed", "Research plan execution failed.")
                 return
 
-            # Phase 3: Prepare Notes for Writing (Conditional based on config)
+            # Phase 3: Prepare Notes for Writing (Conditional based on config) 
             active_goals = self.context_manager.get_active_goals(mission_id)
             full_note_assignments: Optional[FullNoteAssignments] = None
 
-            skip_final_replanning = get_skip_final_replanning(mission_id)
-            if not skip_final_replanning:
-                logger.info(f"Running final outline refinement and note reassignment for mission {mission_id}.")
-                await self.context_manager.log_execution_step(
+            # Only run note assignment phase if NOT resuming from writing
+            if resume_from_phase != "writing":
+                skip_final_replanning = get_skip_final_replanning(mission_id)
+                if not skip_final_replanning:
+                    logger.info(f"Running final outline refinement and note reassignment for mission {mission_id}.")
+                    await self.context_manager.log_execution_step(
                     mission_id=mission_id, agent_name="AgentController", action="Prepare Notes (Standard)",
                     status="success", output_summary="Running final outline refinement and note reassignment.", # Use output_summary
                     log_queue=log_queue, update_callback=update_callback
-                )
-                full_note_assignments = await self.research_manager.reassign_notes_to_final_outline(
+                    )
+                    full_note_assignments = await self.research_manager.reassign_notes_to_final_outline(
                     mission_id=mission_id,
                     active_goals=active_goals,
                     log_queue=log_queue,
                     update_callback=update_callback
-                )
+                    )
 
-                if full_note_assignments is None:
-                    logger.error(f"Standard note assignment phase failed critically for mission {mission_id}. Aborting.")
-                    await self.context_manager.update_mission_status(mission_id, "failed", "Standard note assignment phase failed critically.")
-                    return
-                elif not full_note_assignments.assignments:
-                    logger.warning(f"Standard note assignment phase for mission {mission_id} resulted in empty assignments. Proceeding, but writing phase might be affected.")
-                
-                await self.context_manager.log_execution_step(
-                    mission_id=mission_id, agent_name="AgentController", action="Prepare Notes (Standard)",
-                    status="success", output_summary=f"Completed standard note reassignment. {len(full_note_assignments.assignments)} sections assigned.", # Use output_summary
-                    log_queue=log_queue, update_callback=update_callback
-                )
-
-            else:
-                logger.info(f"Skipping final replanning. Running redundancy reflection for mission {mission_id}.")
-                await self.context_manager.log_execution_step(
-                    mission_id=mission_id, agent_name="AgentController", action="Prepare Notes (Skip Replanning)",
-                    status="success", output_summary="Skipping final replanning. Running redundancy reflection.", # Use output_summary
-                    log_queue=log_queue, update_callback=update_callback
-                )
-                
-                # 1. Get all notes generated so far
-                all_notes = self.context_manager.get_notes(mission_id)
-                if not all_notes:
-                    logger.warning(f"No notes found for redundancy check in mission {mission_id}. Proceeding without reflection.")
-                    # Create an empty assignment structure to proceed
-                    current_plan = self.context_manager.get_plan(mission_id)
-                    if not current_plan:
-                         logger.error(f"Cannot create empty assignments: Plan not found for mission {mission_id}.")
-                         await self.context_manager.update_mission_status(mission_id, "failed", "Plan not found when skipping replanning.")
-                         return # Abort if plan is missing
+                    if full_note_assignments is None:
+                        logger.error(f"Standard note assignment phase failed critically for mission {mission_id}. Aborting.")
+                        await self.context_manager.update_mission_status(mission_id, "failed", "Standard note assignment phase failed critically.")
+                        return
+                    elif not full_note_assignments.assignments:
+                        logger.warning(f"Standard note assignment phase for mission {mission_id} resulted in empty assignments. Proceeding, but writing phase might be affected.")
                     
-                    # Import AssignedNotes here, locally within the method scope
-                    from ai_researcher.agentic_layer.agents.note_assignment_agent import AssignedNotes
+                    await self.context_manager.log_execution_step(
+                        mission_id=mission_id, agent_name="AgentController", action="Prepare Notes (Standard)",
+                        status="success", output_summary=f"Completed standard note reassignment. {len(full_note_assignments.assignments)} sections assigned.", # Use output_summary
+                        log_queue=log_queue, update_callback=update_callback
+                    )
                     
-                    empty_assignments: Dict[str, AssignedNotes] = {}
-                    # Need to recursively process the outline to create empty assignments for all sections/subsections
-                    def process_empty_sections(sections: List[ReportSection]):
-                         for section in sections:
-                              empty_assignments[section.section_id] = AssignedNotes(
-                                  section_id=section.section_id, 
-                                  relevant_note_ids=[], 
-                                  reasoning="No notes available for this section."
-                              )
-                              if section.subsections:
-                                   process_empty_sections(section.subsections)
-                    process_empty_sections(current_plan.outline)
-                    full_note_assignments = FullNoteAssignments(assignments=empty_assignments)
-                    logger.info(f"Created empty note assignments for {len(empty_assignments)} sections.")
+                    # Save note assignments to checkpoint for potential writing phase resume
+                    await self.context_manager.save_phase_checkpoint(
+                        mission_id, 'writing', 
+                        {'note_assignments': full_note_assignments.dict()}
+                    )
 
                 else:
-                    logger.info(f"Found {len(all_notes)} notes for redundancy reflection.")
-                    # 2. Run redundancy reflection (using ReflectionManager)
-                    # Assuming ReflectionManager has a method like this, or we add it.
-                    try:
-                        filtered_notes = await self.reflection_manager.perform_redundancy_check(
-                            mission_id=mission_id,
-                            notes=all_notes,
-                            log_queue=log_queue,
-                            update_callback=update_callback
-                        )
-                        logger.info(f"Redundancy check completed. {len(filtered_notes)} notes remaining.")
-                        
-                        # 3. Update notes in context (optional, depends on how perform_redundancy_check works)
-                        # If the check returns only the notes to keep, we might need to update the context
-                        # or just use filtered_notes directly. Let's assume we use filtered_notes.
-
-                        # 4. Create a simple FullNoteAssignments structure based on the *existing* plan
-                        # We map the filtered notes back to their original sections without re-assigning.
+                    logger.info(f"Skipping final replanning. Running redundancy reflection for mission {mission_id}.")
+                    await self.context_manager.log_execution_step(
+                        mission_id=mission_id, agent_name="AgentController", action="Prepare Notes (Skip Replanning)",
+                        status="success", output_summary="Skipping final replanning. Running redundancy reflection.", # Use output_summary
+                        log_queue=log_queue, update_callback=update_callback
+                    )
+                    
+                    # 1. Get all notes generated so far
+                    all_notes = self.context_manager.get_notes(mission_id)
+                    if not all_notes:
+                        logger.warning(f"No notes found for redundancy check in mission {mission_id}. Proceeding without reflection.")
+                        # Create an empty assignment structure to proceed
                         current_plan = self.context_manager.get_plan(mission_id)
                         if not current_plan:
-                            logger.error(f"Cannot assign filtered notes: Plan not found for mission {mission_id}.")
+                            logger.error(f"Cannot create empty assignments: Plan not found for mission {mission_id}.")
                             await self.context_manager.update_mission_status(mission_id, "failed", "Plan not found when skipping replanning.")
                             return # Abort if plan is missing
                         
                         # Import AssignedNotes here, locally within the method scope
                         from ai_researcher.agentic_layer.agents.note_assignment_agent import AssignedNotes
-
-                        assignments: Dict[str, AssignedNotes] = {}
-                        # Create a map of filtered notes by ID for efficient lookup
-                        filtered_notes_map = {note.note_id: note for note in filtered_notes}
-                        filtered_note_ids_set = set(filtered_notes_map.keys())
-
-                        # Iterate through the plan sections to assign filtered notes
-                        def process_sections_for_assignment(sections: List[ReportSection]):
+                        
+                        empty_assignments: Dict[str, AssignedNotes] = {}
+                        # Need to recursively process the outline to create empty assignments for all sections/subsections
+                        def process_empty_sections(sections: List[ReportSection]):
                             for section in sections:
-                                # Get note IDs originally associated with this section from the plan
-                                original_associated_ids = set(section.associated_note_ids or [])
-                                
-                                # Find which of the originally associated notes survived the redundancy check
-                                kept_associated_ids = original_associated_ids.intersection(filtered_note_ids_set)
-                                
-                                # Retrieve the actual Note objects for the kept IDs
-                                section_notes_kept = [filtered_notes_map[note_id] for note_id in kept_associated_ids]
-                                
-                                # Create the AssignedNotes object for this section
-                                kept_note_ids = [note.note_id for note in section_notes_kept]
-                                assignments[section.section_id] = AssignedNotes(
-                                    section_id=section.section_id,
-                                    relevant_note_ids=kept_note_ids,
-                                    reasoning=f"Notes automatically assigned based on existing section associations after redundancy check."
+                                empty_assignments[section.section_id] = AssignedNotes(
+                                    section_id=section.section_id, 
+                                    relevant_note_ids=[], 
+                                    reasoning="No notes available for this section."
                                 )
-                                logger.debug(f"Assigned {len(section_notes_kept)} filtered notes to section {section.section_id} (Skip Replanning).")
-                                
-                                # Recursively process subsections
                                 if section.subsections:
-                                    process_sections_for_assignment(section.subsections)
+                                    process_empty_sections(section.subsections)
+                        process_empty_sections(current_plan.report_outline)
+                        full_note_assignments = FullNoteAssignments(assignments=empty_assignments)
+                        logger.info(f"Created empty note assignments for {len(empty_assignments)} sections.")
 
-                        process_sections_for_assignment(current_plan.report_outline)
-                        full_note_assignments = FullNoteAssignments(assignments=assignments)
-                        logger.info(f"Created simple note assignments for {len(assignments)} sections based on filtered notes (Skip Replanning).")
+                    else:
+                        logger.info(f"Found {len(all_notes)} notes for redundancy reflection.")
+                        # 2. Run redundancy reflection (using ReflectionManager)
+                        # Assuming ReflectionManager has a method like this, or we add it.
+                        try:
+                            filtered_notes = await self.reflection_manager.perform_redundancy_check(
+                            mission_id=mission_id,
+                            notes=all_notes,
+                            log_queue=log_queue,
+                            update_callback=update_callback
+                            )
+                            logger.info(f"Redundancy check completed. {len(filtered_notes)} notes remaining.")
+                            
+                            # 3. Update notes in context (optional, depends on how perform_redundancy_check works)
+                            # If the check returns only the notes to keep, we might need to update the context
+                            # or just use filtered_notes directly. Let's assume we use filtered_notes.
 
-                    except Exception as reflect_err:
-                        logger.error(f"Error during redundancy reflection for mission {mission_id}: {reflect_err}", exc_info=True)
-                        await self.context_manager.log_execution_step(
+                            # 4. Create a simple FullNoteAssignments structure based on the *existing* plan
+                            # We map the filtered notes back to their original sections without re-assigning.
+                            current_plan = self.context_manager.get_plan(mission_id)
+                            if not current_plan:
+                                logger.error(f"Cannot assign filtered notes: Plan not found for mission {mission_id}.")
+                                await self.context_manager.update_mission_status(mission_id, "failed", "Plan not found when skipping replanning.")
+                                return # Abort if plan is missing
+                            
+                            # Import AssignedNotes here, locally within the method scope
+                            from ai_researcher.agentic_layer.agents.note_assignment_agent import AssignedNotes
+
+                            assignments: Dict[str, AssignedNotes] = {}
+                            # Create a map of filtered notes by ID for efficient lookup
+                            filtered_notes_map = {note.note_id: note for note in filtered_notes}
+                            filtered_note_ids_set = set(filtered_notes_map.keys())
+
+                            # Iterate through the plan sections to assign filtered notes
+                            def process_sections_for_assignment(sections: List[ReportSection]):
+                                for section in sections:
+                                    # Get note IDs originally associated with this section from the plan
+                                    original_associated_ids = set(section.associated_note_ids or [])
+                                    
+                                    # Find which of the originally associated notes survived the redundancy check
+                                    kept_associated_ids = original_associated_ids.intersection(filtered_note_ids_set)
+                                    
+                                    # Retrieve the actual Note objects for the kept IDs
+                                    section_notes_kept = [filtered_notes_map[note_id] for note_id in kept_associated_ids]
+                                    
+                                    # Create the AssignedNotes object for this section
+                                    kept_note_ids = [note.note_id for note in section_notes_kept]
+                                    assignments[section.section_id] = AssignedNotes(
+                                        section_id=section.section_id,
+                                        relevant_note_ids=kept_note_ids,
+                                        reasoning=f"Notes automatically assigned based on existing section associations after redundancy check."
+                                    )
+                                    logger.debug(f"Assigned {len(section_notes_kept)} filtered notes to section {section.section_id} (Skip Replanning).")
+                                    
+                                    # Recursively process subsections
+                                    if section.subsections:
+                                        process_sections_for_assignment(section.subsections)
+
+                            process_sections_for_assignment(current_plan.report_outline)
+                            full_note_assignments = FullNoteAssignments(assignments=assignments)
+                            logger.info(f"Created simple note assignments for {len(assignments)} sections based on filtered notes (Skip Replanning).")
+
+                        except Exception as reflect_err:
+                            logger.error(f"Error during redundancy reflection for mission {mission_id}: {reflect_err}", exc_info=True)
+                            await self.context_manager.log_execution_step(
                             mission_id, "AgentController", "Prepare Notes (Skip Replanning)",
                             status="failure", error_message=f"Redundancy reflection failed: {reflect_err}",
                             log_queue=log_queue, update_callback=update_callback
-                        )
-                        await self.context_manager.update_mission_status(mission_id, "failed", "Redundancy reflection failed.")
-                        return # Abort on reflection error
+                            )
+                            await self.context_manager.update_mission_status(mission_id, "failed", "Redundancy reflection failed.")
+                            return # Abort on reflection error
 
-                await self.context_manager.log_execution_step(
-                    mission_id=mission_id, agent_name="AgentController", action="Prepare Notes (Skip Replanning)",
-                    status="success", output_summary=f"Completed redundancy reflection. Prepared notes for writing.", # Use output_summary
-                    log_queue=log_queue, update_callback=update_callback
-                )
+                    await self.context_manager.log_execution_step(
+                        mission_id=mission_id, agent_name="AgentController", action="Prepare Notes (Skip Replanning)",
+                        status="success", output_summary=f"Completed redundancy reflection. Prepared notes for writing.", # Use output_summary
+                        log_queue=log_queue, update_callback=update_callback
+                    )
+                    
+                    # Save note assignments to checkpoint for potential writing phase resume (skip replanning path)
+                    if full_note_assignments:
+                        await self.context_manager.save_phase_checkpoint(
+                            mission_id, 'writing', 
+                            {'note_assignments': full_note_assignments.dict()}
+                        )
+
+            else:
+                # We're resuming from writing phase - need to reconstruct note assignments
+                logger.info("Resuming from writing phase - loading or reconstructing note assignments")
+                
+                # Check if we have saved note assignments in the phase checkpoint
+                writing_checkpoint = await self.context_manager.get_phase_checkpoint(mission_id, 'writing')
+                if writing_checkpoint and 'note_assignments' in writing_checkpoint:
+                    # Load from checkpoint
+                    full_note_assignments = FullNoteAssignments(**writing_checkpoint['note_assignments'])
+                    logger.info(f"Loaded note assignments from checkpoint: {len(full_note_assignments.assignments)} sections")
+                else:
+                    # Need to reconstruct from existing plan and notes
+                    logger.info("No saved note assignments found - reconstructing from plan")
+                    mission_context = self.context_manager.get_mission_context(mission_id)
+                    current_plan = mission_context.plan if mission_context else None
+                    
+                    if not current_plan:
+                        logger.error(f"Cannot reconstruct note assignments: Plan not found for mission {mission_id}")
+                        await self.context_manager.update_mission_status(mission_id, "failed", "Plan not found when resuming writing phase")
+                        return
+                    
+                    # Import AssignedNotes locally
+                    from ai_researcher.agentic_layer.agents.note_assignment_agent import AssignedNotes
+                    
+                    # Create assignments from the existing plan's associated_note_ids
+                    assignments: Dict[str, AssignedNotes] = {}
+                    
+                    def reconstruct_assignments(sections: List[ReportSection]):
+                        for section in sections:
+                            associated_ids = section.associated_note_ids or []
+                            assignments[section.section_id] = AssignedNotes(
+                                section_id=section.section_id,
+                                relevant_note_ids=associated_ids,
+                                reasoning="Reconstructed from existing plan for resume"
+                            )
+                            if section.subsections:
+                                reconstruct_assignments(section.subsections)
+                    
+                    reconstruct_assignments(current_plan.report_outline)
+                    full_note_assignments = FullNoteAssignments(assignments=assignments)
+                    logger.info(f"Reconstructed note assignments for {len(assignments)} sections")
+                    
+                    # Save to checkpoint for future resumes
+                    await self.context_manager.save_phase_checkpoint(
+                        mission_id, 'writing', 
+                        {'note_assignments': full_note_assignments.dict()}
+                    )
 
             # Ensure full_note_assignments is not None before proceeding
             if full_note_assignments is None:
@@ -1172,12 +1367,20 @@ Make sure to address the user's specific concerns and suggestions."""
                 logger.info(f"Mission {mission_id} was {mission_context.status} before writing phase. Aborting.")
                 return
 
+            # Get checkpoint data if resuming from writing phase
+            writing_checkpoint = None
+            if resume_from_phase == "writing":
+                writing_checkpoint = self.context_manager.get_resume_checkpoint(mission_id)
+                if writing_checkpoint and writing_checkpoint.get('phase') == 'writing':
+                    logger.info(f"Found writing checkpoint for mission {mission_id}: {writing_checkpoint}")
+
             writing_success = await self.writing_manager.run_writing_phase(
                 mission_id=mission_id,
                 assigned_notes=full_note_assignments,
                 active_goals=active_goals,
                 log_queue=log_queue,
-                update_callback=update_callback
+                update_callback=update_callback,
+                resume_checkpoint=writing_checkpoint
             )
             if not writing_success:
                 logger.error(f"Writing phase failed for mission {mission_id}. Aborting.")

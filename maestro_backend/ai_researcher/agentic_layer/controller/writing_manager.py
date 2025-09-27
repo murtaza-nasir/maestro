@@ -40,11 +40,13 @@ class WritingManager:
         assigned_notes: FullNoteAssignments,
         active_goals: List[Any],
         log_queue: Optional[queue.Queue] = None,
-        update_callback: Optional[Callable[[queue.Queue, ExecutionLogEntry], None]] = None
+        update_callback: Optional[Callable[[queue.Queue, ExecutionLogEntry], None]] = None,
+        resume_checkpoint: Optional[Dict[str, Any]] = None
     ) -> bool:
         """
         Manages the multi-pass writing process including initial draft, reflection, and revisions.
         Accepts FullNoteAssignments containing the mapping from section_id to AssignedNotes.
+        Supports resuming from a checkpoint if provided.
         """
         # Import dynamic config functions to get mission-specific settings
         from ai_researcher.dynamic_config import get_writing_passes
@@ -97,7 +99,16 @@ class WritingManager:
         else:
             change_suggestions = []  # Initialize as empty if none exist
 
-        for pass_num in range(num_writing_passes):
+        # Check if we're resuming from a checkpoint
+        start_pass = 0
+        completed_sections = set()
+        if resume_checkpoint:
+            start_pass = resume_checkpoint.get('current_pass', 0)
+            completed_sections = set(resume_checkpoint.get('completed_sections', []))
+            logger.info(f"Resuming writing phase from checkpoint: Pass {start_pass + 1}/{num_writing_passes}, "
+                       f"Completed sections: {len(completed_sections)}")
+
+        for pass_num in range(start_pass, num_writing_passes):
             logger.info(f"--- Starting Writing Pass {pass_num + 1}/{num_writing_passes} ---")
             logger.info(f"DEBUG: At start of pass {pass_num}, change_suggestions has {len(change_suggestions)} items")
             mission_context = self.controller.context_manager.get_mission_context(mission_id)  # Refresh context
@@ -239,6 +250,13 @@ class WritingManager:
                 # 3. Execute writing tasks sequentially, updating context
                 logger.info(f"Executing {len(final_write_order)} writing tasks for Pass 1...")
                 for section_to_write in final_write_order:
+                    section_id = section_to_write.section_id
+                    
+                    # Skip sections that were already completed (from checkpoint)
+                    if pass_num == 0 and section_id in completed_sections:
+                        logger.info(f"Skipping already completed section {section_id} ('{section_to_write.title}')")
+                        continue
+                    
                     # Check mission status before writing each section
                     if not await check_mission_status_async(self.controller, mission_id):
                         logger.info(f"Mission {mission_id} stopped/paused during writing phase (Pass 1). Stopping section writing.")
@@ -252,6 +270,16 @@ class WritingManager:
                         written_content_context = self.controller.context_manager.get_mission_context(mission_id).report_content.copy()
                         # ADDED CHECK: Skip WritingAgent for synthesized intros in Pass 1
                         logger.info(f"Skipping WritingAgent for synthesized intro section {section_to_write.section_id} in Pass 1.")
+                        # Mark as completed and save checkpoint
+                        if pass_num == 0:
+                            completed_sections.add(section_id)
+                            checkpoint_data = {
+                                'phase': 'writing',
+                                'current_pass': pass_num,
+                                'completed_sections': list(completed_sections),
+                                'last_completed_section': section_id
+                            }
+                            await self.controller.context_manager.save_phase_checkpoint(mission_id, 'writing', checkpoint_data)
                         continue  # Move to the next section in the write order
 
                     # This call will now be skipped if the continue statement above is hit
@@ -267,6 +295,18 @@ class WritingManager:
                     )
                     # Update context map *after* writing is done and stored by _write_section_content
                     written_content_context = self.controller.context_manager.get_mission_context(mission_id).report_content.copy()
+                    
+                    # Mark section as completed and save checkpoint (for first pass only)
+                    if pass_num == 0:
+                        completed_sections.add(section_id)
+                        checkpoint_data = {
+                            'phase': 'writing',
+                            'current_pass': pass_num,
+                            'completed_sections': list(completed_sections),
+                            'last_completed_section': section_id
+                        }
+                        await self.controller.context_manager.save_phase_checkpoint(mission_id, 'writing', checkpoint_data)
+                        logger.info(f"Saved checkpoint after completing section {section_id}")
 
             else:
                 # Subsequent Passes: Revision based on Reflection
@@ -359,6 +399,16 @@ class WritingManager:
                     change_suggestions = []  # Clear suggestions if reflection failed
                     # Also clear in context
                     await self.controller.context_manager.update_writing_suggestions(mission_id, [])
+            
+            # Save checkpoint at the end of each pass
+            checkpoint_data = {
+                'phase': 'writing',
+                'current_pass': pass_num + 1,  # Next pass to execute
+                'completed_sections': [],  # Reset for next pass
+                'completed_pass': pass_num
+            }
+            await self.controller.context_manager.save_phase_checkpoint(mission_id, 'writing', checkpoint_data)
+            logger.info(f"Saved checkpoint at end of pass {pass_num + 1}")
             
             logger.info(f"DEBUG: End of pass {pass_num}, change_suggestions has {len(change_suggestions)} items before loop continues")
 
