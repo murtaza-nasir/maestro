@@ -934,9 +934,10 @@ Instructions:
                 section_id = section.section_id
                 strategy = section.research_strategy
 
-                # Skip sections that were already completed (from checkpoint)
-                if section_id in completed_sections:
-                    logger.info(f"Round {round_num}: Skipping already completed section {section_id} ('{section.title}')")
+                # Skip sections that were already completed (from checkpoint) - ONLY in the resumed round
+                # In subsequent rounds, all sections should be researched again
+                if resume_checkpoint and round_num == start_round and section_id in completed_sections:
+                    logger.info(f"Round {round_num}: Skipping already completed section {section_id} ('{section.title}') - completed before pause")
                     processed_sections_this_round.add(section_id)
                     continue
 
@@ -1222,6 +1223,11 @@ Instructions:
                 logger.info("No section intros ready for synthesis in this round.")
 
             logger.info(f"--- Completed Research Round {round_num}/{num_rounds} ---")
+            
+            # Clear completed_sections after the resumed round - subsequent rounds should research all sections
+            if resume_checkpoint and round_num == start_round:
+                logger.info(f"Clearing completed sections after resumed round {round_num} - subsequent rounds will research all sections")
+                completed_sections.clear()
 
             # Inter-Round Outline Revision (Conditional)
             # Only run revision if it's NOT the last round
