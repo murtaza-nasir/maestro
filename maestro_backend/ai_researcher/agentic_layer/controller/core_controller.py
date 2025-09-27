@@ -653,7 +653,8 @@ class AgentController:
             }
             
             # Store the checkpoint in context for run_mission to use
-            self.context_manager.store_resume_checkpoint(mission_id, resume_checkpoint)
+            # Use save_phase_checkpoint for consistency with execution code
+            await self.context_manager.save_phase_checkpoint(mission_id, 'structured_research', resume_checkpoint)
             
             logger.info(f"Stored checkpoint and prepared mission state for resume from round {round_num}")
             
@@ -722,7 +723,8 @@ class AgentController:
                     logger.info(f"Loaded {len(resume_checkpoint['completed_sections'])} completed sections from checkpoint")
             
             # Store the checkpoint in context for run_mission to use
-            self.context_manager.store_resume_checkpoint(mission_id, resume_checkpoint)
+            # Use save_phase_checkpoint for consistency with execution code
+            await self.context_manager.save_phase_checkpoint(mission_id, 'writing', resume_checkpoint)
             
             logger.info(f"Stored checkpoint and prepared mission state for writing phase resume from pass {writing_pass}")
             
@@ -881,8 +883,8 @@ Make sure to address the user's specific concerns and suggestions."""
             # If structured research has checkpoint data but isn't marked complete
             if 'structured_research' not in mission_context.completed_phases:
                 logger.info(f"Mission {mission_id} has structured research checkpoint at round {sr_checkpoint.get('current_round', 0)}")
-                # Restore the checkpoint and resume from structured research
-                self.context_manager.store_resume_checkpoint(mission_id, sr_checkpoint)
+                # Checkpoint is already stored under structured_research key, just resume
+                # No need to call store_resume_checkpoint as data is already in correct format
                 await self.run_mission(mission_id, log_queue, update_callback, resume_from_phase="structured_research")
                 return
         
@@ -892,8 +894,8 @@ Make sure to address the user's specific concerns and suggestions."""
             # If writing has checkpoint data but isn't marked complete
             if 'writing' not in mission_context.completed_phases:
                 logger.info(f"Mission {mission_id} has writing checkpoint at pass {writing_checkpoint.get('current_pass', 0)}")
-                # Restore the checkpoint and resume from writing
-                self.context_manager.store_resume_checkpoint(mission_id, writing_checkpoint)
+                # Checkpoint is already stored under writing key, just resume
+                # No need to call store_resume_checkpoint as data is already in correct format
                 await self.run_mission(mission_id, log_queue, update_callback, resume_from_phase="writing")
                 return
         
@@ -1129,9 +1131,19 @@ Make sure to address the user's specific concerns and suggestions."""
             # Get checkpoint data if resuming
             resume_checkpoint = None
             if resume_from_phase == "structured_research":
-                resume_checkpoint = self.context_manager.get_resume_checkpoint(mission_id)
-                if resume_checkpoint and resume_checkpoint.get('phase') == 'structured_research':
-                    logger.info(f"Found structured_research checkpoint for mission {mission_id}: {resume_checkpoint}")
+                # Get the specific phase checkpoint for structured_research
+                mission_context = self.context_manager.get_mission_context(mission_id)
+                logger.info(f"[DEBUG] Mission context phase_checkpoint: {mission_context.phase_checkpoint if mission_context else 'NO_CONTEXT'}")
+                
+                if mission_context and mission_context.phase_checkpoint and isinstance(mission_context.phase_checkpoint, dict):
+                    # Always use nested format (from save_phase_checkpoint)
+                    if 'structured_research' in mission_context.phase_checkpoint:
+                        resume_checkpoint = mission_context.phase_checkpoint['structured_research']
+                        logger.info(f"Found structured_research checkpoint for mission {mission_id}: {resume_checkpoint}")
+                    else:
+                        logger.warning(f"No structured_research checkpoint found for mission {mission_id}")
+                else:
+                    logger.warning(f"No phase_checkpoint data available for mission {mission_id}")
             else:
                 # Starting structured research fresh - save initial checkpoint
                 logger.info(f"Starting structured research phase for mission {mission_id}")

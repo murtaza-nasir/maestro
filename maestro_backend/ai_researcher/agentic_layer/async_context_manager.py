@@ -550,16 +550,10 @@ class AsyncContextManager:
         
         return "completed"
     
-    def store_resume_checkpoint(self, mission_id: str, checkpoint: Dict[str, Any]):
-        """Store checkpoint information for resuming a mission."""
-        mission = self.get_mission_context(mission_id)
-        if not mission:
-            logger.warning(f"Cannot store checkpoint - mission {mission_id} not found")
-            return
-        
-        # Store the checkpoint in the mission's phase_checkpoint field
-        mission.phase_checkpoint = checkpoint
-        logger.info(f"Stored resume checkpoint for mission {mission_id}: {checkpoint}")
+    # DEPRECATED: Use save_phase_checkpoint instead for consistency
+    # def store_resume_checkpoint(self, mission_id: str, checkpoint: Dict[str, Any]):
+    #     """Store checkpoint information for resuming a mission."""
+    #     # This method has been replaced with save_phase_checkpoint for consistency
     
     def get_resume_checkpoint(self, mission_id: str) -> Dict[str, Any]:
         """Get detailed checkpoint information for resuming a mission."""

@@ -1326,12 +1326,21 @@ async def resume_mission_execution(
         if mission_context.status in ["stopped", "paused", "failed"]:
             logger.info(f"Mission {mission_id} is resumable (status: {mission_context.status}). Setting status to 'running'.")
             await controller.context_manager.update_mission_status(mission_id, "running")
+            logger.info(f"[DEBUG] Status update completed for mission {mission_id}")
         else:
             logger.info(f"Mission {mission_id} status is '{mission_context.status}', not updating status before resume.")
         
-        # Resume mission execution in a separate thread from the pool
-        loop = asyncio.get_event_loop()
-        thread_pool: ThreadPoolExecutor = request.app.state.thread_pool
+        logger.info(f"[DEBUG] About to create thread for mission {mission_id}")
+        
+        try:
+            # Resume mission execution in a separate thread from the pool
+            loop = asyncio.get_event_loop()
+            logger.info(f"[DEBUG] Got event loop for mission {mission_id}")
+            thread_pool: ThreadPoolExecutor = request.app.state.thread_pool
+            logger.info(f"[DEBUG] Got thread pool for mission {mission_id}")
+        except Exception as e:
+            logger.error(f"[DEBUG] Exception getting loop/thread pool for mission {mission_id}: {e}", exc_info=True)
+            raise
         
         async def run_mission_async():
             """Resume the mission from where it left off."""
@@ -1373,12 +1382,15 @@ async def resume_mission_execution(
                 new_loop.close()
 
         import threading
+        logger.info(f"[DEBUG] About to run_in_executor for mission {mission_id}")
         future = loop.run_in_executor(thread_pool, run_mission_in_thread)
+        logger.info(f"[DEBUG] Thread creation initiated for mission {mission_id}")
         
         # Register the future for cancellation support
         from ai_researcher.agentic_layer.controller.utils.mission_lifecycle import get_lifecycle_manager
         lifecycle_manager = get_lifecycle_manager()
         lifecycle_manager.register_mission_future(mission_id, future)
+        logger.info(f"[DEBUG] Future registered for mission {mission_id}")
         
         logger.info(f"Mission {mission_id} resume initiated successfully")
         return {"message": "Mission execution resumed", "mission_id": mission_id}
