@@ -1149,7 +1149,7 @@ Make sure to address the user's specific concerns and suggestions."""
                 logger.info(f"Starting structured research phase for mission {mission_id}")
                 initial_checkpoint = {
                     'phase': 'structured_research',
-                    'current_round': 0,
+                    'current_round': 0,  # 0 means no rounds completed yet
                     'completed_sections': []
                 }
                 await self.context_manager.save_phase_checkpoint(mission_id, 'structured_research', initial_checkpoint)

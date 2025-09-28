@@ -378,8 +378,6 @@ class SystemStatus(BaseModel):
 
 # Document and DocumentGroup Schemas
 
-from pydantic import BaseModel, Field
-
 class DocumentBase(BaseModel):
     original_filename: str
     metadata_: Optional[Dict[str, Any]] = None

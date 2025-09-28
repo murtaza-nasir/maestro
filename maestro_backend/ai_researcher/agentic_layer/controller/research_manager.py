@@ -837,9 +837,11 @@ Instructions:
         start_round = 1
         completed_sections = set()
         if resume_checkpoint:
-            start_round = resume_checkpoint.get('current_round', 1)
+            # current_round stores the last COMPLETED round, so we start from the next one
+            completed_round = resume_checkpoint.get('current_round', 0)
+            start_round = max(1, completed_round + 1)  # Ensure we never start from round 0
             completed_sections = set(resume_checkpoint.get('completed_sections', []))
-            logger.info(f"Resuming from checkpoint: Round {start_round}, Completed sections: {completed_sections}")
+            logger.info(f"Resuming from checkpoint: Completed round {completed_round}, Starting at round {start_round}, Completed sections: {completed_sections}")
 
         # Create Mission-Specific Feedback Callback
         mission_feedback_callback = None
