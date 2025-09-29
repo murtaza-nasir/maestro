@@ -4,7 +4,8 @@ uvicorn[standard]
 sqlalchemy
 psycopg2-binary
 asyncpg
-passlib[bcrypt]
+bcrypt==4.1.3
+passlib
 python-jose[cryptography]
 python-multipart
 
