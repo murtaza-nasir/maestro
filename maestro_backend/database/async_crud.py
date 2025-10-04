@@ -546,7 +546,7 @@ async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100) -> List[m
 
 async def create_user(db: AsyncSession, user: schemas.UserCreate) -> models.User:
     """Create a new user asynchronously."""
-    from passlib.context import CryptContext
+    from libpass.context import CryptContext
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
     
     hashed_password = pwd_context.hash(user.password)
