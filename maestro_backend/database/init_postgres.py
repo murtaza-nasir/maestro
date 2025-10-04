@@ -85,7 +85,7 @@ def create_tables():
 def create_default_admin():
     """Create a default admin user if none exists"""
     from sqlalchemy.orm import Session
-    from libpass.context import CryptContext
+    from passlib.context import CryptContext
     from datetime import datetime, timezone
     
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

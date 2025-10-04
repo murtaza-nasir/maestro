@@ -5,16 +5,16 @@
 # MAESTRO: Your Self-Hosted AI Research Assistant
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-0.1.8--alpha-green.svg)](https://github.com/murtaza-nasir/maestro.git)
+[![Version](https://img.shields.io/badge/Version-0.1.9--alpha-green.svg)](https://github.com/murtaza-nasir/maestro.git)
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://hub.docker.com/r/murtaza-nasir/maestro)
 [![Documentation](https://img.shields.io/badge/Docs-Available-brightgreen.svg)](https://murtaza-nasir.github.io/maestro/)
 
-> **Version 0.1.8-alpha (Sep 26, 2025) - Mission Resilience & Document Intelligence Update**
-> 
-> - **Intelligent Mission Resume**: Missions properly resume from exact checkpoint with all data preserved
-> - **arXiv Paper Fetcher**: Direct fetch and process academic papers from arXiv
-> - **Writing Phase Resume**: Full support for resuming missions during writing phase
-> - **Document Reprocessing**: Re-process and re-embed existing documents with improved extraction 
+> **Version 0.1.9-alpha (Oct 3, 2025) - Stability & Security Update**
+>
+> - **Mission Stability**: Fixed pause/resume with proper checkpoint handling
+> - **Security Update**: Replaced passlib with maintained libpass fork
+> - **Bug Fixes**: Resolved Round/Pass counter and activity log persistence issues
+> - **Password Compatibility**: Fixed bcrypt compatibility for authentication 
 
 MAESTRO is an AI-powered research platform you can host on your own hardware. It's designed to manage complex research tasks from start to finish in a collaborative research environment. Plan your research, let AI agents carry it out, and watch as they generate detailed reports based on your documents and sources from the web.
 
