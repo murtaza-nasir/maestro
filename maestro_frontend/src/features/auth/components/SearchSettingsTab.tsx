@@ -28,51 +28,51 @@ const SEARXNG_CATEGORIES = [
 export const SearchSettingsTab: React.FC = () => {
   const { draftSettings, setDraftSettings } = useSettingsStore()
 
-  const handleProviderChange = (provider: 'tavily' | 'linkup' | 'searxng' | 'jina') => {
+  const handleProviderChange = (provider: 'tavily' | 'linkup' | 'searxng' | 'jina' | 'yacy') => {
     if (!draftSettings) return
-    
+
     const newSearch = {
       ...draftSettings.search,
       provider
     }
-    
+
     setDraftSettings({ search: newSearch })
   }
 
   const handleApiKeyChange = (field: string, value: string | boolean | number) => {
     if (!draftSettings) return
-    
+
     const newSearch = {
       ...draftSettings.search,
       [field]: value
     }
-    
+
     setDraftSettings({ search: newSearch })
   }
 
   const handleCategoriesChange = (categoryValue: string, checked: boolean) => {
     if (!draftSettings) return
-    
+
     const currentCategories = draftSettings.search.searxng_categories || 'general'
     const categoriesArray = currentCategories.split(',').map(c => c.trim()).filter(c => c)
-    
+
     let newCategoriesArray
     if (checked) {
       newCategoriesArray = [...categoriesArray.filter(c => c !== categoryValue), categoryValue]
     } else {
       newCategoriesArray = categoriesArray.filter(c => c !== categoryValue)
     }
-    
+
     // Ensure at least one category is selected
     if (newCategoriesArray.length === 0) {
       newCategoriesArray = ['general']
     }
-    
+
     const newSearch = {
       ...draftSettings.search,
       searxng_categories: newCategoriesArray.join(',')
     }
-    
+
     setDraftSettings({ search: newSearch })
   }
 
@@ -120,6 +120,7 @@ export const SearchSettingsTab: React.FC = () => {
                   <SelectItem value="linkup">LinkUp</SelectItem>
                   <SelectItem value="searxng">SearXNG</SelectItem>
                   <SelectItem value="jina">Jina</SelectItem>
+                  <SelectItem value="yacy">YaCy</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -142,9 +143,9 @@ export const SearchSettingsTab: React.FC = () => {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Get your API key from{' '}
-                  <a 
-                    href="https://app.tavily.com/home" 
-                    target="_blank" 
+                  <a
+                    href="https://app.tavily.com/home"
+                    target="_blank"
                     rel="noopener noreferrer"
                     className="text-blue-600 hover:underline"
                   >
@@ -172,9 +173,9 @@ export const SearchSettingsTab: React.FC = () => {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Get your API key from{' '}
-                  <a 
-                    href="https://linkup.com/dashboard" 
-                    target="_blank" 
+                  <a
+                    href="https://linkup.com/dashboard"
+                    target="_blank"
                     rel="noopener noreferrer"
                     className="text-blue-600 hover:underline"
                   >
@@ -202,9 +203,9 @@ export const SearchSettingsTab: React.FC = () => {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Get your API key from{' '}
-                  <a 
-                    href="https://jina.ai/reader" 
-                    target="_blank" 
+                  <a
+                    href="https://jina.ai/reader"
+                    target="_blank"
                     rel="noopener noreferrer"
                     className="text-orange-600 hover:underline"
                   >
@@ -283,9 +284,9 @@ export const SearchSettingsTab: React.FC = () => {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Enter the URL of your SearXNG instance. You can use a public instance or{' '}
-                  <a 
-                    href="https://docs.searxng.org/" 
-                    target="_blank" 
+                  <a
+                    href="https://docs.searxng.org/"
+                    target="_blank"
                     rel="noopener noreferrer"
                     className="text-purple-600 hover:underline"
                   >
@@ -293,6 +294,28 @@ export const SearchSettingsTab: React.FC = () => {
                   </a>
                   <br />
                   <strong>Note:</strong> Your SearXNG instance must be configured to output JSON format.
+                </p>
+              </div>
+            )}
+
+            {draftSettings.search.provider === 'yacy' && (
+              <div className="space-y-3 pl-3 border-l-2 border-indigo-200 bg-indigo-50/30 rounded-r-lg p-3">
+                <p className="text-xs text-muted-foreground-foreground mb-2">
+                  Custom YaCy instance search interface.
+                </p>
+                <div className="space-y-1.5">
+                  <Label htmlFor="yacy-base-url" className="text-sm">YaCy Base URL</Label>
+                  <Input
+                    id="yacy-base-url"
+                    type="url"
+                    value={draftSettings.search.yacy_base_url || ''}
+                    onChange={(e) => handleApiKeyChange('yacy_base_url', e.target.value)}
+                    placeholder="https://your-yacy-instance.com"
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Enter the base URL of your YaCy instance. YaCy should have json results enabled.
                 </p>
               </div>
             )}
@@ -338,7 +361,7 @@ export const SearchSettingsTab: React.FC = () => {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  {draftSettings.search.provider === 'tavily' 
+                  {draftSettings.search.provider === 'tavily'
                     ? 'Advanced search provides more comprehensive results but costs 2x API credits.'
                     : 'Deep search uses an agentic workflow for more comprehensive results but takes longer.'}
                 </p>
@@ -477,7 +500,7 @@ export const SearchSettingsTab: React.FC = () => {
               <span className="text-sm text-muted-foreground">characters</span>
             </div>
             <p className="text-xs text-muted-foreground">
-              Maximum length for search queries (100-400 characters). Queries exceeding this limit will be intelligently refined to preserve search intent. 
+              Maximum length for search queries (100-400 characters). Queries exceeding this limit will be intelligently refined to preserve search intent.
               Default is 350 to ensure compatibility with most search providers. Tavily has a hard limit of 400 characters.
             </p>
           </div>

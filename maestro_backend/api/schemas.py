@@ -86,6 +86,7 @@ class SearchSettings(BaseModel):
     jina_read_full_content: Optional[bool] = None
     jina_fetch_favicons: Optional[bool] = None
     jina_bypass_cache: Optional[bool] = None
+    yacy_base_url: Optional[str] = None
 
 class WebFetchSettings(BaseModel):
     provider: str = "original"  # "original", "jina", or "original_with_jina_fallback"
