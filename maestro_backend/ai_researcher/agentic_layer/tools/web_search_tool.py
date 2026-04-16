@@ -13,7 +13,8 @@ from datetime import datetime
 from ai_researcher.dynamic_config import (
     get_web_search_provider, get_tavily_api_key, get_linkup_api_key, get_searxng_base_url, get_searxng_categories,
     get_jina_api_key, get_search_depth,
-    get_jina_read_full_content, get_jina_fetch_favicons, get_jina_bypass_cache
+    get_jina_read_full_content, get_jina_fetch_favicons, get_jina_bypass_cache,
+    get_yacy_base_url,
 )
 
 logger = logging.getLogger(__name__)
@@ -131,6 +132,19 @@ class WebSearchTool:
                 self.client = api_key  # Store the API key as the "client" for Jina
                 self.api_key_configured = True
                 logger.info("WebSearchTool initialized with Jina.")
+            elif self.provider == "yacy":
+                if not requests:
+                    raise ImportError("YaCy provider selected, but 'requests' library not installed.")
+                base_url = get_yacy_base_url()
+                if not base_url:
+                    logger.warning("YaCy base URL not configured in user settings or environment variables.")
+                    self.api_key_configured = False
+                    return
+                self.client = {
+                    "base_url": base_url.rstrip('/'),
+                }
+                self.api_key_configured = True
+                logger.info("WebSearchTool initialized with YaCy.")
             else:
                 raise ValueError(f"Unsupported web search provider configured: {self.provider}")
         except Exception as e:
@@ -461,6 +475,93 @@ class WebSearchTool:
                 if not formatted_results and not error_msg:
                     logger.info(f"Jina search returned no results for query: {search_query}")
                     # Don't set error_msg here, just return empty results
+
+            elif self.provider == "yacy":
+                # YaCy search
+                base_url = self.client["base_url"]
+
+                search_url = f"{base_url}/yacysearch.json"
+
+                # Build YaCy search parameters
+                params = {"query": search_query, "count": max_results, "format": "json"}
+
+                # Add optional parameters
+                if from_date:
+                    params["start_date"] = from_date
+                if to_date:
+                    params["end_date"] = to_date
+
+                if include_domains:
+                    # Add domain filter
+                    params["site"] = ",".join(include_domains)
+
+                if exclude_domains:
+                    # Add exclusion filter
+                    for domain in exclude_domains:
+                        params["exclude"] = (f"{params.get('exclude', '')} -site:{domain}".strip())
+
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        search_url,
+                        params=params,
+                        timeout=aiohttp.ClientTimeout(total=30),
+                    ) as response:
+                        if response.status == 401:
+                            error_msg = f"YaCy returns unauthorized. Check your configuration."
+                            logger.error(error_msg)
+                        else:
+                            response.raise_for_status()
+                            search_data = await response.json()
+
+                # Handle YACY response format
+                if isinstance(search_data, dict):
+                    # YaCy returns results under channels[0].items
+                    channels = search_data.get("channels", [])
+                    if channels and len(channels) > 0:
+                        # Get the first channel's items
+                        first_channel = channels[0]
+                        if isinstance(first_channel, dict):
+                            results = first_channel.get("items", [])
+                        else:
+                            results = []
+                    else:
+                        # Fallback to other formats
+                        results = search_data.get("results", [])
+                        if not results:
+                            # Try alternative field names
+                            results = search_data.get("search", [])
+                            if not results:
+                                # Another common format
+                                response_data = search_data.get("response", {})
+                                if isinstance(response_data, dict):
+                                    results = response_data.get("results", [])
+                                else:
+                                    results = []
+
+                    for result in results[:max_results]:
+                        formatted_results.append({
+                            "title": result.get('title', result.get('name', 'No Title')),
+                            "snippet": result.get('description', result.get('content', result.get('snippet', 'No Snippet'))),
+                            "url": result.get("url", result.get("link", "#")),
+                        })
+                elif isinstance(search_data, list):
+                    # Direct list format
+                    for result in search_data[:max_results]:
+                        formatted_results.append({
+                            "title": result.get("title", result.get("name", "No Title")),
+                            "snippet": result.get("description", result.get("content", result.get("snippet", "No Snippet"))),
+                            "url": result.get("url", result.get("link", "#")),
+                        })
+
+            if error_msg:
+                logger.warning(f"Unexpected YaCy response format: {type(search_data)}")
+                # Direct list format
+                for result in search_data[:max_results]:
+                    formatted_results.append({
+                        "title": result.get("title", result.get("name", "No Title")),
+                        "snippet": result.get("description", result.get("content", result.get("snippet", "No Snippet"))),
+                        "url": result.get("url", result.get("link", "#")),
+                    })
 
             if error_msg:
                  return {"error": error_msg}

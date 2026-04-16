@@ -31,7 +31,7 @@ export interface AISettings {
 }
 
 export interface SearchSettings {
-  provider: 'tavily' | 'linkup' | 'searxng' | 'jina'
+  provider: 'tavily' | 'linkup' | 'searxng' | 'jina' | 'yacy'
   tavily_api_key: string | null
   linkup_api_key: string | null
   jina_api_key: string | null
@@ -42,6 +42,7 @@ export interface SearchSettings {
   jina_read_full_content?: boolean
   jina_fetch_favicons?: boolean
   jina_bypass_cache?: boolean
+  yacy_base_url: string | null
 }
 
 export interface ResearchParameters {
@@ -146,16 +147,16 @@ export const settingsApi = {
 
   // Get available models
   getAvailableModels: async (
-    provider?: string, 
-    apiKey?: string, 
+    provider?: string,
+    apiKey?: string,
     baseUrl?: string
   ): Promise<AvailableModelsResult> => {
     const params = new URLSearchParams()
     if (provider) params.append('provider', provider)
     if (apiKey) params.append('api_key', apiKey)
     if (baseUrl) params.append('base_url', baseUrl)
-    
-    const url = params.toString() 
+
+    const url = params.toString()
       ? `${API_CONFIG.ENDPOINTS.SETTINGS.GET_MODELS}?${params.toString()}`
       : API_CONFIG.ENDPOINTS.SETTINGS.GET_MODELS
     const response = await apiClient.get(url)
