@@ -1,0 +1,153 @@
+{
+  "metadata": {
+    "description": "Evaluation questions for WRITER ablation and RAG studies",
+    "corpus": "905 academic papers (178K chunks) in OR/IS/management science",
+    "difficulty_criteria": {
+      "easy": "Answer extractable from a single paper's findings/methodology. Tests basic retrieval + extraction.",
+      "medium": "Answer requires integrating findings from 2-3 papers on the same topic. Tests multi-document retrieval.",
+      "hard": "Answer requires synthesizing across subfields, resolving contradictions, or connecting concepts not explicitly linked. Tests full pipeline including reflection.",
+      "negative": "Answer not fully available in the corpus. Tests hallucination resistance and appropriate uncertainty signaling."
+    },
+    "design_notes": "Questions designed to resemble natural research queries (not keyword-stuffed). Ground truth docs identified by title patterns for robustness across DB rebuilds. Follows ScholarQABench/LitQA2 methodology of controlled evaluation with known ground truth."
+  },
+  "questions": [
+    {
+      "id": "E1",
+      "question": "What methods have been proposed for solving the hub location problem with congestion effects, and how do they handle time-sensitive demand?",
+      "difficulty": "easy",
+      "topic": "optimization",
+      "expected_source_titles": [
+        "Hub location with congestion and time-sensitive demand"
+      ],
+      "ground_truth_summary": "Should describe hub location models that incorporate congestion (e.g., queueing-based models) and time-sensitive demand characteristics. Should mention specific solution approaches such as Benders decomposition, Lagrangian relaxation, or metaheuristics applied to hub location variants.",
+      "rationale": "Single paper with a distinctive topic. Tests whether retrieval can locate a specific methodological contribution."
+    },
+    {
+      "id": "E2",
+      "question": "How has machine learning been applied to predict employee turnover, and what is the current state of the art according to recent benchmarking studies?",
+      "difficulty": "easy",
+      "topic": "workforce_analytics",
+      "expected_source_titles": [
+        "Predicting Employee Turnover: Scoping and Benchmarking the State-of-the-Art"
+      ],
+      "ground_truth_summary": "Should reference specific ML methods (random forests, gradient boosting, neural networks) applied to turnover prediction. Should mention benchmarking results comparing methods, key predictive features (job satisfaction, tenure, compensation), and limitations of current approaches.",
+      "rationale": "Single comprehensive benchmarking paper. Tests extraction of specific quantitative findings."
+    },
+    {
+      "id": "E3",
+      "question": "What role do pictures and visual content play in crowdfunding campaign success, particularly in driving donation behavior?",
+      "difficulty": "easy",
+      "topic": "crowdfunding",
+      "expected_source_titles": [
+        "PICTURES THAT ARE WORTH A THOUSAND DONATIONS"
+      ],
+      "ground_truth_summary": "Should discuss how visual content (images, photos) in crowdfunding campaigns influences donor behavior. Should mention specific findings about which types of images are most effective (e.g., images of beneficiaries, emotional content) and quantified effects on donation amounts or campaign success rates.",
+      "rationale": "Distinctive paper with a memorable title. Tests basic fact extraction from a single source."
+    },
+    {
+      "id": "E4",
+      "question": "How have prescriptive analytics methods been applied to urban policing operations, and what operational improvements have been demonstrated?",
+      "difficulty": "easy",
+      "topic": "prescriptive_analytics",
+      "expected_source_titles": [
+        "Prescriptive Analytics in Urban Policing Operations"
+      ],
+      "ground_truth_summary": "Should describe optimization or prescriptive analytics approaches applied to police resource allocation, patrol routing, or crime prevention. Should mention specific quantitative improvements in response times, coverage, or crime reduction.",
+      "rationale": "Specific application paper with quantifiable results. Tests retrieval of domain-specific methodological work."
+    },
+    {
+      "id": "M1",
+      "question": "How do digital platforms create and capture value in two-sided markets, and what platform design features matter most for user engagement on both sides?",
+      "difficulty": "medium",
+      "topic": "digital_platforms",
+      "expected_source_titles": [
+        "HOW USERS DRIVE VALUE IN TWO-SIDED MARKETS: PLATFORM DESIGNS THAT MATTER",
+        "Identity metamorphoses in digital disruption: a relational theory of identity",
+        "Platform drifting: When work digitalization hijacks its spirit"
+      ],
+      "ground_truth_summary": "Should synthesize findings about network effects, platform design choices (pricing structures, matching mechanisms, governance), and how both sides of the market contribute to value creation. Should integrate perspectives on platform disruption and digital identity transformation.",
+      "rationale": "Multiple papers on platform economics from different angles (design, disruption, identity). Tests multi-document retrieval and integration."
+    },
+    {
+      "id": "M2",
+      "question": "What approaches have been developed for managing hospital ICU capacity during pandemic conditions, and how do they account for uncertainty in patient demand?",
+      "difficulty": "medium",
+      "topic": "healthcare_operations",
+      "expected_source_titles": [
+        "ICU capacity expansion under uncertainty in the early stages of a pandemic"
+      ],
+      "ground_truth_summary": "Should discuss stochastic or robust optimization models for ICU capacity planning. Should address demand uncertainty modeling (scenario-based, distributionally robust), surge capacity strategies, and resource allocation under crisis conditions. Should integrate findings from multiple papers on healthcare operations during COVID-19.",
+      "rationale": "Healthcare operations topic with multiple papers. Medium difficulty because it requires connecting capacity planning with uncertainty quantification methods."
+    },
+    {
+      "id": "M3",
+      "question": "What does the literature reveal about how cognitive biases influence technology adoption decisions in organizations, and what debiasing interventions have been studied?",
+      "difficulty": "medium",
+      "topic": "behavioral_operations",
+      "expected_source_titles": [
+        "Human-centred decision support for the common good"
+      ],
+      "ground_truth_summary": "Should synthesize findings on specific cognitive biases (status quo bias, anchoring, overconfidence, confirmation bias) affecting enterprise system adoption. Should discuss debiasing strategies such as structured decision processes, decision support systems, and training interventions. Should integrate evidence from behavioral operations, IS adoption, and decision science literatures.",
+      "rationale": "Cross-cuts behavioral operations and IS adoption. Multiple papers from different perspectives need to be integrated."
+    },
+    {
+      "id": "M4",
+      "question": "How have inventory management and reallocation strategies been optimized in fashion retail networks, and what makes this domain particularly challenging compared to other retail sectors?",
+      "difficulty": "medium",
+      "topic": "supply_chain",
+      "expected_source_titles": [
+        "Inventory reallocation in a fashion retail network"
+      ],
+      "ground_truth_summary": "Should discuss the unique challenges of fashion retail (short product lifecycles, high demand uncertainty, seasonal patterns, long lead times). Should describe lateral transshipment, markdown optimization, and demand forecasting approaches. Should synthesize findings on how reallocation policies improve profitability across store networks.",
+      "rationale": "Fashion retail optimization connects supply chain management, demand forecasting, and network optimization. Requires integrating papers on inventory management and fashion-specific challenges."
+    },
+    {
+      "id": "H1",
+      "question": "How can insights from behavioral operations research on cognitive biases be combined with digital nudging techniques from information systems to design better decision support tools for supply chain managers?",
+      "difficulty": "hard",
+      "topic": "cross_domain_synthesis",
+      "expected_source_titles": [
+        "Human-centred decision support for the common good",
+        "Proactive digital workplace transformation"
+      ],
+      "ground_truth_summary": "Should connect three distinct literatures: (1) behavioral biases in operational decision-making (anchoring in demand forecasting, bullwhip effect from cognitive limitations), (2) digital nudging mechanisms from IS/HCI research (default settings, social proof, choice architecture), and (3) decision support system design principles. Should propose how nudging could counteract specific biases in SCM contexts. A strong answer recognizes that most existing work treats these domains separately.",
+      "rationale": "Requires connecting behavioral operations, digital nudging, and supply chain management — three subfields that rarely cite each other directly. Tests the reflection agent's ability to find cross-domain connections."
+    },
+    {
+      "id": "H2",
+      "question": "What is the evidence on whether increased cybersecurity investment actually improves firm financial performance, and how do breach disclosure strategies interact with market reactions?",
+      "difficulty": "hard",
+      "topic": "cybersecurity_economics",
+      "expected_source_titles": [],
+      "ground_truth_summary": "Should synthesize findings from IS security economics, finance, and risk management literatures. Should present evidence both for and against positive ROI of security investments. Should discuss event study findings on breach disclosures, mandatory vs. voluntary disclosure effects on stock prices, and how market reactions depend on breach severity, firm size, and industry. A strong answer acknowledges contradictory findings — some studies show negative market reactions while others show recovery patterns.",
+      "rationale": "Cross-domain synthesis requiring integration of cybersecurity, finance, and behavioral economics. Tests the reflection agent's ability to surface and handle contradictory evidence across fields."
+    },
+    {
+      "id": "H3",
+      "question": "How do sustainability pressures, digital transformation initiatives, and operational resilience requirements interact in modern supply chain management, and what trade-offs emerge when organizations pursue all three simultaneously?",
+      "difficulty": "hard",
+      "topic": "triple_challenge_synthesis",
+      "expected_source_titles": [],
+      "ground_truth_summary": "Should synthesize across sustainability/green SCM papers, digital transformation literature, and supply chain resilience/disruption research. Key tensions include: (1) sustainability investments may reduce short-term resilience by limiting supplier options, (2) digitalization enables both sustainability tracking and resilience through visibility but creates new vulnerabilities, (3) resilience strategies like redundancy conflict with lean/green objectives. A strong answer connects specific findings from each subfield to articulate trade-offs not explicitly discussed in any single paper.",
+      "rationale": "Hardest synthesis question — requires connecting three major research streams (sustainability, digital transformation, resilience) that each have 15-40 papers in the corpus but are rarely studied jointly. Tests whether iterative reflection can build novel cross-domain connections."
+    },
+    {
+      "id": "N1",
+      "question": "What clinical trial evidence supports the use of mRNA vaccine platforms for treating pancreatic ductal adenocarcinoma, and what are the observed immune response profiles in Phase II trials?",
+      "difficulty": "negative",
+      "topic": "clinical_oncology",
+      "expected_source_titles": [],
+      "ground_truth_summary": "The corpus contains ZERO papers on clinical oncology, mRNA vaccines, or cancer immunotherapy. This is an operations research / information systems corpus. A correct response should clearly state that no relevant literature was found in the corpus and should NOT attempt to answer from parametric knowledge. Any substantive claims about mRNA vaccines or pancreatic cancer treatment would be hallucinated.",
+      "rationale": "Completely out-of-domain topic (clinical medicine) with zero overlap with the OR/IS/management science corpus. Tests whether the system recognizes it has no relevant sources and signals this clearly rather than hallucinating."
+    },
+    {
+      "id": "N2",
+      "question": "What are the latest observational constraints on the Hubble tension from baryon acoustic oscillation measurements using DESI Year 1 data, and how do they compare with Planck CMB estimates?",
+      "difficulty": "negative",
+      "topic": "cosmology_physics",
+      "expected_source_titles": [],
+      "ground_truth_summary": "The corpus contains ZERO papers on cosmology, astrophysics, baryon acoustic oscillations, or the Hubble constant. This is an operations research / information systems corpus. A correct response should clearly state that no relevant literature was found and should NOT generate content from parametric knowledge. Any claims about DESI data, BAO measurements, or the Hubble tension would be fabricated.",
+      "rationale": "Completely out-of-domain topic (observational cosmology) with zero overlap with the corpus. Tests hallucination resistance with a topic that has highly specific technical vocabulary unlikely to appear in any OR/IS paper."
+    }
+  ]
+}
