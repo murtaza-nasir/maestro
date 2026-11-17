@@ -45,6 +45,27 @@ Advanced AI-powered search with content extraction capabilities.
 - **API Key**: Get from [Jina Dashboard](https://jina.ai/reader)
 - **Format**: `jina_...`
 
+### Parallel (Unified MCP)
+
+Use Parallel's `web_search` tool through the existing research and writing search workflow.
+
+1. Navigate to **Settings → Search**.
+2. Select **Parallel (Unified MCP)** and click **Save & Close**. No API key is required.
+3. Start a research mission with web search enabled, using a public topic such as
+   “Find the public Python documentation on asyncio task cancellation.”
+4. Check the returned source titles, excerpts and original links in the normal research output.
+
+The backend connects to `https://mcp.parallel.ai/mcp`. See [Parallel MCP setup](https://docs.parallel.ai/integrations/mcp/quickstart).
+Selecting another provider stops use of Parallel; existing providers and defaults are unchanged.
+
+Only use this option for queries you authorize to send to Parallel for public web search.
+Do not include private documents, credentials or confidential information in search queries.
+This integration calls only `web_search` and sends the query text; uploaded files and account credentials are not attached.
+Date and domain filters are unsupported and return an error rather than being silently ignored.
+Search depth does not apply. Result limits are applied locally, after exact URL deduplication;
+original URLs are retained for Maestro's source identity and citations. Empty searches return
+no sources, and unavailable searches use the existing search-error feedback.
+
 ### SearXNG
 
 Open-source metasearch engine that aggregates results from multiple search engines.

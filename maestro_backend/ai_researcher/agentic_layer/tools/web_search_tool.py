@@ -1,4 +1,6 @@
 import os
+import json
+from urllib.parse import urlsplit
 import logging
 import queue
 import aiohttp
@@ -55,7 +57,7 @@ class WebSearchInput(BaseModel):
 
 class WebSearchTool:
     """
-    Tool for performing web searches using the configured provider (Tavily or LinkUp).
+    Tool for performing web searches using the configured search provider.
     """
     # Class-level semaphore for rate limiting (max 2 concurrent requests)
     # Make it lazy to avoid event loop binding issues
@@ -120,6 +122,10 @@ class WebSearchTool:
                 self.client = base_url.rstrip('/')  # Store the base URL as the "client"
                 self.api_key_configured = True
                 logger.info("WebSearchTool initialized with SearXNG.")
+            elif self.provider == "parallel":
+                # Keyless Unified MCP is used only when explicitly selected.
+                self.api_key_configured = True
+                logger.info("WebSearchTool initialized with Parallel Unified MCP.")
             elif self.provider == "jina":
                 if not requests:
                     raise ImportError("Jina provider selected, but 'requests' library not installed.")
@@ -254,7 +260,12 @@ class WebSearchTool:
             search_query = query + " academic paper"
 
         try:
-            if self.provider == "tavily":
+            if self.provider == "parallel":
+                if from_date or to_date or include_domains or exclude_domains:
+                    raise ValueError("Unsupported Parallel search filters")
+                formatted_results = await self._search_parallel(search_query, max_results)
+
+            elif self.provider == "tavily":
                 # Map depth values for Tavily
                 tavily_depth = "basic" if depth == "standard" else "advanced"
                 
@@ -488,8 +499,14 @@ class WebSearchTool:
             # Handle specific authentication errors more gracefully
             user_friendly_error = None
             
+            # Keyless Parallel failures don't require API-key configuration.
+            if self.provider == "parallel":
+                if from_date or to_date or include_domains or exclude_domains:
+                    user_friendly_error = "Parallel keyless search does not support date or domain filters. Remove these filters or choose another provider in Settings > Search."
+                else:
+                    user_friendly_error = "Parallel web search is temporarily unavailable. Please try again or choose another provider in Settings > Search."
             # Check for authentication/authorization errors
-            if "authentication" in str(e).lower() or "authorization" in str(e).lower() or "403" in str(e) or "401" in str(e):
+            elif "authentication" in str(e).lower() or "authorization" in str(e).lower() or "403" in str(e) or "401" in str(e):
                 user_friendly_error = f"Web search failed due to invalid {self.provider.capitalize()} API key. Please check your API key in Settings > Search and ensure it's valid and has sufficient credits."
             elif "quota" in str(e).lower() or "limit" in str(e).lower():
                 user_friendly_error = f"Web search quota exceeded for {self.provider.capitalize()}. Please check your account limits or try again later."
@@ -517,3 +534,75 @@ class WebSearchTool:
                      logger.error(f"Failed to send web_search_error feedback payload via callback: {cb_e}", exc_info=False)
             
             return {"error": user_friendly_error}
+
+    async def _search_parallel(self, query: str, max_results: int) -> List[Dict[str, Any]]:
+        """Adapt Unified MCP web_search to the existing research-source contract."""
+        # Import lazily so existing providers don't load an MCP client.
+        import httpx
+        from mcp import ClientSession
+        from mcp.client.streamable_http import streamable_http_client
+
+        # Bound initialization, tool execution and cleanup as one search operation.
+        async with asyncio.timeout(30):
+            async with httpx.AsyncClient(
+                headers={"User-Agent": "Maestro/ParallelSearch"}, timeout=30
+            ) as http:
+                async with streamable_http_client(
+                    "https://mcp.parallel.ai/mcp", http_client=http
+                ) as (read, write, _):
+                    async with ClientSession(read, write) as session:
+                        await session.initialize()
+                        result = await session.call_tool("web_search", {
+                            "objective": query,
+                            "search_queries": [query],
+                        })
+
+        if result.isError:
+            raise ValueError("Parallel web_search returned a tool error")
+        payload = result.structuredContent
+        if not isinstance(payload, dict) or "results" not in payload:
+            payload = None
+            for block in result.content:
+                if block.type == "text":
+                    try:
+                        candidate = json.loads(block.text)
+                    except (ValueError, TypeError):
+                        continue
+                    if isinstance(candidate, dict) and "results" in candidate:
+                        payload = candidate
+                        break
+        if not isinstance(payload, dict) or not isinstance(payload.get("results"), list):
+            raise ValueError("Parallel web_search returned an invalid result payload")
+
+        formatted = []
+        seen_urls = set()
+        for item in payload["results"]:
+            if not isinstance(item, dict):
+                continue
+            url = item.get("url")
+            if not isinstance(url, str):
+                continue
+            try:
+                parsed = urlsplit(url)
+                valid_url = parsed.scheme in ("http", "https") and bool(parsed.hostname)
+            except ValueError:
+                valid_url = False
+            if not valid_url or url in seen_urls:
+                continue
+            excerpts = item.get("excerpts")
+            if not isinstance(excerpts, list):
+                continue
+            snippet = "\n\n".join(part for part in excerpts if isinstance(part, str) and part.strip())
+            if not snippet:
+                continue
+            seen_urls.add(url)
+            formatted.append({
+                "title": item["title"] if isinstance(item.get("title"), str) and item["title"] else "No Title",
+                "snippet": snippet,
+                # Preserve the original URL for source identity and citations.
+                "url": url,
+                "publish_date": item.get("publish_date") if isinstance(item.get("publish_date"), str) else None,
+            })
+            if len(formatted) >= max_results:
+                break
+        return formatted

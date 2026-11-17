@@ -32,7 +32,7 @@ interface AISettings {
 }
 
 interface SearchSettings {
-  provider: 'tavily' | 'linkup' | 'searxng' | 'jina'
+  provider: 'tavily' | 'linkup' | 'searxng' | 'jina' | 'parallel'
   tavily_api_key: string | null
   linkup_api_key: string | null
   jina_api_key: string | null

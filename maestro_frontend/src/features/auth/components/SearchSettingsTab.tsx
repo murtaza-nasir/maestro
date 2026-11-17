@@ -28,7 +28,7 @@ const SEARXNG_CATEGORIES = [
 export const SearchSettingsTab: React.FC = () => {
   const { draftSettings, setDraftSettings } = useSettingsStore()
 
-  const handleProviderChange = (provider: 'tavily' | 'linkup' | 'searxng' | 'jina') => {
+  const handleProviderChange = (provider: 'tavily' | 'linkup' | 'searxng' | 'jina' | 'parallel') => {
     if (!draftSettings) return
     
     const newSearch = {
@@ -120,9 +120,20 @@ export const SearchSettingsTab: React.FC = () => {
                   <SelectItem value="linkup">LinkUp</SelectItem>
                   <SelectItem value="searxng">SearXNG</SelectItem>
                   <SelectItem value="jina">Jina</SelectItem>
+                  <SelectItem value="parallel">Parallel (Unified MCP)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            {draftSettings.search.provider === 'parallel' && (
+              <div className="space-y-2 p-3 border rounded-lg text-sm">
+                <p>No API key required. Use only for missions you authorize to send public web queries to Parallel.</p>
+                <p>Date and domain filters are unavailable with this provider.</p>
+                <a href="https://docs.parallel.ai/integrations/mcp/quickstart" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                  Parallel MCP setup
+                </a>
+              </div>
+            )}
 
             {draftSettings.search.provider === 'tavily' && (
               <div className="space-y-3 pl-3 border-l-2 border-blue-200 bg-blue-50/30 rounded-r-lg p-3">

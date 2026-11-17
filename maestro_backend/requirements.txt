@@ -49,3 +49,6 @@ typer
 rich
 html2text
 beautifulsoup4
+
+# Optional Parallel search provider (Unified MCP client)
+mcp>=1.26,<2
